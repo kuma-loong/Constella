@@ -70,7 +70,13 @@ button {
   border: 1px solid var(--border-strong);
   border-radius: 8px;
   background: #101215;
-  color: var(--green);
+  color: #60a5fa;
+}
+
+.brand-logo {
+  display: block;
+  width: 30px;
+  height: 30px;
 }
 
 .brand h1 {

@@ -7,7 +7,6 @@ import {
   Pause,
   Play,
   RefreshCw,
-  Server,
   Thermometer,
   Zap,
   createIcons,
@@ -23,7 +22,6 @@ const iconSet = {
   Pause,
   Play,
   RefreshCw,
-  Server,
   Thermometer,
   Zap,
 };
