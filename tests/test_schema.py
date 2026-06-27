@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from gputop_online.schema import GpuInfo, Snapshot
+from constella.schema import GpuInfo, Snapshot
 
 
 def test_snapshot_totals() -> None:

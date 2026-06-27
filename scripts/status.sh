@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8765}"
-PID_FILE="$ROOT_DIR/run/gputop-online.pid"
+PID_FILE="$ROOT_DIR/run/constella.pid"
 
 export NO_PROXY="${NO_PROXY:-127.0.0.1,localhost}"
 export no_proxy="${no_proxy:-127.0.0.1,localhost}"

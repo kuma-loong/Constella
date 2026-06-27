@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from gputop_online.nvidia_smi import parse_gpu_query_csv, parse_process_query_csv
+from constella.nvidia_smi import parse_gpu_query_csv, parse_process_query_csv
 
 
 def test_parse_gpu_query_csv() -> None:

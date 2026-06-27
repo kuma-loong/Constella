@@ -12,7 +12,7 @@ from .nvml import sample_with_fallback
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="gputop-online")
+    parser = argparse.ArgumentParser(prog="constella")
     parser.add_argument("--version", action="version", version=__version__)
     subparsers = parser.add_subparsers(dest="command")
 
@@ -29,10 +29,10 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     if args.command == "serve":
-        os.environ["GPUTOP_REFRESH_SECONDS"] = str(args.refresh)
-        os.environ["GPUTOP_PROCESS_SECONDS"] = str(args.process_refresh)
+        os.environ["CONSTELLA_REFRESH_SECONDS"] = str(args.refresh)
+        os.environ["CONSTELLA_PROCESS_SECONDS"] = str(args.process_refresh)
         uvicorn.run(
-            "gputop_online.app:create_app",
+            "constella.app:create_app",
             host=args.host,
             port=args.port,
             factory=True,

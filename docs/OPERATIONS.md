@@ -3,7 +3,7 @@
 ## 安装
 
 ```bash
-cd gputop-online
+cd Constella
 ./scripts/setup.sh
 ```
 
@@ -19,7 +19,7 @@ cd gputop-online
 HOST=127.0.0.1 PORT=8765 REFRESH=1.0 PROCESS_REFRESH=3.0 ./scripts/start.sh
 ```
 
-日志写入 `logs/gputop-online.log`，PID 写入 `run/gputop-online.pid`。
+日志写入 `logs/constella.log`，PID 写入 `run/constella.pid`。
 
 ## 访问
 
@@ -105,8 +105,8 @@ chmod 600 run/cloudflared.env
 ## 验证采样
 
 ```bash
-uv run gputop-online probe --pretty
+uv run constella probe --pretty
 COUNT=20 ./scripts/bench_probe.sh
 ```
 
-正常情况下 `probe` 的 `source` 为 `nvml`。如果为 `nvidia-smi`，说明 NVML 路径失败但兜底仍可用；查看 `logs/gputop-online.log` 中的警告。
+正常情况下 `probe` 的 `source` 为 `nvml`。如果为 `nvidia-smi`，说明 NVML 路径失败但兜底仍可用；查看 `logs/constella.log` 中的警告。

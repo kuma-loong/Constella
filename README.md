@@ -1,4 +1,4 @@
-# GPU Top Online
+# Constella
 
 Lightweight realtime NVIDIA GPU monitoring for a single server. The backend reads GPU metrics through NVML first and falls back to `nvidia-smi`; the frontend receives one-second updates over WebSocket.
 
@@ -17,7 +17,7 @@ Lightweight realtime NVIDIA GPU monitoring for a single server. The backend read
 ## Layout
 
 ```text
-src/gputop_online/      Python backend, NVML sampler, nvidia-smi fallback, API/WebSocket
+src/constella/      Python backend, NVML sampler, nvidia-smi fallback, API/WebSocket
 frontend/               Vite + TypeScript frontend
 scripts/                user-level setup, service, and tunnel management scripts
 docs/                   design and operations notes
@@ -27,7 +27,7 @@ tests/                  unit tests
 ## Quick Start
 
 ```bash
-cd gputop-online
+cd Constella
 ./scripts/setup.sh
 ./scripts/start.sh
 ```
@@ -109,7 +109,7 @@ Security notes:
 ./scripts/status.sh
 ./scripts/stop.sh
 HOST=127.0.0.1 PORT=8765 REFRESH=1.0 PROCESS_REFRESH=3.0 ./scripts/start.sh
-uv run gputop-online probe --pretty
+uv run constella probe --pretty
 COUNT=20 ./scripts/bench_probe.sh
 ```
 

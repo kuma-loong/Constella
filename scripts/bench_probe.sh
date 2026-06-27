@@ -10,7 +10,7 @@ uv run python - <<'PY'
 import statistics
 import time
 
-from gputop_online.nvml import NVMLSampler
+from constella.nvml import NVMLSampler
 
 count = int(__import__("os").environ.get("COUNT", "10"))
 sampler = NVMLSampler()

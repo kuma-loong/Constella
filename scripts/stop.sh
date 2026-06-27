@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PID_FILE="$ROOT_DIR/run/gputop-online.pid"
+PID_FILE="$ROOT_DIR/run/constella.pid"
 
 if [[ ! -f "$PID_FILE" ]]; then
   echo "not running: no pid file"

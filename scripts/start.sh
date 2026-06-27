@@ -13,8 +13,8 @@ REFRESH="${REFRESH:-1.0}"
 PROCESS_REFRESH="${PROCESS_REFRESH:-3.0}"
 LOG_DIR="$ROOT_DIR/logs"
 RUN_DIR="$ROOT_DIR/run"
-PID_FILE="$RUN_DIR/gputop-online.pid"
-LOG_FILE="$LOG_DIR/gputop-online.log"
+PID_FILE="$RUN_DIR/constella.pid"
+LOG_FILE="$LOG_DIR/constella.log"
 
 mkdir -p "$LOG_DIR" "$RUN_DIR"
 
@@ -45,7 +45,7 @@ if [[ ! -d frontend/dist ]]; then
 fi
 
 CMD=(
-  "$ROOT_DIR/.venv/bin/gputop-online"
+  "$ROOT_DIR/.venv/bin/constella"
   serve
   --host "$HOST"
   --port "$PORT"

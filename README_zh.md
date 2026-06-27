@@ -1,4 +1,4 @@
-# GPU Top Online
+# Constella
 
 一个普通用户级的 NVIDIA GPU 实时监控服务。后端优先使用 NVML API 采集，失败时使用 `nvidia-smi` 兜底；前端通过 WebSocket 每秒刷新，适合在服务器上后台运行后用 SSH 端口转发或 Cloudflare Tunnel 访问。
 
@@ -15,7 +15,7 @@
 ## 项目结构
 
 ```text
-src/gputop_online/      Python 后端、NVML 采样、nvidia-smi 兜底、WebSocket
+src/constella/      Python 后端、NVML 采样、nvidia-smi 兜底、WebSocket
 frontend/               Vite + TypeScript 前端
 scripts/                普通用户级安装、启动、停止、状态检查脚本
 docs/                   设计和运维文档
@@ -25,7 +25,7 @@ tests/                  单元测试
 ## 快速部署
 
 ```bash
-cd gputop-online
+cd Constella
 ./scripts/setup.sh
 ./scripts/start.sh
 ```
@@ -101,7 +101,7 @@ chmod 600 run/cloudflared.env
 ./scripts/status.sh
 ./scripts/stop.sh
 HOST=127.0.0.1 PORT=8765 REFRESH=1.0 PROCESS_REFRESH=3.0 ./scripts/start.sh
-uv run gputop-online probe --pretty
+uv run constella probe --pretty
 COUNT=20 ./scripts/bench_probe.sh
 ```
 

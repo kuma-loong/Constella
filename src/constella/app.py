@@ -15,8 +15,8 @@ FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
 
 
 def create_app(refresh_interval: float | None = None) -> FastAPI:
-    interval = refresh_interval or float(os.environ.get("GPUTOP_REFRESH_SECONDS", "1.0"))
-    process_interval = float(os.environ.get("GPUTOP_PROCESS_SECONDS", "3.0"))
+    interval = refresh_interval or float(os.environ.get("CONSTELLA_REFRESH_SECONDS", "1.0"))
+    process_interval = float(os.environ.get("CONSTELLA_PROCESS_SECONDS", "3.0"))
     collector = SnapshotCollector(refresh_interval=interval, process_interval=process_interval)
 
     @asynccontextmanager
@@ -27,7 +27,7 @@ def create_app(refresh_interval: float | None = None) -> FastAPI:
         await collector.stop()
 
     app = FastAPI(
-        title="GPU Top Online",
+        title="Constella",
         version="0.1.0",
         lifespan=lifespan,
         docs_url="/api/docs",
