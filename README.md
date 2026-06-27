@@ -1,5 +1,14 @@
 # Constella
 
+<div align="center" id="constella-badges">
+
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-ASGI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![NVIDIA NVML](https://img.shields.io/badge/NVIDIA-NVML-76B900?logo=nvidia&logoColor=white)](https://docs.nvidia.com/deploy/nvml-api/)
+[![License](https://img.shields.io/github/license/kuma-loong/Constella)](LICENSE)
+
+</div>
+
 Lightweight realtime NVIDIA GPU monitoring for a single server. The backend reads GPU metrics through NVML first and falls back to `nvidia-smi`; the frontend receives one-second updates over WebSocket.
 
 [简体中文](README_zh.md)
