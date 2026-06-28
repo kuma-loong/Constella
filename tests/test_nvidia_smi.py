@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from constella import nvidia_smi
 from constella.nvidia_smi import parse_gpu_query_csv, parse_process_query_csv
+from constella.schema import GpuProcess
 
 
 def test_parse_gpu_query_csv() -> None:
@@ -42,3 +44,28 @@ def test_parse_process_query_csv() -> None:
     assert set(processes) == {"GPU-abc"}
     assert [p.pid for p in processes["GPU-abc"]] == [1234, 2222]
     assert sum(p.gpu_memory_mb for p in processes["GPU-abc"]) == 5120
+
+
+def test_sample_can_reuse_cached_processes(monkeypatch) -> None:
+    gpu_output = (
+        "0, GPU-abc, NVIDIA RTX 6000 Ada Generation, 00000000:0F:00.0, 580.65.06, "
+        "35, 73, 32, 81559, 35299, 45781, 370.91, 700.00, 1980, 2619, P0, Default, Disabled\n"
+    )
+    calls: list[list[str]] = []
+
+    def fake_check_output(cmd: list[str], **kwargs) -> str:
+        calls.append(cmd)
+        if cmd[1].startswith("--query-gpu="):
+            return gpu_output
+        raise AssertionError("process query should not run")
+
+    cached = {"GPU-abc": [GpuProcess(pid=1234, name="python", gpu_memory_mb=4096)]}
+    monkeypatch.setattr(nvidia_smi.subprocess, "check_output", fake_check_output)
+
+    snapshot = nvidia_smi.sample(
+        collect_processes=False,
+        cached_processes_by_uuid=cached,
+    )
+
+    assert len(calls) == 1
+    assert snapshot.gpus[0].processes == cached["GPU-abc"]

@@ -11,13 +11,13 @@
 
 </div>
 
-Lightweight realtime NVIDIA GPU monitoring for a single server. The backend reads GPU metrics through NVML first and falls back to `nvidia-smi`; the frontend receives one-second updates over WebSocket.
+Lightweight realtime NVIDIA GPU monitoring for a single server. The backend reads GPU metrics through NVML first and falls back to `nvidia-smi`; the frontend receives shared collector updates over WebSocket.
 
 [简体中文](README_zh.md)
 
 ## Features
 
-- One-second refresh with a single shared backend collector.
+- Selectable global refresh rate: 0.5s, 1s, 2s, or 5s with a single shared backend collector.
 - Low overhead: persistent NVML sampler, no per-browser GPU polling, no database.
 - Process list sampled at a lower cadence by default to reduce `/proc` and driver query jitter.
 - `nvidia-smi` fallback when NVML initialization or a sampling call fails.
@@ -136,6 +136,8 @@ Tunnel commands:
 
 - `GET /api/health`
 - `GET /api/snapshot`
+- `GET /api/settings`
+- `PATCH /api/settings`
 - `WS /ws/gpu`
 - `GET /api/docs`
 

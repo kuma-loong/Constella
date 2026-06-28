@@ -103,6 +103,53 @@ button {
   flex-shrink: 0;
 }
 
+.refresh-control {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(44px, 1fr));
+  height: 36px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.refresh-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 34px;
+  padding: 0 9px;
+  border: 0;
+  border-right: 1px solid var(--border);
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.refresh-option:last-child {
+  border-right: 0;
+}
+
+.refresh-option:hover {
+  color: var(--text);
+  background: #20242a;
+}
+
+.refresh-option.is-active {
+  color: #06100b;
+  background: var(--green);
+}
+
+.refresh-option:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
 .live-pill {
   display: inline-flex;
   align-items: center;
@@ -555,10 +602,17 @@ svg {
 
   .status-cluster {
     width: 100%;
+    flex-wrap: wrap;
   }
 
   .live-pill {
     flex: 1;
+  }
+
+  .refresh-control {
+    order: 3;
+    width: 100%;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .summary-grid {

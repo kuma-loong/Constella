@@ -98,6 +98,14 @@ type Snapshot = {
   history: Record<string, Record<string, number[]>>;
 };
 
+type Settings = {
+  refresh_interval: number;
+  allowed_refresh_intervals: number[];
+  process_interval: number;
+};
+
+const DEFAULT_REFRESH_INTERVALS = [0.5, 1, 2, 5];
+
 const summaryGrid = mustGet<HTMLElement>("summaryGrid");
 const gpuGrid = mustGet<HTMLElement>("gpuGrid");
 const fabricBand = mustGet<HTMLElement>("fabricBand");
@@ -105,6 +113,7 @@ const processRows = mustGet<HTMLElement>("processRows");
 const processMeta = mustGet<HTMLElement>("processMeta");
 const liveState = mustGet<HTMLElement>("liveState");
 const nodeLine = mustGet<HTMLElement>("nodeLine");
+const refreshControl = mustGet<HTMLElement>("refreshControl");
 const pauseButton = mustGet<HTMLButtonElement>("pauseButton");
 const refreshButton = mustGet<HTMLButtonElement>("refreshButton");
 
@@ -112,6 +121,9 @@ let socket: WebSocket | null = null;
 let reconnectTimer = 0;
 let paused = false;
 let lastSnapshot: Snapshot | null = null;
+let lastSettings: Settings | null = null;
+let currentRefreshInterval: number | null = null;
+let refreshPending = false;
 
 pauseButton.addEventListener("click", () => {
   paused = !paused;
@@ -126,6 +138,19 @@ refreshButton.addEventListener("click", () => {
   fetchSnapshot();
 });
 
+refreshControl.addEventListener("click", (event) => {
+  const target = (event.target as HTMLElement).closest("[data-refresh-interval]") as HTMLButtonElement | null;
+  if (!target || target.disabled) {
+    return;
+  }
+  const interval = Number(target.dataset.refreshInterval);
+  if (Number.isFinite(interval)) {
+    setRefreshInterval(interval);
+  }
+});
+
+renderRefreshControl(DEFAULT_REFRESH_INTERVALS, null);
+fetchSettings();
 connect();
 fetchSnapshot();
 createIcons({ icons: iconSet });
@@ -177,13 +202,86 @@ async function fetchSnapshot() {
   }
 }
 
+async function fetchSettings() {
+  try {
+    const response = await fetch("/api/settings", { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`settings request failed: ${response.status}`);
+    }
+    const settings = (await response.json()) as Settings;
+    lastSettings = settings;
+    renderRefreshControl(settings.allowed_refresh_intervals, settings.refresh_interval);
+  } catch {
+    syncRefreshControl(lastSnapshot?.refresh_interval ?? currentRefreshInterval);
+  }
+}
+
+async function setRefreshInterval(interval: number) {
+  if (refreshPending || sameInterval(interval, currentRefreshInterval)) {
+    return;
+  }
+  const previous = currentRefreshInterval;
+  refreshPending = true;
+  syncRefreshControl(interval);
+  try {
+    const response = await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_interval: interval }),
+    });
+    if (!response.ok) {
+      throw new Error(`settings update failed: ${response.status}`);
+    }
+    const settings = (await response.json()) as Settings;
+    lastSettings = settings;
+    renderRefreshControl(settings.allowed_refresh_intervals, settings.refresh_interval);
+  } catch {
+    syncRefreshControl(lastSnapshot?.refresh_interval ?? lastSettings?.refresh_interval ?? previous);
+  } finally {
+    refreshPending = false;
+    syncRefreshControl(currentRefreshInterval);
+  }
+}
+
 function render(snapshot: Snapshot) {
+  syncRefreshControl(snapshot.refresh_interval ?? null);
   renderHeader(snapshot);
   renderSummary(snapshot);
   renderFabric(snapshot);
   renderGpuGrid(snapshot);
   renderProcesses(snapshot);
   createIcons({ icons: iconSet });
+}
+
+function renderRefreshControl(intervals: number[], selected: number | null) {
+  const values = intervals.filter((interval) => Number.isFinite(interval) && interval > 0);
+  refreshControl.innerHTML = values
+    .map(
+      (interval) => `
+        <button
+          class="refresh-option"
+          type="button"
+          data-refresh-interval="${interval}"
+          aria-pressed="false"
+        >${formatInterval(interval)}</button>
+      `,
+    )
+    .join("");
+  syncRefreshControl(selected);
+}
+
+function syncRefreshControl(interval: number | null | undefined) {
+  if (typeof interval === "number" && Number.isFinite(interval)) {
+    currentRefreshInterval = interval;
+  }
+  const buttons = refreshControl.querySelectorAll<HTMLButtonElement>("[data-refresh-interval]");
+  for (const button of buttons) {
+    const value = Number(button.dataset.refreshInterval);
+    const active = sameInterval(value, currentRefreshInterval);
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+    button.disabled = refreshPending;
+  }
 }
 
 function renderHeader(snapshot: Snapshot) {
@@ -434,6 +532,17 @@ function summarizeGpuModels(gpus: GpuInfo[]) {
   return Array.from(counts.entries())
     .map(([name, count]) => `${count}x ${name.replace(/^NVIDIA\s+/, "")}`)
     .join(" · ");
+}
+
+function sameInterval(left: number | null, right: number | null) {
+  if (left === null || right === null) {
+    return false;
+  }
+  return Math.abs(left - right) < 1e-9;
+}
+
+function formatInterval(seconds: number) {
+  return seconds < 1 ? `${seconds.toFixed(1)}s` : `${seconds.toFixed(0)}s`;
 }
 
 function fmtGiB(mib: number) {

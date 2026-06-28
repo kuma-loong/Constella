@@ -8,7 +8,7 @@
 
 ```mermaid
 flowchart LR
-  A["NVML sampler<br/>ctypes + libnvidia-ml.so"] --> C["Snapshot collector<br/>1s loop"]
+  A["NVML sampler<br/>ctypes + libnvidia-ml.so"] --> C["Snapshot collector<br/>0.5s/1s/2s/5s loop"]
   B["nvidia-smi fallback<br/>CSV query"] --> C
   C --> D["FastAPI HTTP<br/>/api/snapshot"]
   C --> E["FastAPI WebSocket<br/>/ws/gpu"]
@@ -16,21 +16,22 @@ flowchart LR
   D --> F
 ```
 
-后端只有一个采样循环。浏览器连接数增加时，不会增加 NVML 调用次数，只会复用 collector 中的最新快照。
+后端只有一个采样循环。浏览器连接数增加时，不会增加 NVML 调用次数，只会复用 collector 中的最新快照；Web 端切换刷新率时改变的是这个全局采样循环。
 
 ## 数据路径
 
 1. 启动时初始化 `NVMLSampler`，加载 `libnvidia-ml.so`。
-2. 每秒读取 GPU 名称、UUID、显存、利用率、温度、功耗、时钟、P-state、Compute Mode、ECC 和 MIG。
-3. 进程枚举默认每 3 秒执行一次并缓存，降低多用户进程查询带来的抖动。
+2. 按全局刷新率读取 GPU 名称、UUID、显存、利用率、温度、功耗、时钟、P-state、Compute Mode、ECC 和 MIG；刷新率可在 Web 端切换为 0.5 秒、1 秒、2 秒或 5 秒。
+3. 进程枚举默认每 3 秒执行一次并缓存，实际间隔不低于当前核心刷新率，降低多用户进程查询带来的抖动。
 4. 如果 NVML 初始化或单次采样失败，关闭当前 NVML 句柄并执行 `nvidia-smi --query-gpu=... --format=csv,noheader,nounits`。
-5. collector 给快照补充序号、刷新间隔和 120 点短历史数据。
+5. collector 给快照补充序号、当前刷新间隔和 120 点短历史数据。
 6. WebSocket 客户端收到 JSON 后刷新 KPI、GPU 卡片、进程表和历史曲线。
 
 ## 低开销策略
 
 - 不使用 `nvidia-smi -l` 常驻子进程，正常路径不每秒 fork。
 - NVML 在服务进程内保持初始化状态，单 collector 串行采样。
+- 刷新率是全局运行时设置，浏览器切换不会创建额外 collector。
 - 进程列表降频采样，避免 `/proc` 和驱动进程查询影响核心指标刷新。
 - 前端不依赖大型图表库，短曲线用 SVG polyline 绘制。
 - 后端只保留最近 120 个采样点，不落盘，不写数据库。

@@ -4,9 +4,10 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from .collector import SnapshotCollector, snapshot_to_jsonable
 
@@ -14,10 +15,22 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
 
 
-def create_app(refresh_interval: float | None = None) -> FastAPI:
-    interval = refresh_interval or float(os.environ.get("CONSTELLA_REFRESH_SECONDS", "1.0"))
-    process_interval = float(os.environ.get("CONSTELLA_PROCESS_SECONDS", "3.0"))
-    collector = SnapshotCollector(refresh_interval=interval, process_interval=process_interval)
+class SettingsUpdate(BaseModel):
+    refresh_interval: float
+
+
+def create_app(
+    refresh_interval: float | None = None,
+    collector: SnapshotCollector | None = None,
+) -> FastAPI:
+    if collector is None:
+        interval = (
+            refresh_interval
+            if refresh_interval is not None
+            else float(os.environ.get("CONSTELLA_REFRESH_SECONDS", "1.0"))
+        )
+        process_interval = float(os.environ.get("CONSTELLA_PROCESS_SECONDS", "3.0"))
+        collector = SnapshotCollector(refresh_interval=interval, process_interval=process_interval)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -48,6 +61,17 @@ def create_app(refresh_interval: float | None = None) -> FastAPI:
     @app.get("/api/snapshot")
     async def snapshot() -> dict[str, object]:
         return snapshot_to_jsonable(collector.snapshot)
+
+    @app.get("/api/settings")
+    async def settings() -> dict[str, object]:
+        return collector.settings()
+
+    @app.patch("/api/settings")
+    async def update_settings(update: SettingsUpdate) -> dict[str, object]:
+        try:
+            return collector.set_refresh_interval(update.refresh_interval)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.websocket("/ws/gpu")
     async def gpu_ws(websocket: WebSocket) -> None:

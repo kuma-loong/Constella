@@ -1,11 +1,11 @@
 # Constella
 
-一个普通用户级的 NVIDIA GPU 实时监控服务。后端优先使用 NVML API 采集，失败时使用 `nvidia-smi` 兜底；前端通过 WebSocket 每秒刷新，适合在服务器上后台运行后用 SSH 端口转发或 Cloudflare Tunnel 访问。
+一个普通用户级的 NVIDIA GPU 实时监控服务。后端优先使用 NVML API 采集，失败时使用 `nvidia-smi` 兜底；前端通过 WebSocket 接收共享 collector 的实时快照，适合在服务器上后台运行后用 SSH 端口转发或 Cloudflare Tunnel 访问。
 
 ## 功能
 
-- 1 秒刷新：单个后台 collector 采样，多个浏览器共享快照，避免重复访问 GPU 驱动。
-- 低抖动进程采样：核心 GPU 指标每秒刷新，进程列表默认每 3 秒刷新一次。
+- 可选全局刷新率：支持 0.5 秒、1 秒、2 秒、5 秒，单个后台 collector 采样，多个浏览器共享快照，避免重复访问 GPU 驱动。
+- 低抖动进程采样：核心 GPU 指标按当前刷新率更新，进程列表默认每 3 秒刷新一次。
 - NVML 优先：直接通过 `ctypes` 调用 `libnvidia-ml.so`，无需 sudo，无需在系统安装 Python 包。
 - `nvidia-smi` 兜底：NVML 初始化失败或权限受限时仍能显示 GPU 基础指标。
 - 硬件自适应：自动解析本机 NVIDIA GPU 数量和型号，展示 GPU 利用率、显存、功耗、温度、时钟、P-state、ECC、MIG、进程占用、运行时间和短历史曲线。
@@ -117,6 +117,8 @@ Tunnel 命令：
 
 - `GET /api/health`：服务健康状态。
 - `GET /api/snapshot`：当前 GPU 快照。
+- `GET /api/settings`：当前运行时设置。
+- `PATCH /api/settings`：更新全局刷新率。
 - `WS /ws/gpu`：实时快照流。
 - `GET /api/docs`：FastAPI OpenAPI 文档。
 

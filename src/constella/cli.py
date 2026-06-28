@@ -8,6 +8,7 @@ import sys
 import uvicorn
 
 from . import __version__
+from .collector import validate_refresh_interval
 from .nvml import sample_with_fallback
 
 
@@ -29,7 +30,11 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     if args.command == "serve":
-        os.environ["CONSTELLA_REFRESH_SECONDS"] = str(args.refresh)
+        try:
+            refresh = validate_refresh_interval(args.refresh)
+        except ValueError as exc:
+            parser.error(str(exc))
+        os.environ["CONSTELLA_REFRESH_SECONDS"] = str(refresh)
         os.environ["CONSTELLA_PROCESS_SECONDS"] = str(args.process_refresh)
         uvicorn.run(
             "constella.app:create_app",

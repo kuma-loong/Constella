@@ -270,8 +270,14 @@ class NVMLSampler:
             raise NVMLUnavailable(f"nvmlInit failed with code {rc}")
         self._closed = False
         self._reserved_offsets: dict[int, int] | None = None
+        self._last_process_at = 0.0
         self._next_process_at = 0.0
         self._process_snapshot: dict[str, tuple[list[GpuProcess], list[OtherUserMemory]]] = {}
+
+    def set_process_interval(self, process_interval: float) -> None:
+        self.process_interval = max(1.0, process_interval)
+        if self._last_process_at:
+            self._next_process_at = self._last_process_at + self.process_interval
 
     def close(self) -> None:
         if self._closed:
@@ -299,7 +305,8 @@ class NVMLSampler:
         for index in range(count.value):
             gpus.append(self._sample_gpu(index, process_cache, collect_processes))
         if collect_processes:
-            self._next_process_at = time.monotonic() + self.process_interval
+            self._last_process_at = time.monotonic()
+            self._next_process_at = self._last_process_at + self.process_interval
 
         return Snapshot(
             ok=True,

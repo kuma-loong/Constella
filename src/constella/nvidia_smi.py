@@ -116,7 +116,11 @@ def parse_process_query_csv(output: str) -> dict[str, list[GpuProcess]]:
     return result
 
 
-def sample(timeout: float = 2.5) -> Snapshot:
+def sample(
+    timeout: float = 2.5,
+    collect_processes: bool = True,
+    cached_processes_by_uuid: dict[str, list[GpuProcess]] | None = None,
+) -> Snapshot:
     started = time.monotonic()
     cmd = [
         "nvidia-smi",
@@ -126,21 +130,24 @@ def sample(timeout: float = 2.5) -> Snapshot:
     output = subprocess.check_output(cmd, stderr=subprocess.PIPE, timeout=timeout, text=True)
     gpus, driver_version = parse_gpu_query_csv(output)
 
-    try:
-        proc_output = subprocess.check_output(
-            [
-                "nvidia-smi",
-                "--query-compute-apps=gpu_uuid,pid,process_name,used_memory",
-                "--format=csv,noheader,nounits",
-            ],
-            stderr=subprocess.DEVNULL,
-            timeout=timeout,
-            text=True,
-        )
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-        processes_by_uuid: dict[str, list[GpuProcess]] = {}
+    if collect_processes:
+        try:
+            proc_output = subprocess.check_output(
+                [
+                    "nvidia-smi",
+                    "--query-compute-apps=gpu_uuid,pid,process_name,used_memory",
+                    "--format=csv,noheader,nounits",
+                ],
+                stderr=subprocess.DEVNULL,
+                timeout=timeout,
+                text=True,
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            processes_by_uuid = cached_processes_by_uuid or {}
+        else:
+            processes_by_uuid = parse_process_query_csv(proc_output)
     else:
-        processes_by_uuid = parse_process_query_csv(proc_output)
+        processes_by_uuid = cached_processes_by_uuid or {}
 
     for gpu in gpus:
         gpu.processes = processes_by_uuid.get(gpu.uuid, [])
