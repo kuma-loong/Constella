@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PID_FILE="$ROOT_DIR/run/cloudflared.pid"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PID_FILE="$ROOT_DIR/run/constella.pid"
 
 if [[ ! -f "$PID_FILE" ]]; then
-  echo "cloudflared not running: no pid file"
+  echo "not running: no pid file"
   exit 0
 fi
 
@@ -21,4 +21,4 @@ if kill -0 "$PID" >/dev/null 2>&1; then
 fi
 
 rm -f "$PID_FILE"
-echo "stopped cloudflared"
+echo "stopped"
