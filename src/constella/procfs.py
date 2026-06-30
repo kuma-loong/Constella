@@ -22,7 +22,7 @@ def _boot_time_seconds() -> int | None:
     return None
 
 
-def process_runtime_seconds(pid: int) -> int | None:
+def process_start_time_seconds(pid: int) -> float | None:
     boot_time = _boot_time_seconds()
     if boot_time is None:
         return None
@@ -51,5 +51,31 @@ def process_runtime_seconds(pid: int) -> int | None:
     except ValueError:
         return None
 
-    started_at = boot_time + (start_ticks / ticks_per_second)
+    return boot_time + (start_ticks / ticks_per_second)
+
+
+def process_runtime_seconds(pid: int) -> int | None:
+    started_at = process_start_time_seconds(pid)
+    if started_at is None:
+        return None
     return max(0, int(time.time() - started_at))
+
+
+def process_exe(pid: int) -> str | None:
+    try:
+        return os.readlink(f"/proc/{pid}/exe")
+    except OSError:
+        return None
+
+
+def process_cmdline(pid: int) -> tuple[str | None, str]:
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            raw = f.read()
+    except PermissionError:
+        return None, "permission_denied"
+    except OSError:
+        return None, "unavailable"
+    if not raw:
+        return None, "empty"
+    return raw.replace(b"\x00", b" ").decode("utf-8", errors="replace").strip() or None, "ok"

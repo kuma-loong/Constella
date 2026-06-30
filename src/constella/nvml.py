@@ -9,8 +9,15 @@ import subprocess
 import time
 
 from . import nvidia_smi
-from .procfs import process_runtime_seconds
-from .schema import GpuInfo, GpuProcess, OtherUserMemory, Snapshot
+from .procfs import process_cmdline, process_exe, process_runtime_seconds, process_start_time_seconds
+from .schema import (
+    GpuInfo,
+    GpuProcess,
+    OtherUserMemory,
+    Snapshot,
+    cmdline_fingerprint,
+    infer_task_name,
+)
 
 NVML_SUCCESS = 0
 NVML_ERROR_INSUFFICIENT_SIZE = 4
@@ -251,6 +258,13 @@ def _proc_cmdline(pid: int) -> str | None:
     if not raw:
         return None
     return raw.replace(b"\x00", b" ").decode("utf-8", errors="replace").strip() or None
+
+
+def _process_detail_mode() -> str:
+    value = os.environ.get("CONSTELLA_PROCESS_DETAIL_MODE", "all").strip().lower()
+    if value not in {"all", "names", "aggregate"}:
+        return "all"
+    return value
 
 
 def _cuda_driver_version(value: int) -> str:
@@ -555,16 +569,22 @@ class NVMLSampler:
         if graphics:
             raw.extend(graphics)
 
+        mode = _process_detail_mode()
+        if mode != "aggregate":
+            detailed: list[GpuProcess] = []
+            include_cmdline = mode == "all"
+            for process in raw:
+                self._fill_process_detail(process, include_cmdline=include_cmdline)
+                detailed.append(process)
+            detailed.sort(key=lambda item: item.gpu_memory_mb, reverse=True)
+            return detailed, []
+
         own: list[GpuProcess] = []
         other: dict[str, OtherUserMemory] = {}
         for process in raw:
-            uid = _proc_uid(process.pid)
-            user = _uid_name(uid)
-            process.user = process.user or user
-            process.name = process.name or _proc_comm(process.pid) or "?"
-            process.runtime_seconds = process.runtime_seconds or process_runtime_seconds(process.pid)
+            self._fill_process_detail(process, include_cmdline=True)
+            user = process.user
             if self.own_user and user == self.own_user:
-                process.cmdline = _proc_cmdline(process.pid)
                 own.append(process)
                 continue
 
@@ -579,6 +599,32 @@ class NVMLSampler:
                     process.runtime_seconds,
                 )
         return own, sorted(other.values(), key=lambda item: item.total_memory_mb, reverse=True)
+
+    def _fill_process_detail(self, process: GpuProcess, *, include_cmdline: bool) -> None:
+        uid = _proc_uid(process.pid)
+        user = _uid_name(uid)
+        comm = _proc_comm(process.pid)
+        exe = process_exe(process.pid)
+        cmdline: str | None = None
+        detail_status = "names"
+        if include_cmdline:
+            cmdline, detail_status = process_cmdline(process.pid)
+
+        process.user = process.user or user
+        process.name = process.name or comm or "?"
+        process.exe = exe
+        process.cmdline = cmdline
+        process.cmdline_hash = cmdline_fingerprint(cmdline)
+        process.process_start_time = process_start_time_seconds(process.pid)
+        process.runtime_seconds = process.runtime_seconds or process_runtime_seconds(process.pid)
+        process.detail_status = detail_status
+        process.task_name = infer_task_name(
+            cmdline=cmdline,
+            exe=exe,
+            comm=comm,
+            process_name=process.name,
+            pid=process.pid,
+        )
 
     def _running_processes(
         self,
@@ -620,6 +666,7 @@ class NVMLSampler:
                     gpu_memory_mb=int(used // (1024 * 1024)),
                     kind=kind,
                     runtime_seconds=process_runtime_seconds(int(info.pid)),
+                    process_start_time=process_start_time_seconds(int(info.pid)),
                 )
             )
         return result

@@ -73,6 +73,14 @@ class SnapshotCollector:
             self._wake_event.set()
         return self.settings()
 
+    def set_process_interval(self, seconds: float) -> dict[str, Any]:
+        value = max(1.0, float(seconds))
+        if value != self._process_interval:
+            self._process_interval = value
+            if self._sampler is not None:
+                self._sampler.set_process_interval(self.process_interval)
+        return self.settings()
+
     async def start(self) -> None:
         if self._task and not self._task.done():
             return
