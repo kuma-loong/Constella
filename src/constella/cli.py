@@ -11,8 +11,11 @@ import uvicorn
 
 from . import __version__
 from .agent import AgentConfig, run_agent
+from .cluster_control import ClusterController, format_results, load_cluster_config
 from .collector import validate_refresh_interval
 from .nvml import sample_with_fallback
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -37,6 +40,19 @@ def main(argv: list[str] | None = None) -> None:
     agent.add_argument("--refresh", type=float)
     agent.add_argument("--process-refresh", type=float)
     agent.add_argument("--state-file", type=Path)
+
+    cluster = subparsers.add_parser("cluster", help="manage remote GPU node agents")
+    cluster_subparsers = cluster.add_subparsers(dest="cluster_command")
+
+    cluster_start = cluster_subparsers.add_parser("start", help="start agents from nodes.yaml")
+    cluster_start.add_argument("--nodes", type=Path, default=Path("nodes.yaml"))
+    cluster_start.add_argument("--no-sync", action="store_true")
+
+    cluster_status = cluster_subparsers.add_parser("status", help="check remote agent status")
+    cluster_status.add_argument("--nodes", type=Path, default=Path("nodes.yaml"))
+
+    cluster_stop = cluster_subparsers.add_parser("stop", help="stop remote agents")
+    cluster_stop.add_argument("--nodes", type=Path, default=Path("nodes.yaml"))
 
     args = parser.parse_args(argv)
 
@@ -82,6 +98,32 @@ def main(argv: list[str] | None = None) -> None:
         except (OSError, ValueError) as exc:
             parser.error(str(exc))
         asyncio.run(run_agent(config))
+        return
+
+    if args.command == "cluster":
+        if not args.cluster_command:
+            cluster.print_help()
+            return
+        try:
+            config = load_cluster_config(args.nodes)
+        except (OSError, KeyError, ValueError) as exc:
+            parser.error(str(exc))
+        controller = ClusterController(
+            config,
+            project_root=PROJECT_ROOT,
+            sync_source=not getattr(args, "no_sync", False),
+        )
+        if args.cluster_command == "start":
+            results = controller.start_all()
+        elif args.cluster_command == "status":
+            results = controller.status_all()
+        elif args.cluster_command == "stop":
+            results = controller.stop_all()
+        else:
+            parser.error(f"unknown cluster command: {args.cluster_command}")
+        print(format_results(results))
+        if any(not result.ok for result in results):
+            sys.exit(1)
         return
 
     parser.print_help()
