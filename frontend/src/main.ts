@@ -187,8 +187,22 @@ refreshControl.addEventListener("click", (event) => {
   }
 });
 
+topNav.addEventListener("click", (event) => {
+  const link = (event.target as HTMLElement).closest("a[href]") as HTMLAnchorElement | null;
+  if (!link || link.origin !== window.location.origin || !isAppPath(link.pathname)) {
+    return;
+  }
+  event.preventDefault();
+  navigateTo(link.pathname);
+});
+
+window.addEventListener("popstate", () => {
+  renderCurrentRoute();
+});
+
 renderRefreshControl(DEFAULT_REFRESH_INTERVALS, null);
 normalizeInitialRoute();
+renderNav(null, currentRoute());
 fetchSettings();
 connect();
 fetchSnapshot();
@@ -215,6 +229,26 @@ function currentRoute(): Route {
     return { kind: "node", nodeId: decodeURIComponent(encoded) };
   }
   return { kind: "overview" };
+}
+
+function isAppPath(pathname: string) {
+  return pathname === "/" || pathname === "/overview" || pathname.startsWith("/nodes/");
+}
+
+function navigateTo(pathname: string) {
+  const normalized = pathname === "/" ? "/overview" : pathname;
+  if (normalized !== window.location.pathname) {
+    window.history.pushState(null, "", normalized);
+  }
+  renderCurrentRoute();
+}
+
+function renderCurrentRoute() {
+  if (lastSnapshot) {
+    render(lastSnapshot);
+    return;
+  }
+  renderNav(null, currentRoute());
 }
 
 function connect() {
@@ -367,14 +401,14 @@ function renderHeader(snapshot: ClusterSnapshot, route: Route, selectedNode: Nod
   setLiveState(paused ? "paused" : snapshot.ok ? "live" : totals.node_count ? "error" : "connecting");
 }
 
-function renderNav(snapshot: ClusterSnapshot, route: Route) {
+function renderNav(snapshot: ClusterSnapshot | null, route: Route) {
   const overviewActive = route.kind === "overview";
-  const nodeLinks = snapshot.nodes
+  const nodeLinks = (snapshot?.nodes || [])
     .map((node) => {
       const active =
         route.kind === "node" && (route.nodeId === node.node_id || route.nodeId === node.hostname);
       return `
-        <a class="nav-link ${active ? "is-active" : ""}" href="/nodes/${encodeURIComponent(node.node_id)}">
+        <a class="nav-link ${active ? "is-active" : ""}" ${active ? `aria-current="page"` : ""} href="/nodes/${encodeURIComponent(node.node_id)}">
           <i data-lucide="server"></i>
           <span>${escapeHtml(node.node_id)}</span>
         </a>
@@ -382,7 +416,7 @@ function renderNav(snapshot: ClusterSnapshot, route: Route) {
     })
     .join("");
   topNav.innerHTML = `
-    <a class="nav-link ${overviewActive ? "is-active" : ""}" href="/overview">
+    <a class="nav-link ${overviewActive ? "is-active" : ""}" ${overviewActive ? `aria-current="page"` : ""} href="/overview">
       <i data-lucide="list-tree"></i>
       <span>Overview</span>
     </a>
@@ -395,7 +429,7 @@ function renderSummary(snapshot: ClusterSnapshot) {
   summaryGrid.innerHTML = [
     metricCard("server", "Nodes", `${totals.online_node_count} / ${totals.node_count}`, `${totals.stale_node_count} stale · ${totals.offline_node_count} offline`, nodeHealthPercent(totals), "green"),
     metricCard("activity", "GPU Avg", fmtPct(totals.avg_gpu_utilization), `${totals.gpu_count} GPUs`, totals.avg_gpu_utilization, "cyan"),
-    metricCard("database", "HBM Used", `${fmtGiB(totals.memory_used_mb)} / ${fmtGiB(totals.memory_total_mb)}`, fmtPct(totals.avg_memory_utilization), totals.avg_memory_utilization, "violet"),
+    metricCard("database", "Memory Used", `${fmtGiB(totals.memory_used_mb)} / ${fmtGiB(totals.memory_total_mb)}`, fmtPct(totals.avg_memory_utilization), totals.avg_memory_utilization, "violet"),
     metricCard("zap", "Power", `${totals.power_watts.toFixed(0)} W / ${totals.power_limit_watts.toFixed(0)} W`, totals.power_limit_watts ? fmtPct((totals.power_watts / totals.power_limit_watts) * 100) : "n/a", totals.power_limit_watts ? (totals.power_watts / totals.power_limit_watts) * 100 : 0, "amber"),
     metricCard("users", "Tasks", `${totals.active_processes}`, `max ${totals.max_temperature_c}°C`, Math.min(100, (totals.active_processes / Math.max(1, totals.gpu_count * 4)) * 100), "red"),
   ].join("");
@@ -406,7 +440,7 @@ function renderNodeSummary(nodeId: string, node: NodeSnapshot | null) {
     summaryGrid.innerHTML = [
       metricCard("server", "Node", nodeId, "not found", 0, "red"),
       metricCard("activity", "GPU Avg", "n/a", "0 GPUs", 0, "cyan"),
-      metricCard("database", "HBM Used", "n/a", "n/a", 0, "violet"),
+      metricCard("database", "Memory Used", "n/a", "n/a", 0, "violet"),
       metricCard("zap", "Power", "n/a", "n/a", 0, "amber"),
       metricCard("users", "Tasks", "0", "no active tasks", 0, "red"),
     ].join("");
@@ -417,7 +451,7 @@ function renderNodeSummary(nodeId: string, node: NodeSnapshot | null) {
   summaryGrid.innerHTML = [
     metricCard("server", "Node", node.node_id, `${node.status} · ${node.hostname}`, node.status === "online" ? 100 : 0, node.status === "online" ? "green" : "red"),
     metricCard("activity", "GPU Avg", fmtPct(totals.avg_gpu_utilization), `${totals.gpu_count} GPUs`, totals.avg_gpu_utilization, "cyan"),
-    metricCard("database", "HBM Used", `${fmtGiB(totals.memory_used_mb)} / ${fmtGiB(totals.memory_total_mb)}`, fmtPct(totals.avg_memory_utilization), totals.avg_memory_utilization, "violet"),
+    metricCard("database", "Memory Used", `${fmtGiB(totals.memory_used_mb)} / ${fmtGiB(totals.memory_total_mb)}`, fmtPct(totals.avg_memory_utilization), totals.avg_memory_utilization, "violet"),
     metricCard("zap", "Power", `${totals.power_watts.toFixed(0)} W / ${totals.power_limit_watts.toFixed(0)} W`, totals.power_limit_watts ? fmtPct((totals.power_watts / totals.power_limit_watts) * 100) : "n/a", totals.power_limit_watts ? (totals.power_watts / totals.power_limit_watts) * 100 : 0, "amber"),
     metricCard("users", "Tasks", `${totals.active_processes}`, `max ${totals.max_temperature_c}°C`, Math.min(100, (totals.active_processes / Math.max(1, totals.gpu_count * 4)) * 100), "red"),
   ].join("");
@@ -428,7 +462,7 @@ function renderFabric(snapshot: ClusterSnapshot) {
     .map(
       (node) => `
         <a
-          class="fabric-node-card is-${escapeAttr(node.status)}"
+          class="fabric-node-card is-${escapeAttr(node.status)} ${fabricNodeSizeClass(node)}"
           href="/nodes/${encodeURIComponent(node.node_id)}"
           title="${escapeAttr(node.error || node.hostname)}"
         >
@@ -451,11 +485,28 @@ function renderFabric(snapshot: ClusterSnapshot) {
     .join("");
   fabricBand.innerHTML = `
     <div class="fabric-copy">
-      <span>Cluster fabric</span>
-      <strong>${escapeHtml(summarizeCluster(snapshot))}</strong>
+      <div>
+        <span>Cluster fabric</span>
+        <strong>${escapeHtml(summarizeCluster(snapshot))}</strong>
+      </div>
+      <div class="fabric-stats">
+        <span>${snapshot.totals.online_node_count}/${snapshot.totals.node_count} online</span>
+        <span>${snapshot.totals.gpu_count} GPUs</span>
+        <span>${fmtGiB(snapshot.totals.memory_used_mb)} Memory used</span>
+      </div>
     </div>
     <div class="fabric-node-grid">${nodeCards || `<div class="empty-panel">no nodes</div>`}</div>
   `;
+}
+
+function fabricNodeSizeClass(node: NodeSnapshot) {
+  if (node.totals.gpu_count >= 12) {
+    return "is-node-xl";
+  }
+  if (node.totals.gpu_count >= 6) {
+    return "is-node-wide";
+  }
+  return "is-node-compact";
 }
 
 function fabricGpuChip(node: NodeSnapshot, gpu: GpuInfo) {
@@ -518,7 +569,7 @@ function gpuCard(node: NodeSnapshot, gpu: GpuInfo, history: Record<string, numbe
 
       <div class="bar-stack">
         ${bar("GPU", gpu.utilization_gpu, fmtPct(gpu.utilization_gpu), "green")}
-        ${bar("HBM", gpu.memory_percent, `${fmtGiB(gpu.memory_used_mb)} / ${fmtGiB(gpu.memory_total_mb)}`, "cyan")}
+        ${bar("Memory", gpu.memory_percent, `${fmtGiB(gpu.memory_used_mb)} / ${fmtGiB(gpu.memory_total_mb)}`, "cyan")}
         ${bar("Power", gpu.power_percent, `${gpu.power_watts.toFixed(0)} / ${gpu.power_limit_watts.toFixed(0)} W`, "amber")}
       </div>
 
