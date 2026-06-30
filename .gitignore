@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.constella-build/
 
 node_modules/
 frontend/dist/
@@ -11,6 +12,7 @@ frontend/.vite/
 
 logs/
 run/
+nodes.yaml
 *.log
 
 .env

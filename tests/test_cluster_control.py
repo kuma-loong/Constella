@@ -4,11 +4,13 @@ import subprocess
 from pathlib import Path
 
 from constella.cluster_control import (
+    AGENT_RUNTIME_MODULES,
     ClusterConfig,
     ClusterController,
     ClusterNode,
     CommandRunner,
     load_cluster_config,
+    prepare_agent_runtime,
     render_agent_env,
     render_start_script,
     ssh_command,
@@ -110,8 +112,28 @@ def test_render_agent_env_and_start_script_use_home_expansion(tmp_path) -> None:
 
     assert "CONSTELLA_AGENT_STATE_FILE=$HOME/.constella/run/agent-state.json" in env
     assert "BASE=$HOME/.constella" in script
-    assert "nohup uv run constella agent" in script
+    assert "python3 not found" in script
+    assert "PYTHONPATH=\"$RUNTIME\"" in script
+    assert "-m constella.agent_main" in script
+    assert "uv run" not in script
     assert "kill -0 \"$old_pid\"" in script
+
+
+def test_prepare_agent_runtime_contains_only_agent_modules(tmp_path) -> None:
+    source = tmp_path / "src" / "constella"
+    source.mkdir(parents=True)
+    for module in AGENT_RUNTIME_MODULES:
+        (source / module).write_text("# test module\n", encoding="utf-8")
+    (source / "app.py").write_text("# server-only\n", encoding="utf-8")
+    (source / "cli.py").write_text("# server-only\n", encoding="utf-8")
+
+    runtime = prepare_agent_runtime(tmp_path)
+
+    assert (runtime / "constella" / "agent_main.py").exists()
+    assert (runtime / "websockets").is_dir()
+    assert not (runtime / "constella" / "app.py").exists()
+    assert not (runtime / "constella" / "cli.py").exists()
+    assert not list(runtime.rglob("*.so"))
 
 
 def test_ssh_command_includes_user_and_port() -> None:

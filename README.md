@@ -33,7 +33,7 @@ Lightweight realtime NVIDIA GPU monitoring for one server or a small GPU cluster
 ```text
 src/constella/          Python backend, agent, cluster manager, NVML sampler, API/WebSocket
 frontend/               Vite + TypeScript frontend
-scripts/                user-level setup, service, and tunnel management scripts
+scripts/                categorized service, cluster, tunnel, maintenance, and dev scripts
 docs/                   design and operations notes
 tests/                  unit tests
 ```
@@ -42,8 +42,8 @@ tests/                  unit tests
 
 ```bash
 cd Constella
-./scripts/setup.sh
-./scripts/start.sh
+./scripts/service/setup.sh
+./scripts/service/start.sh
 ```
 
 The service listens on `127.0.0.1:8765` by default. Use SSH forwarding from your local machine:
@@ -67,7 +67,7 @@ mkdir -p run
 umask 077
 printf '%s\n' 'replace-with-a-random-token' > run/agent-token
 chmod 600 run/agent-token
-AGENT_TOKEN_FILE=run/agent-token ./scripts/start.sh
+AGENT_TOKEN_FILE=run/agent-token ./scripts/service/start.sh
 ```
 
 Create `nodes.yaml` from the example and edit hosts/users:
@@ -79,25 +79,27 @@ cp docs/nodes.example.yaml nodes.yaml
 Start, inspect, and stop remote agents:
 
 ```bash
-./scripts/start_cluster.sh
-./scripts/status_cluster.sh
-./scripts/stop_cluster.sh
+./scripts/cluster/start.sh
+./scripts/cluster/status.sh
+./scripts/cluster/stop.sh
 ```
 
 `constella cluster start` uses SSH only for setup/control. The remote agent token is written through stdin into `~/.constella/run/agent.env` with mode `600`; it is not placed on the remote command line.
+
+Remote GPU nodes do not need `uv`. The manager builds a minimal agent runtime bundle locally and syncs only the agent-side Constella modules plus `websockets`; the remote start script runs it with `python3 -m constella.agent_main`.
 
 ## Optional History
 
 Enable SQLite history on the manager:
 
 ```bash
-DB_PATH=run/constella.db RAW_SNAPSHOT_SECONDS=30 ./scripts/start.sh
+DB_PATH=run/constella.db RAW_SNAPSHOT_SECONDS=30 ./scripts/service/start.sh
 ```
 
 Maintenance commands:
 
 ```bash
-./scripts/db_maintenance.sh
+./scripts/maintenance/db.sh
 uv run constella db rollup --path run/constella.db --bucket-seconds 10
 uv run constella db prune-raw --path run/constella.db
 uv run constella db close-sessions --path run/constella.db
@@ -110,7 +112,7 @@ Cloudflare Tunnel is the recommended way to access the dashboard from a domain w
 Keep the GPU service bound to localhost:
 
 ```bash
-HOST=127.0.0.1 PORT=8765 ./scripts/start.sh
+HOST=127.0.0.1 PORT=8765 ./scripts/service/start.sh
 ```
 
 In Cloudflare Zero Trust, configure the tunnel Public Hostname like this:
@@ -145,14 +147,14 @@ chmod 600 run/cloudflared.env
 Start and inspect the tunnel:
 
 ```bash
-./scripts/start_tunnel.sh
-./scripts/status_tunnel.sh
+./scripts/tunnel/start.sh
+./scripts/tunnel/status.sh
 ```
 
 Stop it:
 
 ```bash
-./scripts/stop_tunnel.sh
+./scripts/tunnel/stop.sh
 ```
 
 Security notes:
@@ -165,23 +167,23 @@ Security notes:
 ## Commands
 
 ```bash
-./scripts/status.sh
-./scripts/stop.sh
-HOST=127.0.0.1 PORT=8765 REFRESH=1.0 PROCESS_REFRESH=3.0 ./scripts/start.sh
+./scripts/service/status.sh
+./scripts/service/stop.sh
+HOST=127.0.0.1 PORT=8765 REFRESH=1.0 PROCESS_REFRESH=3.0 ./scripts/service/start.sh
 uv run constella probe --pretty
 uv run constella agent
 uv run constella cluster start --nodes nodes.yaml
 uv run constella cluster status --nodes nodes.yaml
 uv run constella cluster stop --nodes nodes.yaml
-COUNT=20 ./scripts/bench_probe.sh
+COUNT=20 ./scripts/dev/bench_probe.sh
 ```
 
 Tunnel commands:
 
 ```bash
-./scripts/status_tunnel.sh
-./scripts/stop_tunnel.sh
-./scripts/start_tunnel.sh
+./scripts/tunnel/status.sh
+./scripts/tunnel/stop.sh
+./scripts/tunnel/start.sh
 ```
 
 ## API

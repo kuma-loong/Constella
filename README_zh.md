@@ -20,7 +20,7 @@
 ```text
 src/constella/          Python 后端、agent、cluster manager、NVML 采样、WebSocket
 frontend/               Vite + TypeScript 前端
-scripts/                普通用户级安装、启动、停止、状态检查脚本
+scripts/                按 service、cluster、tunnel、maintenance、dev 分类的脚本
 docs/                   设计和运维文档
 tests/                  单元测试
 ```
@@ -29,8 +29,8 @@ tests/                  单元测试
 
 ```bash
 cd Constella
-./scripts/setup.sh
-./scripts/start.sh
+./scripts/service/setup.sh
+./scripts/service/start.sh
 ```
 
 默认监听 `127.0.0.1:8765`。在本地电脑执行：
@@ -50,7 +50,7 @@ mkdir -p run
 umask 077
 printf '%s\n' 'replace-with-a-random-token' > run/agent-token
 chmod 600 run/agent-token
-AGENT_TOKEN_FILE=run/agent-token ./scripts/start.sh
+AGENT_TOKEN_FILE=run/agent-token ./scripts/service/start.sh
 ```
 
 复制示例节点清单并编辑主机名和用户：
@@ -62,25 +62,27 @@ cp docs/nodes.example.yaml nodes.yaml
 启动、查看和停止远端 agent：
 
 ```bash
-./scripts/start_cluster.sh
-./scripts/status_cluster.sh
-./scripts/stop_cluster.sh
+./scripts/cluster/start.sh
+./scripts/cluster/status.sh
+./scripts/cluster/stop.sh
 ```
 
 `constella cluster start` 只把 SSH 用作安装、写配置和启停控制。agent token 通过 stdin 写入远端 `~/.constella/run/agent.env`，权限为 `600`，不会出现在远端命令行参数中。
+
+远端 GPU 节点不需要安装 `uv`。manager 会在本地构建最小 agent runtime，只同步 agent 侧需要的 Constella 模块和 `websockets`，远端启动脚本使用 `python3 -m constella.agent_main` 运行。
 
 ## 可选历史库
 
 manager 启用 SQLite：
 
 ```bash
-DB_PATH=run/constella.db RAW_SNAPSHOT_SECONDS=30 ./scripts/start.sh
+DB_PATH=run/constella.db RAW_SNAPSHOT_SECONDS=30 ./scripts/service/start.sh
 ```
 
 维护命令：
 
 ```bash
-./scripts/db_maintenance.sh
+./scripts/maintenance/db.sh
 uv run constella db rollup --path run/constella.db --bucket-seconds 10
 uv run constella db prune-raw --path run/constella.db
 uv run constella db close-sessions --path run/constella.db
@@ -91,7 +93,7 @@ uv run constella db close-sessions --path run/constella.db
 推荐用 Cloudflare Tunnel 暴露域名访问，同时让 GPU 服务继续只监听本机地址：
 
 ```bash
-HOST=127.0.0.1 PORT=8765 ./scripts/start.sh
+HOST=127.0.0.1 PORT=8765 ./scripts/service/start.sh
 ```
 
 Cloudflare 后台的 Public Hostname 配置：
@@ -126,14 +128,14 @@ chmod 600 run/cloudflared.env
 启动和检查 Tunnel：
 
 ```bash
-./scripts/start_tunnel.sh
-./scripts/status_tunnel.sh
+./scripts/tunnel/start.sh
+./scripts/tunnel/status.sh
 ```
 
 停止 Tunnel：
 
 ```bash
-./scripts/stop_tunnel.sh
+./scripts/tunnel/stop.sh
 ```
 
 安全建议：
@@ -146,23 +148,23 @@ chmod 600 run/cloudflared.env
 ## 常用命令
 
 ```bash
-./scripts/status.sh
-./scripts/stop.sh
-HOST=127.0.0.1 PORT=8765 REFRESH=1.0 PROCESS_REFRESH=3.0 ./scripts/start.sh
+./scripts/service/status.sh
+./scripts/service/stop.sh
+HOST=127.0.0.1 PORT=8765 REFRESH=1.0 PROCESS_REFRESH=3.0 ./scripts/service/start.sh
 uv run constella probe --pretty
 uv run constella agent
 uv run constella cluster start --nodes nodes.yaml
 uv run constella cluster status --nodes nodes.yaml
 uv run constella cluster stop --nodes nodes.yaml
-COUNT=20 ./scripts/bench_probe.sh
+COUNT=20 ./scripts/dev/bench_probe.sh
 ```
 
 Tunnel 命令：
 
 ```bash
-./scripts/status_tunnel.sh
-./scripts/stop_tunnel.sh
-./scripts/start_tunnel.sh
+./scripts/tunnel/status.sh
+./scripts/tunnel/stop.sh
+./scripts/tunnel/start.sh
 ```
 
 ## API

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import concurrent.futures
+import importlib.util
+import shutil
 import shlex
 import subprocess
 from dataclasses import dataclass
@@ -8,6 +10,18 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import yaml
+
+AGENT_RUNTIME_MODULES = (
+    "__init__.py",
+    "agent.py",
+    "agent_main.py",
+    "cluster.py",
+    "collector.py",
+    "nvml.py",
+    "nvidia_smi.py",
+    "procfs.py",
+    "schema.py",
+)
 
 
 @dataclass(slots=True)
@@ -105,7 +119,8 @@ class ClusterController:
 
     def start_all(self) -> list[NodeCommandResult]:
         token = self.config.agent_token_file.read_text(encoding="utf-8").strip()
-        return self._parallel("start", lambda node: self.start_node(node, token))
+        runtime_dir = prepare_agent_runtime(self.project_root) if self.sync_source else None
+        return self._parallel("start", lambda node: self.start_node(node, token, runtime_dir=runtime_dir))
 
     def status_all(self) -> list[NodeCommandResult]:
         return self._parallel("status", self.status_node)
@@ -113,14 +128,21 @@ class ClusterController:
     def stop_all(self) -> list[NodeCommandResult]:
         return self._parallel("stop", self.stop_node)
 
-    def start_node(self, node: ClusterNode, token: str) -> NodeCommandResult:
+    def start_node(
+        self,
+        node: ClusterNode,
+        token: str,
+        *,
+        runtime_dir: Path | None = None,
+    ) -> NodeCommandResult:
         try:
             self._ssh(
                 node,
                 remote_mkdir_command(self.config.remote_base),
             )
             if self.sync_source:
-                self._sync_source(node)
+                runtime_dir = runtime_dir or prepare_agent_runtime(self.project_root)
+                self._sync_agent_runtime(node, runtime_dir)
             self._write_remote_file(
                 node,
                 remote_join(self.config.remote_base, "run", "agent.env"),
@@ -203,27 +225,71 @@ class ClusterController:
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or f"failed to write {remote_path}")
 
-    def _sync_source(self, node: ClusterNode) -> None:
-        remote_src = remote_join(self.config.remote_base, "agent", "src")
-        self._ssh(node, f"rm -rf {shell_path(remote_src)} && mkdir -p {shell_path(remote_src)}")
+    def _sync_agent_runtime(self, node: ClusterNode, runtime_dir: Path) -> None:
+        remote_runtime = remote_join(self.config.remote_base, "agent", "runtime")
+        self._ssh(
+            node,
+            f"rm -rf {shell_path(remote_runtime)} && mkdir -p {shell_path(remote_runtime)}",
+        )
         tar_cmd = [
             "tar",
-            "--exclude=.git",
-            "--exclude=.venv",
-            "--exclude=frontend/node_modules",
-            "--exclude=frontend/dist",
-            "--exclude=run",
             "-czf",
             "-",
             ".",
         ]
         result = self.runner.pipe(
             tar_cmd,
-            ssh_command(node, f"tar -xzf - -C {shell_path(remote_src)}"),
-            cwd=self.project_root,
+            ssh_command(node, f"tar -xzf - -C {shell_path(remote_runtime)}"),
+            cwd=runtime_dir,
         )
         if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or f"failed to sync source to {node.id}")
+            raise RuntimeError(result.stderr.strip() or f"failed to sync agent runtime to {node.id}")
+
+
+def prepare_agent_runtime(project_root: Path) -> Path:
+    runtime_dir = project_root / ".constella-build" / "agent-runtime"
+    if runtime_dir.exists():
+        shutil.rmtree(runtime_dir)
+    package_dir = runtime_dir / "constella"
+    package_dir.mkdir(parents=True)
+
+    source_dir = project_root / "src" / "constella"
+    for module in AGENT_RUNTIME_MODULES:
+        shutil.copy2(source_dir / module, package_dir / module)
+    _copy_package("websockets", runtime_dir)
+    (runtime_dir / "MANIFEST.txt").write_text(
+        "Constella agent runtime bundle\n"
+        "Includes only agent-side Constella modules and websockets.\n",
+        encoding="utf-8",
+    )
+    return runtime_dir
+
+
+def _copy_package(name: str, target_root: Path) -> None:
+    spec = importlib.util.find_spec(name)
+    if spec is None or not spec.submodule_search_locations:
+        raise RuntimeError(f"cannot find Python package: {name}")
+    source = Path(next(iter(spec.submodule_search_locations))).resolve()
+    shutil.copytree(
+        source,
+        target_root / name,
+        ignore=shutil.ignore_patterns(
+            "__pycache__",
+            "*.pyc",
+            "*.pyo",
+            "*.so",
+            "*.pyd",
+            "*.c",
+            "*.pyi",
+            "py.typed",
+        ),
+    )
+    for dist_info in source.parent.glob(f"{name.replace('-', '_')}-*.dist-info"):
+        shutil.copytree(
+            dist_info,
+            target_root / dist_info.name,
+            ignore=shutil.ignore_patterns("RECORD", "__pycache__"),
+        )
 
 
 def load_cluster_config(path: Path) -> ClusterConfig:
@@ -290,7 +356,7 @@ BASE={shell_path(remote_base)}
 PID="$BASE/run/agent.pid"
 LOG="$BASE/logs/agent.log"
 ENV_FILE="$BASE/run/agent.env"
-SRC="$BASE/agent/src"
+RUNTIME="$BASE/agent/runtime"
 
 if [ -s "$PID" ]; then
   old_pid="$(cat "$PID" || true)"
@@ -305,8 +371,29 @@ set -a
 . "$ENV_FILE"
 set +a
 
-cd "$SRC"
-nohup uv run constella agent >> "$LOG" 2>&1 &
+if [ ! -d "$RUNTIME/constella" ]; then
+  echo "missing agent runtime: $RUNTIME" >&2
+  exit 1
+fi
+
+if command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="$(command -v python3)"
+else
+  echo "python3 not found" >&2
+  exit 1
+fi
+
+if ! "$PYTHON_BIN" - <<'PY' >/dev/null 2>&1
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 10) else 1)
+PY
+then
+  echo "python3 >= 3.10 is required" >&2
+  exit 1
+fi
+
+cd "$RUNTIME"
+PYTHONPATH="$RUNTIME" PYTHONUNBUFFERED=1 nohup "$PYTHON_BIN" -m constella.agent_main >> "$LOG" 2>&1 &
 echo $! > "$PID"
 sleep 0.2
 if kill -0 "$(cat "$PID")" 2>/dev/null; then

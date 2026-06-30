@@ -4,26 +4,26 @@
 
 ```bash
 cd Constella
-./scripts/setup.sh
+./scripts/service/setup.sh
 ```
 
 ## 后台启动
 
 ```bash
-./scripts/start.sh
+./scripts/service/start.sh
 ```
 
 可配置项：
 
 ```bash
-HOST=127.0.0.1 PORT=8765 REFRESH=1.0 PROCESS_REFRESH=3.0 ./scripts/start.sh
+HOST=127.0.0.1 PORT=8765 REFRESH=1.0 PROCESS_REFRESH=3.0 ./scripts/service/start.sh
 ```
 
 集群 manager 可额外配置：
 
 ```bash
-AGENT_TOKEN_FILE=run/agent-token ./scripts/start.sh
-DB_PATH=run/constella.db RAW_SNAPSHOT_SECONDS=30 ./scripts/start.sh
+AGENT_TOKEN_FILE=run/agent-token ./scripts/service/start.sh
+DB_PATH=run/constella.db RAW_SNAPSHOT_SECONDS=30 ./scripts/service/start.sh
 ```
 
 日志写入 `logs/constella.log`，PID 写入 `run/constella.pid`。
@@ -51,7 +51,7 @@ mkdir -p run
 umask 077
 printf '%s\n' 'replace-with-a-random-token' > run/agent-token
 chmod 600 run/agent-token
-AGENT_TOKEN_FILE=run/agent-token ./scripts/start.sh
+AGENT_TOKEN_FILE=run/agent-token ./scripts/service/start.sh
 ```
 
 准备节点清单：
@@ -69,18 +69,19 @@ ws://manager-host:8765/api/agents/ws
 启动、状态、停止：
 
 ```bash
-./scripts/start_cluster.sh
-./scripts/status_cluster.sh
-./scripts/stop_cluster.sh
+./scripts/cluster/start.sh
+./scripts/cluster/status.sh
+./scripts/cluster/stop.sh
 ```
 
-重复执行 `start_cluster.sh` 是幂等的：远端 pid 存活时返回 running；pid 过期时清理后重启。
+重复执行 `./scripts/cluster/start.sh` 是幂等的：远端 pid 存活时返回 running；pid 过期时清理后重启。
 
 普通用户部署限制：
 
 - 不使用 sudo，不写 `/etc`，不安装 system service。
+- GPU 节点不需要安装 `uv`；只要求 `python3 >= 3.10`。manager 会同步最小 agent runtime。
 - agent 默认写入 `~/.constella/run/agent.pid`、`~/.constella/logs/agent.log`、`~/.constella/run/agent-state.json`。
-- 节点重启后 agent 不保证自动恢复；重新执行 `./scripts/start_cluster.sh` 即可。
+- 节点重启后 agent 不保证自动恢复；重新执行 `./scripts/cluster/start.sh` 即可。
 - token 通过 stdin 写入远端 env 文件，不放在 SSH 命令行参数中。
 
 ## 可选 SQLite 历史库
@@ -88,13 +89,13 @@ ws://manager-host:8765/api/agents/ws
 启用：
 
 ```bash
-DB_PATH=run/constella.db RAW_SNAPSHOT_SECONDS=30 ./scripts/start.sh
+DB_PATH=run/constella.db RAW_SNAPSHOT_SECONDS=30 ./scripts/service/start.sh
 ```
 
 维护：
 
 ```bash
-./scripts/db_maintenance.sh
+./scripts/maintenance/db.sh
 ```
 
 可调参数：
@@ -104,7 +105,7 @@ DB_PATH=run/constella.db \
 ROLLUP_BUCKET_SECONDS=10 \
 RAW_RETENTION_SECONDS=43200 \
 SESSION_STALE_SECONDS=300 \
-./scripts/db_maintenance.sh
+./scripts/maintenance/db.sh
 ```
 
 数据库写入走有界后台队列。实时面板依赖 manager 内存 latest state，数据库慢或关闭时不影响实时 WebSocket 推送。
@@ -155,9 +156,9 @@ chmod 600 run/cloudflared.env
 ### 启停和状态
 
 ```bash
-./scripts/start_tunnel.sh
-./scripts/status_tunnel.sh
-./scripts/stop_tunnel.sh
+./scripts/tunnel/start.sh
+./scripts/tunnel/status.sh
+./scripts/tunnel/stop.sh
 ```
 
 `start_tunnel.sh` 会通过 `TUNNEL_TOKEN` 环境变量传 token，避免 token 出现在 `ps` 的命令行参数中。日志写入 `logs/cloudflared.log`，PID 写入 `run/cloudflared.pid`。
@@ -171,16 +172,16 @@ chmod 600 run/cloudflared.env
 ## 状态、停止、重启
 
 ```bash
-./scripts/status.sh
-./scripts/stop.sh
-./scripts/start.sh
+./scripts/service/status.sh
+./scripts/service/stop.sh
+./scripts/service/start.sh
 ```
 
 ## 验证采样
 
 ```bash
 uv run constella probe --pretty
-COUNT=20 ./scripts/bench_probe.sh
+COUNT=20 ./scripts/dev/bench_probe.sh
 ```
 
 正常情况下 `probe` 的 `source` 为 `nvml`。如果为 `nvidia-smi`，说明 NVML 路径失败但兜底仍可用；查看 `logs/constella.log` 中的警告。
