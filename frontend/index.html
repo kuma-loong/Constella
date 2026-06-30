@@ -37,17 +37,18 @@
         <section class="gpu-grid" id="gpuGrid"></section>
         <section class="process-section">
           <div class="section-head">
-            <h2>Processes</h2>
+            <h2>Tasks</h2>
             <span id="processMeta"></span>
           </div>
           <div class="process-table-wrap">
             <table class="process-table">
               <thead>
                 <tr>
+                  <th>Node</th>
                   <th>GPU</th>
                   <th>User</th>
                   <th>PID</th>
-                  <th>Name</th>
+                  <th>Task</th>
                   <th>Memory</th>
                   <th>Runtime</th>
                   <th>Type</th>
@@ -55,7 +56,7 @@
               </thead>
               <tbody id="processRows">
                 <tr>
-                  <td colspan="7" class="empty">waiting for processes</td>
+                  <td colspan="8" class="empty">waiting for tasks</td>
                 </tr>
               </tbody>
             </table>
