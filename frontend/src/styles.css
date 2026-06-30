@@ -101,6 +101,49 @@ button {
   max-width: min(68vw, 980px);
 }
 
+.top-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-x: auto;
+  padding: 2px;
+}
+
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  max-width: 180px;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.nav-link span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-link:hover {
+  color: var(--text);
+  background: #161a1f;
+}
+
+.nav-link.is-active {
+  border-color: rgba(49, 208, 127, 0.48);
+  color: var(--green);
+  background: rgba(49, 208, 127, 0.08);
+}
+
 .status-cluster {
   display: flex;
   align-items: center;
@@ -708,7 +751,17 @@ svg {
     flex-direction: column;
   }
 
+  .top-nav {
+    order: 2;
+    width: 100%;
+  }
+
+  .nav-link {
+    flex: 0 0 auto;
+  }
+
   .status-cluster {
+    order: 3;
     width: 100%;
     flex-wrap: wrap;
   }

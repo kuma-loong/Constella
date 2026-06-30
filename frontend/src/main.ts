@@ -150,6 +150,7 @@ const processRows = mustGet<HTMLElement>("processRows");
 const processMeta = mustGet<HTMLElement>("processMeta");
 const liveState = mustGet<HTMLElement>("liveState");
 const nodeLine = mustGet<HTMLElement>("nodeLine");
+const topNav = mustGet<HTMLElement>("topNav");
 const refreshControl = mustGet<HTMLElement>("refreshControl");
 const pauseButton = mustGet<HTMLButtonElement>("pauseButton");
 const refreshButton = mustGet<HTMLButtonElement>("refreshButton");
@@ -300,6 +301,7 @@ function render(snapshot: ClusterSnapshot) {
   syncRefreshControl(clusterRefreshInterval(snapshot));
   const route = currentRoute();
   const selectedNode = route.kind === "node" ? findNode(snapshot, route.nodeId) : null;
+  renderNav(snapshot, route);
   renderHeader(snapshot, route, selectedNode);
   if (route.kind === "overview") {
     summaryGrid.hidden = false;
@@ -363,6 +365,29 @@ function renderHeader(snapshot: ClusterSnapshot, route: Route, selectedNode: Nod
     nodeLine.textContent = `${totals.node_count} nodes · ${totals.online_node_count} online · ${totals.gpu_count} GPUs · ${latencyText} · seq ${snapshot.seq}`;
   }
   setLiveState(paused ? "paused" : snapshot.ok ? "live" : totals.node_count ? "error" : "connecting");
+}
+
+function renderNav(snapshot: ClusterSnapshot, route: Route) {
+  const overviewActive = route.kind === "overview";
+  const nodeLinks = snapshot.nodes
+    .map((node) => {
+      const active =
+        route.kind === "node" && (route.nodeId === node.node_id || route.nodeId === node.hostname);
+      return `
+        <a class="nav-link ${active ? "is-active" : ""}" href="/nodes/${encodeURIComponent(node.node_id)}">
+          <i data-lucide="server"></i>
+          <span>${escapeHtml(node.node_id)}</span>
+        </a>
+      `;
+    })
+    .join("");
+  topNav.innerHTML = `
+    <a class="nav-link ${overviewActive ? "is-active" : ""}" href="/overview">
+      <i data-lucide="list-tree"></i>
+      <span>Overview</span>
+    </a>
+    ${nodeLinks}
+  `;
 }
 
 function renderSummary(snapshot: ClusterSnapshot) {
