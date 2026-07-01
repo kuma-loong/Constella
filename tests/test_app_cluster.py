@@ -1,18 +1,16 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from constella.app import create_app
 from constella.cluster import ClusterState
-from constella.collector import SnapshotCollector
 
 
 def test_agent_websocket_updates_cluster_snapshot() -> None:
-    collector = SnapshotCollector(refresh_interval=1.0, process_interval=3.0)
     cluster_state = ClusterState(local_node_id="manager")
     client = TestClient(
         create_app(
-            collector=collector,
             cluster_state=cluster_state,
             agent_token="secret",
         )
@@ -70,3 +68,23 @@ def test_agent_websocket_updates_cluster_snapshot() -> None:
     assert payload["totals"]["node_count"] == 1
     assert payload["nodes"][0]["node_id"] == "node-a"
     assert payload["nodes"][0]["gpus"][0]["gpu_id"] == "node-a:GPU-a"
+
+
+def test_deprecated_single_node_http_api_returns_gone() -> None:
+    client = TestClient(create_app(cluster_state=ClusterState(local_node_id="manager")))
+
+    response = client.get("/api/snapshot")
+
+    assert response.status_code == 410
+    assert "/api/cluster/snapshot" in response.json()["detail"]
+
+
+def test_deprecated_single_node_websocket_closes() -> None:
+    client = TestClient(create_app(cluster_state=ClusterState(local_node_id="manager")))
+
+    with client.websocket_connect("/ws/gpu") as websocket:
+        try:
+            websocket.receive_json()
+            raise AssertionError("deprecated websocket should close immediately")
+        except WebSocketDisconnect as exc:
+            assert exc.code == 1008

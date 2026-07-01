@@ -13,11 +13,8 @@ from .schema import (
     OtherUserMemory,
     cluster_snapshot_from_nodes,
     gpu_global_id,
-    local_hostname,
     node_totals_from_gpus,
-    snapshot_to_node_snapshot,
 )
-from .schema import Snapshot as LocalSnapshot
 
 SCHEMA_VERSION = 1
 
@@ -55,7 +52,6 @@ class ClusterState:
         self.offline_after = offline_after
         self.latest_by_node: dict[str, NodeRuntime] = {}
         self._seq = 0
-        self._last_local_seq = 0
         self._event = asyncio.Event()
 
     @property
@@ -195,45 +191,10 @@ class ClusterState:
         runtime.last_seen_at = now if now is not None else runtime.last_seen_at
         self._bump()
 
-    def snapshot(
-        self,
-        *,
-        local_snapshot: LocalSnapshot | None = None,
-        local_process_interval: float = 3.0,
-        now: float | None = None,
-    ) -> ClusterSnapshot:
+    def snapshot(self, *, now: float | None = None) -> ClusterSnapshot:
         timestamp = now if now is not None else time.time()
-        if local_snapshot is not None:
-            self._integrate_local(local_snapshot, local_process_interval, timestamp)
         nodes = [self._runtime_snapshot(runtime, timestamp) for runtime in self.latest_by_node.values()]
         return cluster_snapshot_from_nodes(nodes, seq=self._seq, timestamp=timestamp)
-
-    def _integrate_local(
-        self,
-        snapshot: LocalSnapshot,
-        process_interval: float,
-        received_at: float,
-    ) -> None:
-        if snapshot.seq == self._last_local_seq:
-            return
-        node = snapshot_to_node_snapshot(
-            snapshot,
-            node_id=self.local_node_id,
-            hostname=local_hostname(snapshot.hostname),
-            received_at=received_at,
-            process_interval=process_interval,
-        )
-        self.latest_by_node[self.local_node_id] = NodeRuntime(
-            node_id=self.local_node_id,
-            hostname=node.hostname,
-            snapshot=node,
-            last_seq=snapshot.seq,
-            connected=True,
-            last_seen_at=received_at,
-            agent_version=node.agent_version,
-        )
-        self._last_local_seq = snapshot.seq
-        self._bump()
 
     def _runtime_snapshot(self, runtime: NodeRuntime, now: float) -> NodeSnapshot:
         snapshot = runtime.snapshot

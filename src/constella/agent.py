@@ -206,7 +206,16 @@ async def _sender_loop(
             last_snapshot_seq = snapshot.seq
             status.last_sample_at = snapshot.timestamp
             message_seq += 1
-            await websocket.send(json.dumps(agent_sample(config, message_seq, snapshot)))
+            await websocket.send(
+                json.dumps(
+                    agent_sample(
+                        config,
+                        message_seq,
+                        snapshot,
+                        process_interval=collector.process_interval,
+                    )
+                )
+            )
             status.last_sent_at = time.time()
             continue
 
@@ -245,7 +254,13 @@ def agent_hello(config: AgentConfig) -> dict[str, Any]:
     }
 
 
-def agent_sample(config: AgentConfig, seq: int, snapshot: Snapshot) -> dict[str, Any]:
+def agent_sample(
+    config: AgentConfig,
+    seq: int,
+    snapshot: Snapshot,
+    *,
+    process_interval: float | None = None,
+) -> dict[str, Any]:
     return {
         "type": "sample",
         "schema_version": SCHEMA_VERSION,
@@ -253,7 +268,7 @@ def agent_sample(config: AgentConfig, seq: int, snapshot: Snapshot) -> dict[str,
         "seq": seq,
         "sampled_at": snapshot.timestamp,
         "refresh_interval": snapshot.refresh_interval,
-        "process_interval": config.process_interval,
+        "process_interval": process_interval if process_interval is not None else config.process_interval,
         "snapshot": snapshot.to_dict(),
     }
 

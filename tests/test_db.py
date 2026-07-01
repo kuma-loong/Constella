@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 
 from constella.app import create_app
 from constella.cluster import ClusterState
-from constella.collector import SnapshotCollector
 from constella.db import AsyncDBSink, SQLiteSinkConfig, SQLiteStore
 from constella.schema import GpuInfo, GpuProcess, NodeSnapshot, node_totals_from_gpus
 
@@ -111,7 +110,7 @@ def test_sqlite_store_rollup_and_raw_retention(tmp_path) -> None:
 
 
 def test_db_history_api_returns_disabled_without_sink() -> None:
-    client = TestClient(create_app(collector=SnapshotCollector(), cluster_state=ClusterState(local_node_id="local")))
+    client = TestClient(create_app(cluster_state=ClusterState(local_node_id="local")))
 
     response = client.get("/api/history/gpu")
 
@@ -125,7 +124,6 @@ def test_db_history_api_reads_sink(tmp_path) -> None:
     sink.store.write_node_snapshot(make_node_snapshot(100.0))
     client = TestClient(
         create_app(
-            collector=SnapshotCollector(),
             cluster_state=ClusterState(local_node_id="local"),
             db_sink=sink,
         )

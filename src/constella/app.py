@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import os
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -10,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .cluster import ClusterState, parse_agent_hello
-from .collector import SnapshotCollector, snapshot_to_jsonable
+from .collector import ALLOWED_REFRESH_INTERVALS, validate_refresh_interval
 from .db import AsyncDBSink, SQLiteSinkConfig
 from .schema import local_node_id
 
@@ -19,7 +22,63 @@ FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
 
 
 class SettingsUpdate(BaseModel):
-    refresh_interval: float
+    refresh_interval: float | None = None
+    process_interval: float | None = None
+
+
+@dataclass(slots=True)
+class ManagerSettings:
+    refresh_interval: float = 1.0
+    _process_interval: float = 3.0
+
+    @classmethod
+    def from_env(
+        cls,
+        *,
+        refresh_interval: float | None = None,
+        process_interval: float | None = None,
+    ) -> ManagerSettings:
+        refresh = (
+            refresh_interval
+            if refresh_interval is not None
+            else float(os.environ.get("CONSTELLA_REFRESH_SECONDS", "1.0"))
+        )
+        process = (
+            process_interval
+            if process_interval is not None
+            else float(os.environ.get("CONSTELLA_PROCESS_SECONDS", "3.0"))
+        )
+        return cls(
+            refresh_interval=validate_refresh_interval(refresh),
+            _process_interval=max(1.0, float(process)),
+        )
+
+    @property
+    def process_interval(self) -> float:
+        return max(self._process_interval, self.refresh_interval)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "refresh_interval": self.refresh_interval,
+            "allowed_refresh_intervals": list(ALLOWED_REFRESH_INTERVALS),
+            "process_interval": self.process_interval,
+        }
+
+    def config_message(self) -> dict[str, object]:
+        return {
+            "type": "config",
+            "refresh_interval": self.refresh_interval,
+            "process_interval": self.process_interval,
+        }
+
+    def update(self, update: SettingsUpdate) -> dict[str, object]:
+        if update.refresh_interval is None and update.process_interval is None:
+            return self.to_dict()
+        if update.refresh_interval is not None:
+            self.refresh_interval = validate_refresh_interval(update.refresh_interval)
+        if update.process_interval is not None:
+            self._process_interval = max(1.0, float(update.process_interval))
+        return self.to_dict()
 
 
 def _load_agent_token() -> str | None:
@@ -62,36 +121,37 @@ def _load_db_sink() -> AsyncDBSink | None:
 
 def create_app(
     refresh_interval: float | None = None,
-    collector: SnapshotCollector | None = None,
+    process_interval: float | None = None,
     cluster_state: ClusterState | None = None,
     agent_token: str | None = None,
     db_sink: AsyncDBSink | None = None,
+    manager_settings: ManagerSettings | None = None,
 ) -> FastAPI:
-    if collector is None:
-        interval = (
-            refresh_interval
-            if refresh_interval is not None
-            else float(os.environ.get("CONSTELLA_REFRESH_SECONDS", "1.0"))
+    if manager_settings is None:
+        manager_settings = ManagerSettings.from_env(
+            refresh_interval=refresh_interval,
+            process_interval=process_interval,
         )
-        process_interval = float(os.environ.get("CONSTELLA_PROCESS_SECONDS", "3.0"))
-        collector = SnapshotCollector(refresh_interval=interval, process_interval=process_interval)
     if cluster_state is None:
         cluster_state = ClusterState(local_node_id=local_node_id())
     expected_agent_token = agent_token if agent_token is not None else _load_agent_token()
     db_sink = db_sink if db_sink is not None else _load_db_sink()
+    agent_queues: set[asyncio.Queue[dict[str, object]]] = set()
+
+    def broadcast_config() -> None:
+        for queue in list(agent_queues):
+            queue.put_nowait(manager_settings.config_message())
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        await collector.start()
         if db_sink is not None:
             await db_sink.start()
-        app.state.collector = collector
         app.state.cluster_state = cluster_state
+        app.state.settings = manager_settings
         app.state.db_sink = db_sink
         yield
         if db_sink is not None:
             await db_sink.stop()
-        await collector.stop()
 
     app = FastAPI(
         title="Constella",
@@ -100,28 +160,33 @@ def create_app(
         docs_url="/api/docs",
         redoc_url=None,
     )
+    app.state.cluster_state = cluster_state
+    app.state.settings = manager_settings
+    app.state.db_sink = db_sink
 
     @app.get("/api/health")
     async def health() -> dict[str, object]:
-        snapshot = collector.snapshot
+        snapshot = cluster_state.snapshot()
         return {
-            "ok": bool(snapshot and snapshot.ok),
-            "seq": snapshot.seq if snapshot else 0,
-            "source": snapshot.source if snapshot else "none",
-            "gpu_count": len(snapshot.gpus) if snapshot else 0,
-            "error": snapshot.error if snapshot else None,
+            "ok": True,
+            "seq": snapshot.seq,
+            "source": "manager",
+            "agent_ingest_enabled": expected_agent_token is not None,
+            "node_count": snapshot.totals.node_count,
+            "online_node_count": snapshot.totals.online_node_count,
+            "gpu_count": snapshot.totals.gpu_count,
         }
 
     @app.get("/api/snapshot")
     async def snapshot() -> dict[str, object]:
-        return snapshot_to_jsonable(collector.snapshot)
+        raise HTTPException(
+            status_code=410,
+            detail="GET /api/snapshot is retired; use GET /api/cluster/snapshot",
+        )
 
     @app.get("/api/cluster/snapshot")
     async def cluster_snapshot() -> dict[str, object]:
-        return cluster_state.snapshot(
-            local_snapshot=collector.snapshot,
-            local_process_interval=collector.process_interval,
-        ).to_dict()
+        return cluster_state.snapshot().to_dict()
 
     @app.get("/api/history/gpu")
     async def gpu_history(
@@ -164,28 +229,22 @@ def create_app(
         return {"enabled": True, "items": db_sink.store.query_users()}
 
     @app.get("/api/settings")
-    async def settings() -> dict[str, object]:
-        return collector.settings()
+    async def settings_endpoint() -> dict[str, object]:
+        return app.state.settings.to_dict()
 
     @app.patch("/api/settings")
     async def update_settings(update: SettingsUpdate) -> dict[str, object]:
         try:
-            return collector.set_refresh_interval(update.refresh_interval)
+            payload = app.state.settings.update(update)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        broadcast_config()
+        return payload
 
     @app.websocket("/ws/gpu")
     async def gpu_ws(websocket: WebSocket) -> None:
         await websocket.accept()
-        last_seq = 0
-        try:
-            while True:
-                current = await collector.wait_for_update(last_seq, timeout=30.0)
-                payload = snapshot_to_jsonable(current)
-                last_seq = int(payload.get("seq") or last_seq)
-                await websocket.send_json(payload)
-        except WebSocketDisconnect:
-            return
+        await websocket.close(code=1008, reason="WS /ws/gpu is retired; use /ws/cluster")
 
     @app.websocket("/ws/cluster")
     async def cluster_ws(websocket: WebSocket) -> None:
@@ -193,14 +252,14 @@ def create_app(
         last_seq = -1
         try:
             while True:
-                current = cluster_state.snapshot(
-                    local_snapshot=collector.snapshot,
-                    local_process_interval=collector.process_interval,
-                )
+                current = cluster_state.snapshot()
                 if current.seq != last_seq:
                     last_seq = current.seq
                     await websocket.send_json(current.to_dict())
-                await cluster_state.wait_for_update(last_seq, timeout=collector.refresh_interval)
+                await cluster_state.wait_for_update(
+                    last_seq,
+                    timeout=max(app.state.settings.refresh_interval, 0.5),
+                )
         except WebSocketDisconnect:
             return
 
@@ -213,17 +272,19 @@ def create_app(
         await websocket.accept()
         connection_id = object()
         node_id: str | None = None
+        send_queue: asyncio.Queue[dict[str, object]] = asyncio.Queue()
+
+        async def sender() -> None:
+            while True:
+                await websocket.send_json(await send_queue.get())
+
+        sender_task = asyncio.create_task(sender(), name="agent-ws-sender")
+        agent_queues.add(send_queue)
         try:
             hello = parse_agent_hello(await websocket.receive_json())
             node_id = hello.node_id
             cluster_state.register_hello(hello, connection_id=connection_id)
-            await websocket.send_json(
-                {
-                    "type": "config",
-                    "refresh_interval": collector.refresh_interval,
-                    "process_interval": collector.process_interval,
-                }
-            )
+            send_queue.put_nowait(app.state.settings.config_message())
 
             while True:
                 message = await websocket.receive_json()
@@ -234,7 +295,9 @@ def create_app(
                         runtime = cluster_state.latest_by_node.get(str(message.get("node_id") or ""))
                         if runtime is not None:
                             db_sink.submit_node_snapshot(runtime.snapshot)
-                    await websocket.send_json({"type": "ack", "seq": message.get("seq"), "accepted": accepted})
+                    send_queue.put_nowait(
+                        {"type": "ack", "seq": message.get("seq"), "accepted": accepted}
+                    )
                 elif message_type == "heartbeat":
                     heartbeat_node_id = str(message.get("node_id") or node_id or "")
                     if heartbeat_node_id:
@@ -243,15 +306,20 @@ def create_app(
                             seq=int(message.get("seq") or 0),
                             connection_id=connection_id,
                         )
-                    await websocket.send_json({"type": "ack", "seq": message.get("seq")})
+                    send_queue.put_nowait({"type": "ack", "seq": message.get("seq")})
                 else:
-                    await websocket.send_json(
+                    send_queue.put_nowait(
                         {"type": "error", "error": f"unsupported agent message: {message_type}"}
                     )
         except WebSocketDisconnect:
             if node_id:
                 cluster_state.disconnect(node_id, connection_id=connection_id)
             return
+        finally:
+            agent_queues.discard(send_queue)
+            sender_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await sender_task
 
     if FRONTEND_DIST.exists():
         assets_path = FRONTEND_DIST / "assets"

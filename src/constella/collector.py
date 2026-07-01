@@ -180,27 +180,3 @@ class SnapshotCollector:
         for gpu_index, series in self._history.items():
             payload[gpu_index] = {name: list(values) for name, values in series.items()}
         return payload
-
-
-def snapshot_to_jsonable(snapshot: Snapshot | None) -> dict[str, Any]:
-    if snapshot is None:
-        return {
-            "ok": False,
-            "source": "none",
-            "error": "collector has not produced a snapshot yet",
-            "seq": 0,
-            "gpus": [],
-            "totals": {
-                "gpu_count": 0,
-                "avg_gpu_utilization": 0.0,
-                "avg_memory_utilization": 0.0,
-                "memory_used_mb": 0,
-                "memory_total_mb": 0,
-                "power_watts": 0.0,
-                "power_limit_watts": 0.0,
-                "max_temperature_c": 0,
-                "active_processes": 0,
-            },
-            "history": {},
-        }
-    return snapshot.to_dict()
