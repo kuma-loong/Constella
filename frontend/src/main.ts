@@ -518,13 +518,14 @@ function renderFabric(snapshot: ClusterSnapshot) {
 }
 
 function fabricNodeSizeClass(node: NodeSnapshot) {
-  if (node.totals.gpu_count >= 12) {
-    return "is-node-xl";
+  const gpuCount = node.totals.gpu_count;
+  if (gpuCount >= 4) {
+    return "is-node-span-4";
   }
-  if (node.totals.gpu_count >= 6) {
-    return "is-node-wide";
+  if (gpuCount >= 3) {
+    return "is-node-span-3";
   }
-  return "is-node-compact";
+  return "is-node-span-2";
 }
 
 function fabricGpuChip(node: NodeSnapshot, gpu: GpuInfo) {
