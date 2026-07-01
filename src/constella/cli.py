@@ -59,9 +59,26 @@ def main(argv: list[str] | None = None) -> None:
     db = subparsers.add_parser("db", help="maintain the optional SQLite database")
     db_subparsers = db.add_subparsers(dest="db_command")
 
-    db_rollup = db_subparsers.add_parser("rollup", help="roll up GPU metric samples")
+    db_maintain = db_subparsers.add_parser("maintain", help="run routine SQLite maintenance")
+    db_maintain.add_argument("--path", type=Path, default=Path("run/constella.db"))
+    db_maintain.add_argument("--raw-retention-seconds", type=float, default=RAW_SNAPSHOT_RETENTION_SECONDS)
+    db_maintain.add_argument("--session-stale-seconds", type=float, default=300.0)
+
+    db_rollup = db_subparsers.add_parser("rollup", help="roll up stored GPU metric rollups")
     db_rollup.add_argument("--path", type=Path, default=Path("run/constella.db"))
-    db_rollup.add_argument("--bucket-seconds", type=int, default=10)
+    db_rollup.add_argument("--from-bucket-seconds", type=int, required=True)
+    db_rollup.add_argument("--to-bucket-seconds", type=int, required=True)
+
+    db_migrate_samples = db_subparsers.add_parser(
+        "migrate-samples",
+        help="one-time migration from legacy raw GPU samples to 20s rollups",
+    )
+    db_migrate_samples.add_argument("--path", type=Path, default=Path("run/constella.db"))
+    db_migrate_samples.add_argument("--bucket-seconds", type=int, default=20)
+
+    db_prune_rollups = db_subparsers.add_parser("prune-rollups", help="delete expired rollups")
+    db_prune_rollups.add_argument("--path", type=Path, default=Path("run/constella.db"))
+    db_prune_rollups.add_argument("--bucket-seconds", type=int)
 
     db_prune_raw = db_subparsers.add_parser("prune-raw", help="delete expired raw snapshots")
     db_prune_raw.add_argument("--path", type=Path, default=Path("run/constella.db"))
@@ -157,9 +174,31 @@ def main(argv: list[str] | None = None) -> None:
         store = SQLiteStore(args.path)
         store.open()
         try:
-            if args.db_command == "rollup":
-                count = store.rollup_gpu_metrics(bucket_seconds=args.bucket_seconds)
-                print(f"rolled up {count} GPU buckets")
+            if args.db_command == "maintain":
+                result = store.maintain(
+                    raw_retention_seconds=args.raw_retention_seconds,
+                    stale_session_seconds=args.session_stale_seconds,
+                )
+                for key, value in result.items():
+                    print(f"{key}: {value}")
+            elif args.db_command == "rollup":
+                count = store.rollup_gpu_metric_rollups(
+                    from_bucket_seconds=args.from_bucket_seconds,
+                    to_bucket_seconds=args.to_bucket_seconds,
+                )
+                print(
+                    "rolled up "
+                    f"{count} GPU buckets "
+                    f"{args.from_bucket_seconds}s -> {args.to_bucket_seconds}s"
+                )
+            elif args.db_command == "migrate-samples":
+                count = store.rollup_legacy_gpu_metric_samples(
+                    bucket_seconds=args.bucket_seconds,
+                )
+                print(f"migrated {count} legacy GPU sample buckets")
+            elif args.db_command == "prune-rollups":
+                count = store.prune_rollups(bucket_seconds=args.bucket_seconds)
+                print(f"deleted {count} expired rollups")
             elif args.db_command == "prune-raw":
                 count = store.prune_raw_snapshots(retention_seconds=args.retention_seconds)
                 print(f"deleted {count} raw snapshots")
