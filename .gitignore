@@ -14,6 +14,7 @@ logs/
 run/
 nodes.yaml
 *.log
+temp.md
 
 .env
 .DS_Store
