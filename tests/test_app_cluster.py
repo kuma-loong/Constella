@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -68,6 +70,76 @@ def test_agent_websocket_updates_cluster_snapshot() -> None:
     assert payload["totals"]["node_count"] == 1
     assert payload["nodes"][0]["node_id"] == "node-a"
     assert payload["nodes"][0]["gpus"][0]["gpu_id"] == "node-a:GPU-a"
+
+
+def test_cluster_websocket_coalesces_updates_to_refresh_interval() -> None:
+    cluster_state = ClusterState(local_node_id="manager")
+    client = TestClient(
+        create_app(
+            refresh_interval=0.5,
+            cluster_state=cluster_state,
+            agent_token="secret",
+        )
+    )
+
+    with client.websocket_connect("/ws/cluster") as cluster_websocket:
+        initial = cluster_websocket.receive_json()
+        assert initial["seq"] == 0
+
+        started_at = time.monotonic()
+        with client.websocket_connect(
+            "/api/agents/ws",
+            headers={"authorization": "Bearer secret"},
+        ) as agent_websocket:
+            agent_websocket.send_json(
+                {
+                    "type": "hello",
+                    "schema_version": 1,
+                    "node_id": "node-a",
+                    "hostname": "node-a-host",
+                    "agent_version": "0.2.0",
+                }
+            )
+            assert agent_websocket.receive_json()["type"] == "config"
+            for seq in (1, 2):
+                agent_websocket.send_json(
+                    {
+                        "type": "sample",
+                        "schema_version": 1,
+                        "node_id": "node-a",
+                        "seq": seq,
+                        "sampled_at": 10.0 + seq,
+                        "refresh_interval": 0.5,
+                        "process_interval": 3.0,
+                        "snapshot": {
+                            "ok": True,
+                            "source": "test",
+                            "hostname": "node-a-host",
+                            "timestamp": 10.0 + seq,
+                            "gpus": [
+                                {
+                                    "index": 0,
+                                    "uuid": "GPU-a",
+                                    "name": "NVIDIA Test",
+                                    "memory_total_mb": 100,
+                                    "memory_used_mb": 20 + seq,
+                                }
+                            ],
+                        },
+                    }
+                )
+                assert agent_websocket.receive_json() == {
+                    "type": "ack",
+                    "seq": seq,
+                    "accepted": True,
+                }
+
+        coalesced = cluster_websocket.receive_json()
+        elapsed = time.monotonic() - started_at
+
+    assert elapsed >= 0.4
+    assert coalesced["nodes"][0]["seq"] == 2
+    assert coalesced["nodes"][0]["gpus"][0]["memory_used_mb"] == 22
 
 
 def test_deprecated_single_node_http_api_returns_gone() -> None:

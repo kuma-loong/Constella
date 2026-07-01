@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -250,16 +251,22 @@ def create_app(
     async def cluster_ws(websocket: WebSocket) -> None:
         await websocket.accept()
         last_seq = -1
+        last_sent_at = 0.0
         try:
             while True:
                 current = cluster_state.snapshot()
                 if current.seq != last_seq:
                     last_seq = current.seq
                     await websocket.send_json(current.to_dict())
+                    last_sent_at = time.monotonic()
+                interval = max(app.state.settings.refresh_interval, 0.5)
                 await cluster_state.wait_for_update(
                     last_seq,
-                    timeout=max(app.state.settings.refresh_interval, 0.5),
+                    timeout=interval,
                 )
+                remaining = interval - (time.monotonic() - last_sent_at)
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
         except WebSocketDisconnect:
             return
 
