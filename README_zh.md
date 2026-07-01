@@ -12,9 +12,9 @@
 - `nvidia-smi` 兜底：NVML 初始化失败或权限受限时仍能显示 GPU 基础指标。
 - 进程明细：尽力展示用户、PID、任务名、命令行哈希、GPU 显存、运行时间和进程启动时间。
 - 硬件自适应：自动解析本机 NVIDIA GPU 数量和型号，展示 GPU 利用率、显存、功耗、温度、时钟、P-state、ECC、MIG、进程占用、运行时间和短历史曲线。
-- 可选 SQLite 历史模块：记录 GPU 指标点、rollup、任务 session 和任务-GPU 使用关系。
+- 可选 SQLite 历史模块：记录 GPU 指标点、rollup、任务 session 和任务-GPU 使用关系，详见 [SQLite 历史库](docs/HISTORY.md)。
 - 单服务部署：FastAPI 同时提供 API、WebSocket 和静态前端。
-- Cloudflare Tunnel 支持：服务可继续监听 `127.0.0.1`，不暴露服务器端口。
+- 可选 Cloudflare Tunnel 部署：服务可继续监听 `127.0.0.1`，不暴露服务器端口，详见 [Cloudflare Tunnel](docs/CLOUD_TUNNEL.md)。
 
 ## 项目结构
 
@@ -74,79 +74,10 @@ cp docs/nodes.example.yaml nodes.yaml
 
 远端 GPU 节点不需要安装 `uv`。manager 会在本地构建最小 agent runtime，只同步 agent 侧需要的 Constella 模块和 `websockets`，远端启动脚本使用 `python3 -m constella.agent_main` 运行。
 
-## 可选历史库
+## 可选组件
 
-manager 启用 SQLite：
-
-```bash
-DB_PATH=run/constella.db RAW_SNAPSHOT_SECONDS=30 ./scripts/service/start.sh
-```
-
-维护命令：
-
-```bash
-./scripts/maintenance/db.sh
-uv run constella db rollup --path run/constella.db --bucket-seconds 10
-uv run constella db prune-raw --path run/constella.db
-uv run constella db close-sessions --path run/constella.db
-```
-
-## Cloudflare Tunnel 部署
-
-推荐用 Cloudflare Tunnel 暴露域名访问，同时让 GPU 服务继续只监听本机地址：
-
-```bash
-HOST=127.0.0.1 PORT=8765 ./scripts/service/start.sh
-```
-
-Cloudflare 后台的 Public Hostname 配置：
-
-```text
-Hostname: https://gpu.example.com
-Service:  http://127.0.0.1:8765
-```
-
-普通用户安装 `cloudflared`：
-
-```bash
-mkdir -p ~/.local/bin
-curl -fL \
-  https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
-  -o ~/.local/bin/cloudflared
-chmod +x ~/.local/bin/cloudflared
-~/.local/bin/cloudflared --version
-```
-
-保存 token 到本地私有文件。不要提交这个文件：
-
-```bash
-mkdir -p run
-umask 077
-cat > run/cloudflared.env <<'EOF'
-CLOUDFLARED_TOKEN='paste-your-token-here'
-EOF
-chmod 600 run/cloudflared.env
-```
-
-启动和检查 Tunnel：
-
-```bash
-./scripts/tunnel/start.sh
-./scripts/tunnel/status.sh
-```
-
-停止 Tunnel：
-
-```bash
-./scripts/tunnel/stop.sh
-```
-
-安全建议：
-
-- 不要把 token 放在命令行参数中；脚本会通过 `TUNNEL_TOKEN` 环境变量传给 `cloudflared`，避免 token 出现在 `ps` 输出。
-- `run/cloudflared.env` 权限应为 `600`，且 `run/` 已被 `.gitignore` 排除。
-- GPU 面板包含用户名和进程信息，建议在 Cloudflare Zero Trust 里给域名加 Access 登录策略。
-- 如果 token 泄露，应在 Cloudflare 后台重新生成 token，并更新 `run/cloudflared.env`。
+- SQLite 历史库默认关闭，只在需要持久化 GPU/任务历史时启用。配置和维护见 [SQLite 历史库](docs/HISTORY.md)。
+- Cloudflare Tunnel 是可选部署方式，用于在不开放服务器入站端口的情况下绑定域名访问。配置见 [Cloudflare Tunnel](docs/CLOUD_TUNNEL.md)。
 
 ## 常用命令
 
@@ -160,14 +91,6 @@ uv run constella cluster start --nodes nodes.yaml
 uv run constella cluster status --nodes nodes.yaml
 uv run constella cluster stop --nodes nodes.yaml
 COUNT=20 ./scripts/dev/bench_probe.sh
-```
-
-Tunnel 命令：
-
-```bash
-./scripts/tunnel/status.sh
-./scripts/tunnel/stop.sh
-./scripts/tunnel/start.sh
 ```
 
 ## API

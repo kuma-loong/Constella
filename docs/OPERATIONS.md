@@ -19,11 +19,10 @@ cd Constella
 HOST=127.0.0.1 PORT=8765 REFRESH=1.0 PROCESS_REFRESH=3.0 ./scripts/service/start.sh
 ```
 
-集群 manager 可额外配置：
+集群 manager 可额外配置 agent token：
 
 ```bash
 AGENT_TOKEN_FILE=run/agent-token ./scripts/service/start.sh
-DB_PATH=run/constella.db RAW_SNAPSHOT_SECONDS=30 ./scripts/service/start.sh
 ```
 
 日志写入 `logs/constella.log`，PID 写入 `run/constella.pid`。
@@ -90,90 +89,10 @@ MANAGER_HOSTNAME=H100 ./scripts/service/start.sh
 - 节点重启后 agent 不保证自动恢复；重新执行 `./scripts/cluster/start.sh` 即可。
 - token 通过 stdin 写入远端 env 文件，不放在 SSH 命令行参数中。
 
-## 可选 SQLite 历史库
+## 可选组件
 
-启用：
-
-```bash
-DB_PATH=run/constella.db RAW_SNAPSHOT_SECONDS=30 ./scripts/service/start.sh
-```
-
-维护：
-
-```bash
-./scripts/maintenance/db.sh
-```
-
-可调参数：
-
-```bash
-DB_PATH=run/constella.db \
-ROLLUP_BUCKET_SECONDS=10 \
-RAW_RETENTION_SECONDS=43200 \
-SESSION_STALE_SECONDS=300 \
-./scripts/maintenance/db.sh
-```
-
-数据库写入走有界后台队列。实时面板依赖 manager 内存 latest state，数据库慢或关闭时不影响实时 WebSocket 推送。
-
-## Cloudflare Tunnel
-
-如果要通过 Cloudflare 托管的域名访问，推荐使用 Cloudflare Tunnel。这样 GPU 服务仍然只监听 `127.0.0.1:8765`，服务器不需要开放入站端口。
-
-### Cloudflare 后台配置
-
-在 Cloudflare Zero Trust 的 Tunnels 页面为该 Tunnel 添加 Public Hostname：
-
-```text
-Hostname: https://gpu.example.com
-Service:  http://127.0.0.1:8765
-```
-
-如果页面需要保护，给这个 hostname 加 Cloudflare Access 策略，例如只允许指定邮箱登录。
-
-### 安装 cloudflared
-
-普通用户安装到 `~/.local/bin`：
-
-```bash
-mkdir -p ~/.local/bin
-curl -fL \
-  https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
-  -o ~/.local/bin/cloudflared
-chmod +x ~/.local/bin/cloudflared
-~/.local/bin/cloudflared --version
-```
-
-### 保存 token
-
-将 Cloudflare 后台给出的 token 保存到本地私有文件：
-
-```bash
-mkdir -p run
-umask 077
-cat > run/cloudflared.env <<'EOF'
-CLOUDFLARED_TOKEN='paste-your-token-here'
-EOF
-chmod 600 run/cloudflared.env
-```
-
-不要把 token 写入仓库。`run/` 已被 `.gitignore` 排除。
-
-### 启停和状态
-
-```bash
-./scripts/tunnel/start.sh
-./scripts/tunnel/status.sh
-./scripts/tunnel/stop.sh
-```
-
-`start_tunnel.sh` 会通过 `TUNNEL_TOKEN` 环境变量传 token，避免 token 出现在 `ps` 的命令行参数中。日志写入 `logs/cloudflared.log`，PID 写入 `run/cloudflared.pid`。
-
-### 安全注意事项
-
-- GPU 面板包含用户名和进程信息，建议使用 Cloudflare Access。
-- 如果 token 曾经出现在聊天、日志或命令行历史中，应在 Cloudflare 后台重新生成并更新 `run/cloudflared.env`。
-- 保持 GPU 服务监听 `127.0.0.1`，不要在不需要时绑定 `0.0.0.0`。
+- SQLite 历史库默认关闭，只在需要持久化 GPU/任务历史时启用。配置和维护见 [SQLite History](HISTORY.md)。
+- Cloudflare Tunnel 是可选部署方式，用于在不开放服务器入站端口的情况下绑定域名访问。配置见 [Cloudflare Tunnel](CLOUD_TUNNEL.md)。
 
 ## 状态、停止、重启
 
@@ -196,11 +115,4 @@ COUNT=20 ./scripts/dev/bench_probe.sh
 
 ```bash
 curl -s http://127.0.0.1:8765/api/cluster/snapshot
-curl -s http://127.0.0.1:8765/api/history/gpu
-```
-
-未启用数据库时，历史 API 返回：
-
-```json
-{"enabled":false,"items":[]}
 ```

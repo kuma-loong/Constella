@@ -25,9 +25,9 @@ Lightweight realtime NVIDIA GPU monitoring for one server or a small GPU cluster
 - Per-process task details include user, PID, task name, command line hash, GPU memory, runtime, and process start time when the OS allows reading them.
 - `nvidia-smi` fallback when NVML initialization or a sampling call fails.
 - Hardware-agnostic NVIDIA dashboard: GPU utilization, memory, power, temperature, clocks, P-state, ECC, MIG, process memory, process runtime, and short history sparklines.
-- Optional SQLite history sink for GPU metric samples, rollups, process sessions, and process-GPU usage.
+- Optional SQLite history sink for GPU metric samples, rollups, process sessions, and process-GPU usage. See [SQLite History](docs/HISTORY.md).
 - User-level deployment: no sudo, no system service required.
-- Cloudflare Tunnel friendly: keep the service bound to `127.0.0.1` and expose it through a hostname without opening an inbound server port.
+- Optional Cloudflare Tunnel deployment keeps the service bound to `127.0.0.1` while exposing it through a hostname. See [Cloudflare Tunnel](docs/CLOUD_TUNNEL.md).
 
 ## Layout
 
@@ -91,81 +91,10 @@ Start, inspect, and stop remote agents:
 
 Remote GPU nodes do not need `uv`. The manager builds a minimal agent runtime bundle locally and syncs only the agent-side Constella modules plus `websockets`; the remote start script runs it with `python3 -m constella.agent_main`.
 
-## Optional History
+## Optional Components
 
-Enable SQLite history on the manager:
-
-```bash
-DB_PATH=run/constella.db RAW_SNAPSHOT_SECONDS=30 ./scripts/service/start.sh
-```
-
-Maintenance commands:
-
-```bash
-./scripts/maintenance/db.sh
-uv run constella db rollup --path run/constella.db --bucket-seconds 10
-uv run constella db prune-raw --path run/constella.db
-uv run constella db close-sessions --path run/constella.db
-```
-
-## Cloudflare Tunnel
-
-Cloudflare Tunnel is the recommended way to access the dashboard from a domain while keeping the origin service private.
-
-Keep the GPU service bound to localhost:
-
-```bash
-HOST=127.0.0.1 PORT=8765 ./scripts/service/start.sh
-```
-
-In Cloudflare Zero Trust, configure the tunnel Public Hostname like this:
-
-```text
-Hostname: https://gpu.example.com
-Service:  http://127.0.0.1:8765
-```
-
-Install `cloudflared` as the current user:
-
-```bash
-mkdir -p ~/.local/bin
-curl -fL \
-  https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
-  -o ~/.local/bin/cloudflared
-chmod +x ~/.local/bin/cloudflared
-~/.local/bin/cloudflared --version
-```
-
-Store the token in a local private env file. Do not commit this file:
-
-```bash
-mkdir -p run
-umask 077
-cat > run/cloudflared.env <<'EOF'
-CLOUDFLARED_TOKEN='paste-your-token-here'
-EOF
-chmod 600 run/cloudflared.env
-```
-
-Start and inspect the tunnel:
-
-```bash
-./scripts/tunnel/start.sh
-./scripts/tunnel/status.sh
-```
-
-Stop it:
-
-```bash
-./scripts/tunnel/stop.sh
-```
-
-Security notes:
-
-- The tunnel scripts pass the token through `TUNNEL_TOKEN`, not as a command-line argument, so it does not appear in `ps` output.
-- `run/cloudflared.env` should stay mode `600`; `run/` is ignored by git.
-- The dashboard exposes usernames and process information. Protect the hostname with Cloudflare Access unless it is intentionally public.
-- If a token leaks, rotate it in Cloudflare and update `run/cloudflared.env`.
+- SQLite history is disabled by default. Enable it only when persisted GPU/task history is needed: [SQLite History](docs/HISTORY.md).
+- Cloudflare Tunnel is an optional deployment path for domain access without opening an inbound server port: [Cloudflare Tunnel](docs/CLOUD_TUNNEL.md).
 
 ## Commands
 
@@ -179,14 +108,6 @@ uv run constella cluster start --nodes nodes.yaml
 uv run constella cluster status --nodes nodes.yaml
 uv run constella cluster stop --nodes nodes.yaml
 COUNT=20 ./scripts/dev/bench_probe.sh
-```
-
-Tunnel commands:
-
-```bash
-./scripts/tunnel/status.sh
-./scripts/tunnel/stop.sh
-./scripts/tunnel/start.sh
 ```
 
 ## API
