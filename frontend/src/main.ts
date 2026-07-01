@@ -150,6 +150,7 @@ const processRows = mustGet<HTMLElement>("processRows");
 const processMeta = mustGet<HTMLElement>("processMeta");
 const liveState = mustGet<HTMLElement>("liveState");
 const nodeLine = mustGet<HTMLElement>("nodeLine");
+const appRoot = mustGet<HTMLElement>("app");
 const topNav = mustGet<HTMLElement>("topNav");
 const refreshControl = mustGet<HTMLElement>("refreshControl");
 const pauseButton = mustGet<HTMLButtonElement>("pauseButton");
@@ -187,9 +188,9 @@ refreshControl.addEventListener("click", (event) => {
   }
 });
 
-topNav.addEventListener("click", (event) => {
+appRoot.addEventListener("click", (event) => {
   const link = (event.target as HTMLElement).closest("a[href]") as HTMLAnchorElement | null;
-  if (!link || link.origin !== window.location.origin || !isAppPath(link.pathname)) {
+  if (!shouldHandleAppLink(event, link)) {
     return;
   }
   event.preventDefault();
@@ -233,6 +234,23 @@ function currentRoute(): Route {
 
 function isAppPath(pathname: string) {
   return pathname === "/" || pathname === "/overview" || pathname.startsWith("/nodes/");
+}
+
+function shouldHandleAppLink(event: MouseEvent, link: HTMLAnchorElement | null): link is HTMLAnchorElement {
+  if (
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  ) {
+    return false;
+  }
+  if (!link || link.origin !== window.location.origin || !isAppPath(link.pathname)) {
+    return false;
+  }
+  return !link.target && !link.hasAttribute("download");
 }
 
 function navigateTo(pathname: string) {
