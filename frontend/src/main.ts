@@ -528,7 +528,7 @@ function renderFabric(snapshot: ClusterSnapshot) {
       <div class="fabric-stats">
         <span>${snapshot.totals.online_node_count}/${snapshot.totals.node_count} online</span>
         <span>${snapshot.totals.gpu_count} GPUs</span>
-        <span>${fmtGiB(snapshot.totals.memory_used_mb)} Memory used</span>
+        <span>${fmtGiB(snapshot.totals.memory_total_mb)} Memory total</span>
       </div>
     </div>
     <div class="fabric-node-grid">${nodeCards || `<div class="empty-panel">no nodes</div>`}</div>
