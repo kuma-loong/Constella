@@ -99,7 +99,7 @@ cp docs/nodes.example.yaml nodes.yaml
 
 ## 可选组件
 
-- SQLite 历史库默认关闭，只在需要持久化 GPU/任务历史时启用。配置和维护见 [SQLite 历史库](docs/HISTORY.md)。
+- SQLite 历史库默认关闭，只在需要持久化 GPU/任务历史和分析看板时启用。配置和维护见 [SQLite 历史库](docs/HISTORY.md)。
 - Cloudflare Tunnel 是可选部署方式，用于在不开放服务器入站端口的情况下绑定域名访问。配置见 [Cloudflare Tunnel](docs/CLOUD_TUNNEL.md)。
 
 ## 常用命令
@@ -128,7 +128,11 @@ COUNT=20 ./scripts/dev/bench_probe.sh
 - `GET /api/history/gpu`：可选 GPU 历史指标。
 - `GET /api/history/tasks`：可选任务历史。
 - `GET /api/users`：可选用户任务聚合。
+- `GET /api/analytics/overview`：可选 Overview 历史分析。
+- `GET /api/analytics/node/{node_id}`：可选节点历史曲线和热力图。
 - `GET /api/docs`：FastAPI OpenAPI 文档。
+
+未启用 SQLite 时，历史和分析 API 返回 `enabled:false`；实时集群监控仍然通过 `/api/cluster/snapshot` 和 `/ws/cluster` 工作。
 
 旧单机接口不再作为兼容层维护：`GET /api/snapshot` 返回 `410 Gone`，`WS /ws/gpu` 会立即关闭。本机和远端节点都统一使用 cluster API。
 

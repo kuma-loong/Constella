@@ -110,7 +110,7 @@ LOCAL_AGENT_NODE_ID=H100 ./scripts/service/start.sh
 
 ## 可选组件
 
-- SQLite 历史库默认关闭，只在需要持久化 GPU/任务历史时启用。配置和维护见 [SQLite History](HISTORY.md)。
+- SQLite 历史库默认关闭，只在需要持久化 GPU/任务历史和分析看板时启用。配置和维护见 [SQLite History](HISTORY.md)。
 - Cloudflare Tunnel 是可选部署方式，用于在不开放服务器入站端口的情况下绑定域名访问。配置见 [Cloudflare Tunnel](CLOUD_TUNNEL.md)。
 
 启用 SQLite 时显式传入 `DB_PATH`：
@@ -120,6 +120,13 @@ DB_PATH=run/constella.db ./scripts/service/start.sh
 ```
 
 数据库路径由部署环境决定，项目脚本不假设系统盘或专用数据盘。
+
+未启用 SQLite 时，历史分析 API 返回 `enabled:false`，不影响实时监控：
+
+```bash
+curl -s http://127.0.0.1:8765/api/analytics/overview
+curl -s http://127.0.0.1:8765/api/analytics/node/<node_id>
+```
 
 ## 状态、停止、重启
 

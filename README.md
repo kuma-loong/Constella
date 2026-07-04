@@ -103,7 +103,7 @@ Remote GPU nodes do not need `uv`. The manager builds a minimal agent runtime bu
 
 ## Optional Components
 
-- SQLite history is disabled by default. Enable it only when persisted GPU/task history is needed: [SQLite History](docs/HISTORY.md).
+- SQLite history is disabled by default. Enable it only when persisted GPU/task history and analytics dashboards are needed: [SQLite History](docs/HISTORY.md).
 - Cloudflare Tunnel is an optional deployment path for domain access without opening an inbound server port: [Cloudflare Tunnel](docs/CLOUD_TUNNEL.md).
 
 ## Commands
@@ -132,7 +132,11 @@ COUNT=20 ./scripts/dev/bench_probe.sh
 - `GET /api/history/gpu`
 - `GET /api/history/tasks`
 - `GET /api/users`
+- `GET /api/analytics/overview`
+- `GET /api/analytics/node/{node_id}`
 - `GET /api/docs`
+
+When SQLite is not enabled, history and analytics APIs return `enabled:false`; realtime cluster monitoring continues through `/api/cluster/snapshot` and `/ws/cluster`.
 
 Deprecated single-node endpoints are intentionally not compatibility layers: `GET /api/snapshot` returns `410 Gone`, and `WS /ws/gpu` closes immediately. Use the cluster API for local and remote nodes.
 

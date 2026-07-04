@@ -1,6 +1,6 @@
 # SQLite History
 
-SQLite history is optional. Constella keeps the realtime dashboard in manager memory, so the service works without a database. Enable SQLite only when persisted GPU rollups and task history are needed.
+SQLite history is optional. Constella keeps the realtime dashboard in manager memory, so the service works without a database. Enable SQLite only when persisted GPU rollups, task history, and analytics dashboards are needed.
 
 The database is a side path:
 
@@ -85,3 +85,9 @@ Relevant APIs:
 - `GET /api/history/gpu`
 - `GET /api/history/tasks`
 - `GET /api/users`
+- `GET /api/analytics/overview?range=7d`
+- `GET /api/analytics/node/{node_id}?range=24h`
+
+Analytics APIs read only from SQLite rollups and task session tables. They return `enabled:false` when SQLite is disabled and do not participate in the realtime WebSocket path.
+
+Overview analytics includes user GPU hours, weighted GPU hours, job rankings, low-utilization reservation signals, and Beijing-time off-hour activity. Node analytics includes downsampled per-GPU time series and utilization heatmaps. Supported ranges are `24h`, `7d`, and `30d` for Overview, and `1h`, `24h`, `7d`, and `30d` for Node history.
