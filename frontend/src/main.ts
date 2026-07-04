@@ -19,6 +19,8 @@ import {
   Zap,
   createIcons,
 } from "lucide";
+import { createAnalyticsController, type Route } from "./analytics";
+import { escapeAttr, escapeHtml, fmtDuration, fmtGiB, fmtPct } from "./format";
 import "./styles.css";
 
 const iconSet = {
@@ -162,124 +164,7 @@ type Settings = {
   process_interval: number;
 };
 
-type AnalyticsMeta = {
-  enabled: boolean;
-  generated_at?: number;
-  range_start?: number;
-  range_end?: number;
-  timezone?: string;
-  bucket_seconds?: number;
-};
-
-type OverviewAnalytics = AnalyticsMeta & {
-  user_gpu_hours?: UserGpuHours[];
-  job_rankings?: JobRanking[];
-  anomalies?: AnomalyItem[];
-  off_hours?: OffHours;
-};
-
-type UserGpuHours = {
-  user: string;
-  gpu_hours: number;
-  weighted_gpu_hours: number;
-  task_count: number;
-  job_count: number;
-  last_seen_at: number;
-  top_gpu_models: { name: string; gpu_hours: number }[];
-};
-
-type JobRanking = {
-  job_key: string;
-  user: string;
-  node_id: string;
-  task_name: string;
-  started_at: number;
-  last_seen_at: number;
-  duration_seconds: number;
-  gpu_count: number;
-  session_count: number;
-  gpu_hours: number;
-  weighted_gpu_hours: number;
-  status: string;
-};
-
-type AnomalyItem = {
-  user: string;
-  node_id: string;
-  task_name: string;
-  duration_seconds: number;
-  gpu_memory_gb: number;
-  recent_avg_gpu_utilization: number;
-  idle_tail_seconds: number;
-  gpu_uuids: string[];
-  last_seen_at: number;
-  reason: string;
-};
-
-type OffHours = {
-  night_job_count: number;
-  weekend_job_count: number;
-  night_gpu_hours: number;
-  weekend_gpu_hours: number;
-  top_users: { user: string; job_count: number }[];
-};
-
-type NodeAnalytics = AnalyticsMeta & {
-  node_id?: string;
-  gpus?: AnalyticsGpu[];
-  series?: AnalyticsSeries[];
-  heatmap?: AnalyticsHeatmap[];
-  heatmap_bucket_seconds?: number;
-};
-
-type AnalyticsGpu = {
-  uuid: string;
-  gpu_index: number;
-  name: string;
-  memory_total_mb: number;
-};
-
-type AnalyticsPoint = {
-  bucket_start: number;
-  avg_gpu_utilization: number;
-  max_gpu_utilization: number;
-  avg_memory_used_mb: number;
-  max_memory_used_mb: number;
-  avg_power_watts: number;
-  max_power_watts: number;
-  avg_temperature_c: number;
-  max_temperature_c: number;
-  sample_count: number;
-};
-
-type AnalyticsSeries = {
-  gpu_uuid: string;
-  gpu_index: number | null;
-  gpu_name: string | null;
-  points: AnalyticsPoint[];
-};
-
-type AnalyticsHeatmap = {
-  gpu_uuid: string;
-  gpu_index: number | null;
-  gpu_name: string | null;
-  buckets: Pick<AnalyticsPoint, "bucket_start" | "avg_gpu_utilization" | "max_gpu_utilization" | "avg_memory_used_mb" | "sample_count">[];
-};
-
-type NodeMetric = "avg_gpu_utilization" | "avg_memory_used_mb" | "avg_power_watts" | "avg_temperature_c";
-
-type Route = { kind: "overview" } | { kind: "node"; nodeId: string };
-
 const DEFAULT_REFRESH_INTERVALS = [0.5, 1, 2, 5];
-const OVERVIEW_ANALYTICS_RANGES = ["24h", "7d", "30d"];
-const NODE_ANALYTICS_RANGES = ["1h", "24h", "7d", "30d"];
-const NODE_METRICS: { key: NodeMetric; label: string; unit: string; max?: number }[] = [
-  { key: "avg_gpu_utilization", label: "GPU", unit: "%", max: 100 },
-  { key: "avg_memory_used_mb", label: "Memory", unit: "GiB" },
-  { key: "avg_power_watts", label: "Power", unit: "W" },
-  { key: "avg_temperature_c", label: "Temp", unit: "C", max: 100 },
-];
-const CHART_COLORS = ["#1f9d72", "#2563eb", "#c2410c", "#7c3aed", "#be123c", "#0f766e", "#b45309", "#4f46e5"];
 
 const summaryGrid = mustGet<HTMLElement>("summaryGrid");
 const gpuGrid = mustGet<HTMLElement>("gpuGrid");
@@ -304,15 +189,13 @@ let lastSnapshot: ClusterSnapshot | null = null;
 let lastSettings: Settings | null = null;
 let currentRefreshInterval: number | null = null;
 let refreshPending = false;
-let overviewRange = "7d";
-let overviewAnalyticsPayload: OverviewAnalytics | null = null;
-let overviewAnalyticsKey = "";
-let overviewAnalyticsLoading = false;
-let nodeRange = "24h";
-let nodeMetric: NodeMetric = "avg_gpu_utilization";
-let nodeAnalyticsPayload: NodeAnalytics | null = null;
-let nodeAnalyticsKey = "";
-let nodeAnalyticsLoading = false;
+
+const analytics = createAnalyticsController({
+  overviewElement: overviewAnalytics,
+  nodeElement: nodeHistorySection,
+  currentRoute,
+  renderIcons: () => createIcons({ icons: iconSet }),
+});
 
 pauseButton.addEventListener("click", () => {
   paused = !paused;
@@ -343,32 +226,8 @@ appRoot.addEventListener("click", (event) => {
   if (!target || target.disabled) {
     return;
   }
-  const action = target.dataset.analyticsAction;
-  if (action === "overview-range" && target.dataset.range) {
-    overviewRange = target.dataset.range;
-    overviewAnalyticsPayload = null;
-    overviewAnalyticsKey = "";
-    renderOverviewAnalytics();
-    fetchOverviewAnalytics();
-  }
-  if (action === "node-range" && target.dataset.range) {
-    nodeRange = target.dataset.range;
-    nodeAnalyticsPayload = null;
-    nodeAnalyticsKey = "";
-    renderNodeHistory(currentRoute());
-    fetchNodeAnalytics(currentRoute());
-  }
-  if (action === "node-metric" && target.dataset.metric) {
-    nodeMetric = target.dataset.metric as NodeMetric;
-    renderNodeHistory(currentRoute());
-  }
-  if (action === "overview-refresh") {
-    overviewAnalyticsKey = "";
-    fetchOverviewAnalytics();
-  }
-  if (action === "node-refresh") {
-    nodeAnalyticsKey = "";
-    fetchNodeAnalytics(currentRoute());
+  if (analytics.handleClick(target)) {
+    event.preventDefault();
   }
 });
 
@@ -533,60 +392,6 @@ async function setRefreshInterval(interval: number) {
   }
 }
 
-async function fetchOverviewAnalytics() {
-  const key = overviewRange;
-  if (overviewAnalyticsLoading || overviewAnalyticsKey === key) {
-    return;
-  }
-  overviewAnalyticsLoading = true;
-  renderOverviewAnalytics();
-  try {
-    const response = await fetch(`/api/analytics/overview?range=${encodeURIComponent(overviewRange)}`, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`overview analytics failed: ${response.status}`);
-    }
-    overviewAnalyticsPayload = (await response.json()) as OverviewAnalytics;
-    overviewAnalyticsKey = key;
-  } catch {
-    overviewAnalyticsPayload = { enabled: false };
-    overviewAnalyticsKey = key;
-  } finally {
-    overviewAnalyticsLoading = false;
-    renderOverviewAnalytics();
-    createIcons({ icons: iconSet });
-  }
-}
-
-async function fetchNodeAnalytics(route: Route) {
-  if (route.kind !== "node") {
-    return;
-  }
-  const key = `${route.nodeId}:${nodeRange}`;
-  if (nodeAnalyticsLoading || nodeAnalyticsKey === key) {
-    return;
-  }
-  if (nodeAnalyticsKey !== key) {
-    nodeAnalyticsPayload = null;
-  }
-  nodeAnalyticsLoading = true;
-  renderNodeHistory(route);
-  try {
-    const response = await fetch(`/api/analytics/node/${encodeURIComponent(route.nodeId)}?range=${encodeURIComponent(nodeRange)}`, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`node analytics failed: ${response.status}`);
-    }
-    nodeAnalyticsPayload = (await response.json()) as NodeAnalytics;
-    nodeAnalyticsKey = key;
-  } catch {
-    nodeAnalyticsPayload = { enabled: false };
-    nodeAnalyticsKey = key;
-  } finally {
-    nodeAnalyticsLoading = false;
-    renderNodeHistory(route);
-    createIcons({ icons: iconSet });
-  }
-}
-
 function render(snapshot: ClusterSnapshot) {
   syncRefreshControl(clusterRefreshInterval(snapshot));
   const route = currentRoute();
@@ -601,9 +406,9 @@ function render(snapshot: ClusterSnapshot) {
     nodeHistorySection.hidden = true;
     processSection.hidden = true;
     renderSummary(snapshot);
-    renderOverviewAnalytics();
+    analytics.renderOverview();
     renderFabric(snapshot);
-    fetchOverviewAnalytics();
+    void analytics.fetchOverview();
   } else {
     summaryGrid.hidden = false;
     overviewAnalytics.hidden = true;
@@ -613,8 +418,8 @@ function render(snapshot: ClusterSnapshot) {
     processSection.hidden = false;
     renderNodeSummary(route.nodeId, selectedNode);
     renderGpuGrid(route.nodeId, selectedNode);
-    renderNodeHistory(route);
-    fetchNodeAnalytics(route);
+    analytics.renderNode(route);
+    void analytics.fetchNode(route);
     renderProcesses(route.nodeId, selectedNode);
   }
   createIcons({ icons: iconSet });
@@ -766,178 +571,6 @@ function renderFabric(snapshot: ClusterSnapshot) {
       </div>
     </div>
     <div class="fabric-node-grid">${nodeCards || `<div class="empty-panel">no nodes</div>`}</div>
-  `;
-}
-
-function renderOverviewAnalytics() {
-  const payload = overviewAnalyticsPayload;
-  const disabled = payload && payload.enabled === false;
-  overviewAnalytics.innerHTML = `
-    <div class="analytics-head">
-      <div>
-        <span class="section-kicker">Historical analytics</span>
-        <h2>Usage, jobs, and low-utilization signals</h2>
-        <p>${disabled ? "SQLite history is not enabled" : overviewMetaText(payload)}</p>
-      </div>
-      <div class="analytics-actions">
-        ${rangeButtons(OVERVIEW_ANALYTICS_RANGES, overviewRange, "overview-range")}
-        <button class="icon-button" type="button" data-analytics-action="overview-refresh" aria-label="Refresh analytics" title="Refresh analytics">
-          <i data-lucide="refresh-cw"></i>
-        </button>
-      </div>
-    </div>
-    ${
-      disabled
-        ? disabledAnalytics("Enable DB_PATH to show historical usage without changing the realtime path.")
-        : overviewAnalyticsLoading && !payload
-          ? loadingPanel("loading historical usage")
-          : overviewAnalyticsBody(payload)
-    }
-  `;
-}
-
-function overviewAnalyticsBody(payload: OverviewAnalytics | null) {
-  const users = payload?.user_gpu_hours || [];
-  const jobs = payload?.job_rankings || [];
-  const anomalies = payload?.anomalies || [];
-  const offHours = payload?.off_hours;
-  return `
-    <div class="analytics-grid">
-      <article class="analytics-card span-6">
-        <div class="card-title">
-          <span><i data-lucide="bar-chart-3"></i>User GPU hours</span>
-          <em>weighted sort</em>
-        </div>
-        ${users.length ? analyticsTable(
-          ["User", "GPU h", "Weighted", "Tasks", "Models"],
-          users.slice(0, 8).map((item) => [
-            item.user,
-            fmtNumber(item.gpu_hours),
-            fmtNumber(item.weighted_gpu_hours),
-            `${item.task_count} / ${item.job_count}`,
-            item.top_gpu_models.map((model) => model.name).join(", ") || "n/a",
-          ]),
-        ) : emptyInline("no user history in this range")}
-      </article>
-      <article class="analytics-card span-6">
-        <div class="card-title">
-          <span><i data-lucide="table-2"></i>Job rankings</span>
-          <em>top 8</em>
-        </div>
-        ${jobs.length ? analyticsTable(
-          ["Task", "User", "Node", "GPU h", "Runtime"],
-          jobs.slice(0, 8).map((item) => [
-            item.task_name,
-            item.user,
-            item.node_id,
-            fmtNumber(item.weighted_gpu_hours),
-            fmtDuration(item.duration_seconds),
-          ]),
-        ) : emptyInline("no job history in this range")}
-      </article>
-      <article class="analytics-card span-8">
-        <div class="card-title">
-          <span><i data-lucide="alert-triangle"></i>Low-utilization reservations</span>
-          <em>${anomalies.length} signals</em>
-        </div>
-        <div class="anomaly-list">
-          ${anomalies.length ? anomalies.slice(0, 6).map(anomalyCard).join("") : emptyInline("no clear low-utilization reservations")}
-        </div>
-      </article>
-      <article class="analytics-card span-4">
-        <div class="card-title">
-          <span><i data-lucide="moon"></i>Off-hour activity</span>
-          <em>Beijing time</em>
-        </div>
-        ${offHoursCard(offHours)}
-      </article>
-    </div>
-  `;
-}
-
-function anomalyCard(item: AnomalyItem) {
-  return `
-    <div class="anomaly-card">
-      <strong>${escapeHtml(item.task_name)}</strong>
-      <span>${escapeHtml(item.user)} · ${escapeHtml(item.node_id)} · ${fmtDuration(item.duration_seconds)}</span>
-      <div>
-        <b>${fmtNumber(item.gpu_memory_gb)} GiB</b>
-        <b>${fmtPct(item.recent_avg_gpu_utilization)} recent GPU</b>
-        <b>${fmtDuration(item.idle_tail_seconds)} idle tail</b>
-      </div>
-    </div>
-  `;
-}
-
-function offHoursCard(item: OffHours | undefined) {
-  if (!item) {
-    return emptyInline("no off-hour data");
-  }
-  return `
-    <div class="offhour-grid">
-      <span><b>${item.night_job_count}</b><small>night jobs</small></span>
-      <span><b>${item.weekend_job_count}</b><small>weekend jobs</small></span>
-      <span><b>${fmtNumber(item.night_gpu_hours)}</b><small>night GPU h</small></span>
-      <span><b>${fmtNumber(item.weekend_gpu_hours)}</b><small>weekend GPU h</small></span>
-    </div>
-    <div class="top-users">
-      ${(item.top_users || []).map((user) => `<span>${escapeHtml(user.user)} <b>${user.job_count}</b></span>`).join("") || `<span>no off-hour users</span>`}
-    </div>
-  `;
-}
-
-function renderNodeHistory(route: Route) {
-  if (route.kind !== "node") {
-    nodeHistorySection.innerHTML = "";
-    return;
-  }
-  const payload = nodeAnalyticsPayload;
-  const disabled = payload && payload.enabled === false;
-  nodeHistorySection.innerHTML = `
-    <div class="analytics-head">
-      <div>
-        <span class="section-kicker">Node history</span>
-        <h2>${escapeHtml(route.nodeId)} trends and heatmap</h2>
-        <p>${disabled ? "SQLite history is not enabled" : overviewMetaText(payload)}</p>
-      </div>
-      <div class="analytics-actions">
-        ${rangeButtons(NODE_ANALYTICS_RANGES, nodeRange, "node-range")}
-        ${metricButtons()}
-        <button class="icon-button" type="button" data-analytics-action="node-refresh" aria-label="Refresh history" title="Refresh history">
-          <i data-lucide="refresh-cw"></i>
-        </button>
-      </div>
-    </div>
-    ${
-      disabled
-        ? disabledAnalytics("Enable DB_PATH to show node rollups and heatmaps.")
-        : nodeAnalyticsLoading && !payload
-          ? loadingPanel("loading node history")
-          : nodeHistoryBody(payload)
-    }
-  `;
-}
-
-function nodeHistoryBody(payload: NodeAnalytics | null) {
-  const series = payload?.series || [];
-  const heatmap = payload?.heatmap || [];
-  return `
-    <div class="analytics-grid">
-      <article class="analytics-card span-8">
-        <div class="card-title">
-          <span><i data-lucide="line-chart"></i>${metricLabel(nodeMetric)} history</span>
-          <em>${payload?.bucket_seconds ? `${formatBucket(payload.bucket_seconds)} buckets` : "rollup"}</em>
-        </div>
-        ${series.some((item) => item.points.length) ? lineChart(series, nodeMetric) : emptyInline("no rollup points in this range")}
-      </article>
-      <article class="analytics-card span-4">
-        <div class="card-title">
-          <span><i data-lucide="activity"></i>GPU heatmap</span>
-          <em>${payload?.heatmap_bucket_seconds ? formatBucket(payload.heatmap_bucket_seconds) : "bucketed"}</em>
-        </div>
-        ${heatmap.some((item) => item.buckets.length) ? heatmapChart(heatmap) : emptyInline("no heatmap buckets in this range")}
-      </article>
-    </div>
   `;
 }
 
@@ -1143,182 +776,6 @@ function sparkline(values: number[], color: string, max: number) {
   `;
 }
 
-function rangeButtons(values: string[], selected: string, action: string) {
-  return `
-    <div class="segmented" role="group">
-      ${values
-        .map(
-          (value) => `
-            <button
-              class="${value === selected ? "is-active" : ""}"
-              type="button"
-              data-analytics-action="${action}"
-              data-range="${value}"
-              aria-pressed="${value === selected ? "true" : "false"}"
-            >${value}</button>
-          `,
-        )
-        .join("")}
-    </div>
-  `;
-}
-
-function metricButtons() {
-  return `
-    <div class="segmented metric-tabs" role="group">
-      ${NODE_METRICS.map(
-        (metric) => `
-          <button
-            class="${metric.key === nodeMetric ? "is-active" : ""}"
-            type="button"
-            data-analytics-action="node-metric"
-            data-metric="${metric.key}"
-            aria-pressed="${metric.key === nodeMetric ? "true" : "false"}"
-          >${metric.label}</button>
-        `,
-      ).join("")}
-    </div>
-  `;
-}
-
-function analyticsTable(headers: string[], rows: string[][]) {
-  return `
-    <div class="analytics-table-wrap">
-      <table class="analytics-table">
-        <thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
-        <tbody>
-          ${rows
-            .map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`)
-            .join("")}
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
-function lineChart(series: AnalyticsSeries[], metric: NodeMetric) {
-  const width = 760;
-  const height = 260;
-  const pad = { left: 42, right: 14, top: 16, bottom: 28 };
-  const points = series.flatMap((item) => item.points);
-  const minTime = Math.min(...points.map((point) => point.bucket_start));
-  const maxTime = Math.max(...points.map((point) => point.bucket_start));
-  const metricDef = NODE_METRICS.find((item) => item.key === metric) || NODE_METRICS[0];
-  const maxValue = metricDef.max || Math.max(1, ...points.map((point) => metricValue(point, metric))) * 1.08;
-  const plotWidth = width - pad.left - pad.right;
-  const plotHeight = height - pad.top - pad.bottom;
-  const pathFor = (item: AnalyticsSeries) =>
-    item.points
-      .map((point) => {
-        const x = pad.left + ((point.bucket_start - minTime) / Math.max(1, maxTime - minTime)) * plotWidth;
-        const y = pad.top + plotHeight - (metricValue(point, metric) / maxValue) * plotHeight;
-        return `${x.toFixed(1)},${y.toFixed(1)}`;
-      })
-      .join(" ");
-  return `
-    <div class="chart-wrap">
-      <svg class="line-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeAttr(metricDef.label)} history">
-        <line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${height - pad.bottom}"></line>
-        <line x1="${pad.left}" y1="${height - pad.bottom}" x2="${width - pad.right}" y2="${height - pad.bottom}"></line>
-        <text x="4" y="${pad.top + 8}">${escapeHtml(metricTick(maxValue, metric))}</text>
-        <text x="${pad.left}" y="${height - 7}">${escapeHtml(formatTime(minTime))}</text>
-        <text x="${width - pad.right - 92}" y="${height - 7}">${escapeHtml(formatTime(maxTime))}</text>
-        ${series
-          .map((item, index) =>
-            item.points.length
-              ? `<polyline points="${pathFor(item)}" style="stroke:${CHART_COLORS[index % CHART_COLORS.length]}"><title>GPU${item.gpu_index ?? "?"} ${escapeHtml(item.gpu_name || item.gpu_uuid)}</title></polyline>`
-              : "",
-          )
-          .join("")}
-      </svg>
-      <div class="chart-legend">
-        ${series
-          .map(
-            (item, index) => `
-              <span><b style="background:${CHART_COLORS[index % CHART_COLORS.length]}"></b>GPU${item.gpu_index ?? "?"}</span>
-            `,
-          )
-          .join("")}
-      </div>
-    </div>
-  `;
-}
-
-function heatmapChart(items: AnalyticsHeatmap[]) {
-  const allStarts = Array.from(new Set(items.flatMap((item) => item.buckets.map((bucket) => bucket.bucket_start)))).sort((a, b) => a - b);
-  const columns = Math.max(1, allStarts.length);
-  const indexByStart = new Map(allStarts.map((value, index) => [value, index]));
-  return `
-    <div class="heatmap" style="--heat-cols:${columns}">
-      ${items
-        .map((item) => {
-          const buckets = new Map(item.buckets.map((bucket) => [bucket.bucket_start, bucket]));
-          return `
-            <div class="heat-row-label">GPU${item.gpu_index ?? "?"}</div>
-            <div class="heat-row">
-              ${allStarts
-                .map((start) => {
-                  const bucket = buckets.get(start);
-                  const value = bucket?.avg_gpu_utilization || 0;
-                  return `<span class="${heatClass(value)}" title="${escapeAttr(`GPU${item.gpu_index ?? "?"} · ${formatTime(start)} · ${fmtPct(value)} avg · ${fmtGiB(bucket?.avg_memory_used_mb || 0)}`)}" style="grid-column:${(indexByStart.get(start) || 0) + 1}"></span>`;
-                })
-                .join("")}
-            </div>
-          `;
-        })
-        .join("")}
-    </div>
-  `;
-}
-
-function metricValue(point: AnalyticsPoint, metric: NodeMetric) {
-  return Number(point[metric] || 0);
-}
-
-function metricLabel(metric: NodeMetric) {
-  return NODE_METRICS.find((item) => item.key === metric)?.label || "GPU";
-}
-
-function metricTick(value: number, metric: NodeMetric) {
-  if (metric === "avg_memory_used_mb") {
-    return fmtGiB(value);
-  }
-  if (metric === "avg_gpu_utilization") {
-    return fmtPct(value);
-  }
-  if (metric === "avg_power_watts") {
-    return `${value.toFixed(0)} W`;
-  }
-  return `${value.toFixed(0)} C`;
-}
-
-function heatClass(value: number) {
-  if (value >= 70) return "heat hot";
-  if (value >= 30) return "heat active";
-  if (value >= 5) return "heat low";
-  return "heat idle";
-}
-
-function overviewMetaText(payload: AnalyticsMeta | null) {
-  if (!payload?.generated_at) {
-    return "waiting for SQLite rollups";
-  }
-  const range = payload.range_start && payload.range_end ? `${formatTime(payload.range_start)} - ${formatTime(payload.range_end)}` : "selected range";
-  return `${range} · generated ${formatTime(payload.generated_at)} · ${payload.timezone || "Asia/Shanghai"}`;
-}
-
-function disabledAnalytics(message: string) {
-  return `<div class="empty-panel analytics-disabled">${escapeHtml(message)}</div>`;
-}
-
-function loadingPanel(message: string) {
-  return `<div class="empty-panel">${escapeHtml(message)}</div>`;
-}
-
-function emptyInline(message: string) {
-  return `<div class="empty-inline">${escapeHtml(message)}</div>`;
-}
-
 function flattenGpus(snapshot: ClusterSnapshot) {
   return snapshot.nodes.flatMap((node) => node.gpus.map((gpu) => ({ node, gpu })));
 }
@@ -1440,69 +897,6 @@ function formatInterval(seconds: number) {
   return seconds < 1 ? `${seconds.toFixed(1)}s` : `${seconds.toFixed(0)}s`;
 }
 
-function fmtGiB(mib: number) {
-  if (!Number.isFinite(mib)) {
-    return "n/a";
-  }
-  return `${(mib / 1024).toFixed(mib >= 10240 ? 1 : 2)} GiB`;
-}
-
-function fmtPct(value: number) {
-  if (!Number.isFinite(value)) {
-    return "n/a";
-  }
-  return `${value.toFixed(value % 1 ? 1 : 0)}%`;
-}
-
-function fmtNumber(value: number) {
-  if (!Number.isFinite(value)) {
-    return "n/a";
-  }
-  return value.toLocaleString(undefined, { maximumFractionDigits: value >= 10 ? 1 : 2 });
-}
-
-function formatBucket(seconds: number) {
-  if (seconds < 60) {
-    return `${seconds}s`;
-  }
-  if (seconds < 3600) {
-    return `${Math.round(seconds / 60)}m`;
-  }
-  return `${Math.round(seconds / 3600)}h`;
-}
-
-function formatTime(epochSeconds: number) {
-  if (!Number.isFinite(epochSeconds)) {
-    return "n/a";
-  }
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(epochSeconds * 1000));
-}
-
-function fmtDuration(seconds: number | null) {
-  if (seconds === null || !Number.isFinite(seconds)) {
-    return "n/a";
-  }
-  if (seconds < 60) {
-    return `${Math.max(0, Math.floor(seconds))}s`;
-  }
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) {
-    return `${minutes}m ${Math.floor(seconds % 60)}s`;
-  }
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return `${hours}h ${minutes % 60}m`;
-  }
-  const days = Math.floor(hours / 24);
-  return `${days}d ${hours % 24}h`;
-}
-
 function clamp(value: number) {
   if (!Number.isFinite(value)) {
     return 0;
@@ -1520,21 +914,4 @@ function tempClass(value: number) {
   if (value >= 80) return "is-hot";
   if (value >= 65) return "is-warm";
   return "is-cool";
-}
-
-function escapeHtml(value: string) {
-  return value.replace(/[&<>"']/g, (char) => {
-    const map: Record<string, string> = {
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;",
-    };
-    return map[char] || char;
-  });
-}
-
-function escapeAttr(value: string) {
-  return escapeHtml(value).replace(/\n/g, " ");
 }
