@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from .analytics import node_analytics, overview_analytics
 from .cluster import ClusterState, parse_agent_hello
 from .collector import ALLOWED_REFRESH_INTERVALS, validate_refresh_interval
 from .db import AsyncDBSink, SQLiteSinkConfig
@@ -228,6 +229,18 @@ def create_app(
         if db_sink is None:
             return {"enabled": False, "items": []}
         return {"enabled": True, "items": db_sink.store.query_users()}
+
+    @app.get("/api/analytics/overview")
+    async def analytics_overview(range: str = "7d") -> dict[str, object]:
+        if db_sink is None:
+            return {"enabled": False}
+        return overview_analytics(db_sink.store, range_name=range)
+
+    @app.get("/api/analytics/node/{node_id}")
+    async def analytics_node(node_id: str, range: str = "24h") -> dict[str, object]:
+        if db_sink is None:
+            return {"enabled": False}
+        return node_analytics(db_sink.store, node_id=node_id, range_name=range)
 
     @app.get("/api/settings")
     async def settings_endpoint() -> dict[str, object]:
