@@ -1,33 +1,38 @@
-# Constella
+<p align="center">
+  <img src="frontend/public/logo-readme.svg" alt="Constella logo" width="260">
+</p>
+
+<h1 align="center">Constella</h1>
+
+<div align="center">
+  <blockquote>
+    <em>Like stars in a constellation, <strong>Constella</strong> gathers independent GPU nodes into one observable cluster.</em>
+  </blockquote>
+</div>
+
+<br>
+<br>
 
 <div align="center" id="constella-badges">
 
-<img src="frontend/public/logo.svg" alt="Constella logo" width="132">
-
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-ASGI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![NVIDIA NVML](https://img.shields.io/badge/NVIDIA-NVML-76B900?logo=nvidia&logoColor=white)](https://docs.nvidia.com/deploy/nvml-api/)
-[![License](https://img.shields.io/github/license/kuma-loong/Constella)](LICENSE)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/kuma-loong/Constella)
 
 </div>
 
-Lightweight realtime NVIDIA GPU monitoring for one server or a small GPU cluster. Every GPU node, including the manager host when local monitoring is enabled, runs the same agent path: NVML first, `nvidia-smi` fallback, WebSocket sample ingest into the manager.
+<p align="center">English | <a href="README_zh.md">简体中文</a></p>
 
-[简体中文](README_zh.md)
+Lightweight realtime NVIDIA GPU monitoring for one server or a small GPU cluster. Every GPU node, including the manager host when local monitoring is enabled, runs the same agent path: NVML first, `nvidia-smi` fallback, WebSocket sample ingest into the manager.
 
 ## Features
 
-- Selectable agent refresh rate: 0.5s, 1s, 2s, or 5s, broadcast by the manager to connected agents.
-- Low overhead: one persistent sampler per GPU node agent, no per-browser GPU polling, latest state kept in memory.
-- Manager-agent cluster mode: the manager can start remote agents over SSH, while agents stream samples back over WebSocket.
-- Cluster UI routes: `/overview` shows cluster totals and one fabric card per node; `/nodes/<node_id>` shows that node's GPUs and tasks.
-- Process list sampled at a lower cadence by default to reduce `/proc` and driver query jitter.
-- Per-process task details include user, PID, task name, command line hash, GPU memory, runtime, and process start time when the OS allows reading them.
-- `nvidia-smi` fallback when NVML initialization or a sampling call fails.
-- Hardware-agnostic NVIDIA dashboard: GPU utilization, memory, power, temperature, clocks, P-state, ECC, MIG, process memory, process runtime, and short history sparklines.
-- Optional SQLite history sink for GPU metric rollups, process sessions, and process-GPU usage. See [SQLite History](docs/HISTORY.md).
-- User-level deployment: no sudo, no system service required.
-- Optional Cloudflare Tunnel deployment keeps the service bound to `127.0.0.1` while exposing it through a hostname. See [Cloudflare Tunnel](docs/CLOUD_TUNNEL.md).
+- Realtime NVIDIA GPU monitoring for a single server or small cluster, with a modular architecture and optional components.
+- Low-overhead sampling: one persistent sampler per GPU node, shared in-memory snapshots, and no per-browser GPU polling.
+- Rich GPU and process telemetry: utilization, memory, power, temperature, clocks, P-state, ECC, MIG, process memory, runtime, users, PIDs, and command fingerprints.
+- Resilient agent sampling path: NVML first, `nvidia-smi` fallback, selectable refresh rates, and lower-cadence process sampling to reduce jitter.
+- User-level deployment with no sudo or system service required; optional SQLite history is available when persisted metrics are needed.
+- Standard APIs for custom frontends, dashboards, and automation.
 
 ## Layout
 
@@ -151,3 +156,7 @@ npm run dev
 ```
 
 For production, build `frontend/dist`; FastAPI serves the static frontend directly.
+
+## License
+
+[MIT](LICENSE)

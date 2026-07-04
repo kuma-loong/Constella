@@ -1,21 +1,38 @@
-# Constella
+<p align="center">
+  <img src="frontend/public/logo-readme.svg" alt="Constella logo" width="260">
+</p>
+
+<h1 align="center">Constella</h1>
+
+<div align="center">
+  <blockquote>
+    <em>如同星座中的群星，<strong>Constella</strong> 将独立的 GPU 节点汇聚成一个可观测的集群。</em>
+  </blockquote>
+</div>
+
+<br>
+<br>
+
+<div align="center" id="constella-badges">
+
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![NVIDIA NVML](https://img.shields.io/badge/NVIDIA-NVML-76B900?logo=nvidia&logoColor=white)](https://docs.nvidia.com/deploy/nvml-api/)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/kuma-loong/Constella)
+
+</div>
+
+<p align="center"><a href="README.md">English</a> | 简体中文</p>
 
 一个普通用户级的 NVIDIA GPU 实时监控服务，支持本机和轻量集群模式。所有 GPU 节点，包括启用本机监控时的 manager 主机，都走同一条 agent 路径：NVML 优先、`nvidia-smi` 兜底、WebSocket 上报到 manager。
 
 ## 功能
 
-- 可选 agent 刷新率：支持 0.5 秒、1 秒、2 秒、5 秒，由 manager 下发给已连接 agent。
-- 低开销采样：每个 GPU 节点 agent 只有一个常驻采样器，多个浏览器共享 manager 内存中的最新快照，避免重复访问 GPU 驱动。
-- 集群 manager-agent 模式：manager 通过 SSH 启动远端 agent，agent 通过 WebSocket 持续回传节点快照。
-- 集群前端路径：`/overview` 展示集群 totals 和按节点拆分的 fabric 卡片，`/nodes/<node_id>` 展示该节点的 GPU 卡片和任务表。
-- 低抖动进程采样：核心 GPU 指标按当前刷新率更新，进程列表默认每 3 秒刷新一次。
-- NVML 优先：直接通过 `ctypes` 调用 `libnvidia-ml.so`，无需 sudo，无需在系统安装 Python 包。
-- `nvidia-smi` 兜底：NVML 初始化失败或权限受限时仍能显示 GPU 基础指标。
-- 进程明细：尽力展示用户、PID、任务名、命令行哈希、GPU 显存、运行时间和进程启动时间。
-- 硬件自适应：自动解析本机 NVIDIA GPU 数量和型号，展示 GPU 利用率、显存、功耗、温度、时钟、P-state、ECC、MIG、进程占用、运行时间和短历史曲线。
-- 可选 SQLite 历史模块：记录 GPU rollup、任务 session 和任务-GPU 使用关系，详见 [SQLite 历史库](docs/HISTORY.md)。
-- 单服务部署：FastAPI 同时提供 API、WebSocket 和静态前端。
-- 可选 Cloudflare Tunnel 部署：服务可继续监听 `127.0.0.1`，不暴露服务器端口，详见 [Cloudflare Tunnel](docs/CLOUD_TUNNEL.md)。
+- 面向单机或小型集群的 NVIDIA GPU 实时监控，采用模块化架构，功能可按需启用。
+- 低开销采样：每个 GPU 节点只有一个常驻采样器，浏览器共享 manager 内存快照，避免重复访问 GPU 驱动。
+- 完整 GPU 与进程指标：利用率、显存、功耗、温度、时钟、P-state、ECC、MIG、进程显存、运行时间、用户、PID 和命令指纹。
+- 稳定 agent 采样路径：NVML 优先、`nvidia-smi` 兜底，支持可选刷新率，并用低频进程采样降低抖动。
+- 普通用户级部署：无需 sudo 或 system service；需要持久化指标时可启用 SQLite 历史库。
+- 提供标准 API，便于接入自定义前端、看板或自动化系统。
 
 ## 项目结构
 
@@ -135,3 +152,7 @@ npm run dev
 ```
 
 生产服务依赖 `frontend/dist`，执行 `npm run build` 后由 FastAPI 直接托管。
+
+## License
+
+[MIT](LICENSE)
