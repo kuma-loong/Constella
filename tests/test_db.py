@@ -124,6 +124,22 @@ def test_sqlite_sink_flushes_20s_rollup_and_raw_retention(tmp_path) -> None:
         sink.store.close()
 
 
+def test_sqlite_sink_closes_stale_sessions_during_scheduled_maintenance(tmp_path) -> None:
+    sink = AsyncDBSink(SQLiteSinkConfig(path=tmp_path / "constella.db"))
+    sink.store.open()
+    try:
+        sink.store.write_node_snapshot(make_node_snapshot(100.0))
+
+        sink._run_scheduled_maintenance(now=2000.0)
+
+        session = sink.store.connection.execute(
+            "SELECT status, duration_seconds FROM process_sessions"
+        ).fetchone()
+        assert dict(session) == {"status": "ended", "duration_seconds": 0.0}
+    finally:
+        sink.store.close()
+
+
 def test_sqlite_store_rollup_uses_sample_count_weighting(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "constella.db")
     store.open()

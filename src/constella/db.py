@@ -12,6 +12,7 @@ from typing import Any
 from .schema import GpuInfo, GpuProcess, NodeSnapshot, process_session_id
 
 RAW_SNAPSHOT_RETENTION_SECONDS = 12 * 60 * 60
+SESSION_CLOSE_INTERVAL_SECONDS = 30 * 60
 ROLLUP_20S = 20
 ROLLUP_2M = 120
 ROLLUP_1H = 3600
@@ -677,6 +678,7 @@ class AsyncDBSink:
         self._last_2m_rollup_at = 0.0
         self._last_1h_rollup_at = 0.0
         self._last_prune_at = 0.0
+        self._last_session_close_at = 0.0
         self._rollup_20s: dict[tuple[float, str, str], RollupBucket] = {}
         self.dropped_samples = 0
         self.write_errors = 0
@@ -772,6 +774,9 @@ class AsyncDBSink:
             self.store.prune_rollups(now=now)
             self.store.prune_raw_snapshots(now=now)
             self._last_prune_at = now
+        if now - self._last_session_close_at >= SESSION_CLOSE_INTERVAL_SECONDS:
+            self.store.close_stale_sessions(now=now, stale_after_seconds=300.0)
+            self._last_session_close_at = now
 
 
 def _rollup_row_from_sql(row: sqlite3.Row, *, bucket_seconds: int) -> dict[str, Any]:
