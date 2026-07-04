@@ -11,7 +11,6 @@
 </div>
 
 <br>
-<br>
 
 <div align="center" id="constella-badges">
 
