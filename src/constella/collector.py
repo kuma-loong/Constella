@@ -28,7 +28,7 @@ class SnapshotCollector:
     def __init__(
         self,
         refresh_interval: float = 1.0,
-        process_interval: float = 3.0,
+        process_interval: float = 5.0,
         history_size: int = 120,
     ):
         self.refresh_interval = validate_refresh_interval(refresh_interval)

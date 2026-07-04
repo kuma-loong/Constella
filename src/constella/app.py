@@ -30,7 +30,7 @@ class SettingsUpdate(BaseModel):
 @dataclass(slots=True)
 class ManagerSettings:
     refresh_interval: float = 1.0
-    _process_interval: float = 3.0
+    _process_interval: float = 5.0
 
     @classmethod
     def from_env(
