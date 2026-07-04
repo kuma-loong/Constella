@@ -22,16 +22,7 @@ def _boot_time_seconds() -> int | None:
     return None
 
 
-def process_start_time_seconds(pid: int) -> float | None:
-    boot_time = _boot_time_seconds()
-    if boot_time is None:
-        return None
-
-    try:
-        ticks_per_second = os.sysconf("SC_CLK_TCK")
-    except (OSError, ValueError):
-        return None
-
+def _stat_fields_after_comm(pid: int) -> list[str] | None:
     try:
         with open(f"/proc/{pid}/stat", "r", encoding="utf-8", errors="replace") as f:
             stat = f.read()
@@ -42,7 +33,32 @@ def process_start_time_seconds(pid: int) -> float | None:
     if comm_end < 0:
         return None
 
-    fields_after_comm = stat[comm_end + 2 :].split()
+    return stat[comm_end + 2 :].split()
+
+
+def process_parent_pid(pid: int) -> int | None:
+    fields_after_comm = _stat_fields_after_comm(pid)
+    if fields_after_comm is None or len(fields_after_comm) <= 1:
+        return None
+    try:
+        return int(fields_after_comm[1])
+    except ValueError:
+        return None
+
+
+def process_start_time_seconds(pid: int) -> float | None:
+    boot_time = _boot_time_seconds()
+    if boot_time is None:
+        return None
+
+    try:
+        ticks_per_second = os.sysconf("SC_CLK_TCK")
+    except (OSError, ValueError):
+        return None
+
+    fields_after_comm = _stat_fields_after_comm(pid)
+    if fields_after_comm is None:
+        return None
     if len(fields_after_comm) <= 19:
         return None
 

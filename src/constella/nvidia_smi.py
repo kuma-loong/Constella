@@ -7,7 +7,13 @@ import time
 from io import StringIO
 from typing import Any
 
-from .procfs import process_cmdline, process_exe, process_runtime_seconds, process_start_time_seconds
+from .procfs import (
+    process_cmdline,
+    process_exe,
+    process_parent_pid,
+    process_runtime_seconds,
+    process_start_time_seconds,
+)
 from .schema import GpuInfo, GpuProcess, Snapshot, cmdline_fingerprint, infer_task_name
 
 GPU_QUERY_FIELDS = [
@@ -111,13 +117,16 @@ def parse_process_query_csv(output: str) -> dict[str, list[GpuProcess]]:
             kind="compute",
         )
         if process.pid:
+            ppid = process_parent_pid(process.pid)
             cmdline, detail_status = process_cmdline(process.pid)
             exe = process_exe(process.pid)
+            process.ppid = ppid
             process.cmdline = cmdline
             process.cmdline_hash = cmdline_fingerprint(cmdline)
             process.exe = exe
             process.runtime_seconds = process_runtime_seconds(process.pid)
             process.process_start_time = process_start_time_seconds(process.pid)
+            process.parent_start_time = process_start_time_seconds(ppid) if ppid else None
             process.detail_status = detail_status
             process.task_name = infer_task_name(
                 cmdline=cmdline,

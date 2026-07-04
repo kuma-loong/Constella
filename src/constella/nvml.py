@@ -9,7 +9,13 @@ import subprocess
 import time
 
 from . import nvidia_smi
-from .procfs import process_cmdline, process_exe, process_runtime_seconds, process_start_time_seconds
+from .procfs import (
+    process_cmdline,
+    process_exe,
+    process_parent_pid,
+    process_runtime_seconds,
+    process_start_time_seconds,
+)
 from .schema import (
     GpuHardwareInfo,
     GpuInfo,
@@ -673,17 +679,20 @@ class NVMLSampler:
         user = _uid_name(uid)
         comm = _proc_comm(process.pid)
         exe = process_exe(process.pid)
+        ppid = process_parent_pid(process.pid)
         cmdline: str | None = None
         detail_status = "names"
         if include_cmdline:
             cmdline, detail_status = process_cmdline(process.pid)
 
+        process.ppid = ppid
         process.user = process.user or user
         process.name = process.name or comm or "?"
         process.exe = exe
         process.cmdline = cmdline
         process.cmdline_hash = cmdline_fingerprint(cmdline)
         process.process_start_time = process_start_time_seconds(process.pid)
+        process.parent_start_time = process_start_time_seconds(ppid) if ppid else None
         process.runtime_seconds = process.runtime_seconds or process_runtime_seconds(process.pid)
         process.detail_status = detail_status
         process.task_name = infer_task_name(
@@ -724,17 +733,21 @@ class NVMLSampler:
         result: list[GpuProcess] = []
         for i in range(count.value):
             info = buffer[i]
+            pid = int(info.pid)
+            ppid = process_parent_pid(pid)
             used = int(info.usedGpuMemory)
             if used >= (1 << 63):
                 used = 0
             result.append(
                 GpuProcess(
-                    pid=int(info.pid),
-                    name=_proc_comm(int(info.pid)) or "?",
+                    pid=pid,
+                    name=_proc_comm(pid) or "?",
                     gpu_memory_mb=int(used // (1024 * 1024)),
+                    ppid=ppid,
                     kind=kind,
-                    runtime_seconds=process_runtime_seconds(int(info.pid)),
-                    process_start_time=process_start_time_seconds(int(info.pid)),
+                    runtime_seconds=process_runtime_seconds(pid),
+                    process_start_time=process_start_time_seconds(pid),
+                    parent_start_time=process_start_time_seconds(ppid) if ppid else None,
                 )
             )
         return result

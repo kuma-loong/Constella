@@ -17,7 +17,9 @@ def make_node_snapshot(sampled_at: float, *, gpu_util: int = 50) -> NodeSnapshot
         cmdline="python train.py",
         cmdline_hash="hash",
         gpu_memory_mb=2048,
+        ppid=4321,
         process_start_time=90.0,
+        parent_start_time=80.0,
     )
     gpus = [
         GpuInfo(
@@ -80,8 +82,15 @@ def test_sqlite_store_writes_sessions_and_multi_gpu_usage(tmp_path) -> None:
         assert con.execute("SELECT COUNT(*) FROM gpu_metric_samples").fetchone()[0] == 0
         assert con.execute("SELECT COUNT(*) FROM process_sessions").fetchone()[0] == 1
         assert con.execute("SELECT COUNT(*) FROM process_gpu_usages").fetchone()[0] == 2
-        session = con.execute("SELECT task_name, sample_count FROM process_sessions").fetchone()
-        assert dict(session) == {"task_name": "train.py", "sample_count": 1}
+        session = con.execute(
+            "SELECT task_name, ppid, parent_start_time, sample_count FROM process_sessions"
+        ).fetchone()
+        assert dict(session) == {
+            "task_name": "train.py",
+            "ppid": 4321,
+            "parent_start_time": 80.0,
+            "sample_count": 1,
+        }
     finally:
         store.close()
 

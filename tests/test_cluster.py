@@ -32,8 +32,10 @@ def sample_message(node_id: str, seq: int, util: int = 50) -> dict[str, object]:
                             "name": "python",
                             "task_name": "train.py",
                             "gpu_memory_mb": 25,
+                            "ppid": 42,
                             "kind": "compute",
                             "process_start_time": 90.0,
+                            "parent_start_time": 80.0,
                         }
                     ],
                 }
@@ -56,6 +58,8 @@ def test_cluster_state_registers_sample_and_drops_old_seq() -> None:
     assert node.status == "online"
     assert node.gpus[0].gpu_id == "node-a:GPU-abc"
     assert node.gpus[0].utilization_gpu == 40
+    assert node.gpus[0].processes[0].ppid == 42
+    assert node.gpus[0].processes[0].parent_start_time == 80.0
 
 
 def test_cluster_state_marks_stale_offline_and_disconnect() -> None:

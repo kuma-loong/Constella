@@ -15,6 +15,7 @@ class GpuProcess:
     pid: int
     name: str
     gpu_memory_mb: int
+    ppid: int | None = None
     user: str | None = None
     task_name: str | None = None
     exe: str | None = None
@@ -23,6 +24,7 @@ class GpuProcess:
     kind: str = "compute"
     runtime_seconds: int | None = None
     process_start_time: float | None = None
+    parent_start_time: float | None = None
     detail_status: str = "unknown"
     detail_error: str | None = None
 

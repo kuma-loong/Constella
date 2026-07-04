@@ -35,6 +35,7 @@ const iconSet = {
 type GpuProcess = {
   pid: number;
   name: string;
+  ppid?: number | null;
   task_name?: string | null;
   exe?: string | null;
   cmdline?: string | null;
@@ -44,6 +45,7 @@ type GpuProcess = {
   kind: string;
   runtime_seconds?: number | null;
   process_start_time?: number | null;
+  parent_start_time?: number | null;
   detail_status?: string | null;
   detail_error?: string | null;
 };

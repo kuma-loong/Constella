@@ -367,6 +367,7 @@ def _process_from_dict(data: dict[str, Any]) -> GpuProcess:
         pid=int(data.get("pid") or 0),
         name=str(data.get("name") or "?"),
         gpu_memory_mb=int(data.get("gpu_memory_mb") or 0),
+        ppid=data.get("ppid"),
         user=data.get("user"),
         task_name=data.get("task_name"),
         exe=data.get("exe"),
@@ -375,6 +376,7 @@ def _process_from_dict(data: dict[str, Any]) -> GpuProcess:
         kind=str(data.get("kind") or "compute"),
         runtime_seconds=data.get("runtime_seconds"),
         process_start_time=data.get("process_start_time"),
+        parent_start_time=data.get("parent_start_time"),
         detail_status=str(data.get("detail_status") or "unknown"),
         detail_error=data.get("detail_error"),
     )

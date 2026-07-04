@@ -161,7 +161,9 @@ class SQLiteStore:
               session_id TEXT PRIMARY KEY,
               node_id TEXT NOT NULL,
               pid INTEGER NOT NULL,
+              ppid INTEGER,
               process_start_time REAL,
+              parent_start_time REAL,
               user TEXT,
               task_name TEXT NOT NULL,
               process_name TEXT NOT NULL,
@@ -548,8 +550,8 @@ class SQLiteStore:
         rows = self._con().execute(
             f"""
             SELECT session_id, node_id, pid, process_start_time, user, task_name,
-                   process_name, exe, cmdline_hash, first_seen_at, last_seen_at,
-                   duration_seconds, status, sample_count
+                   ppid, parent_start_time, process_name, exe, cmdline_hash,
+                   first_seen_at, last_seen_at, duration_seconds, status, sample_count
             FROM process_sessions
             {where}
             ORDER BY last_seen_at DESC
@@ -587,12 +589,17 @@ class SQLiteStore:
             con.execute(
                 """
                 INSERT INTO process_sessions (
-                  session_id, node_id, pid, process_start_time, user, task_name,
-                  process_name, exe, cmdline_hash, cmdline_text, first_seen_at,
-                  last_seen_at, duration_seconds, status, sample_count
+                  session_id, node_id, pid, ppid, process_start_time, parent_start_time,
+                  user, task_name, process_name, exe, cmdline_hash, cmdline_text,
+                  first_seen_at, last_seen_at, duration_seconds, status, sample_count
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.0, 'running', 1)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.0, 'running', 1)
                 ON CONFLICT(session_id) DO UPDATE SET
+                  ppid=COALESCE(excluded.ppid, process_sessions.ppid),
+                  parent_start_time=COALESCE(
+                    excluded.parent_start_time,
+                    process_sessions.parent_start_time
+                  ),
                   user=COALESCE(excluded.user, process_sessions.user),
                   task_name=excluded.task_name,
                   process_name=excluded.process_name,
@@ -608,7 +615,9 @@ class SQLiteStore:
                     session_id,
                     snapshot.node_id,
                     process.pid,
+                    process.ppid,
                     process.process_start_time,
+                    process.parent_start_time,
                     process.user,
                     task_name,
                     process.name,

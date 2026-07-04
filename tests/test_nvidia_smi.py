@@ -46,6 +46,22 @@ def test_parse_process_query_csv() -> None:
     assert sum(p.gpu_memory_mb for p in processes["GPU-abc"]) == 5120
 
 
+def test_parse_process_query_csv_includes_parent_identity(monkeypatch) -> None:
+    monkeypatch.setattr(nvidia_smi, "process_parent_pid", lambda pid: 4321)
+    monkeypatch.setattr(
+        nvidia_smi,
+        "process_start_time_seconds",
+        lambda pid: {1234: 90.0, 4321: 80.0}.get(pid),
+    )
+
+    processes = parse_process_query_csv("GPU-abc, 1234, python, 4096\n")
+    process = processes["GPU-abc"][0]
+
+    assert process.ppid == 4321
+    assert process.process_start_time == 90.0
+    assert process.parent_start_time == 80.0
+
+
 def test_sample_can_reuse_cached_processes(monkeypatch) -> None:
     gpu_output = (
         "0, GPU-abc, NVIDIA RTX 6000 Ada Generation, 00000000:0F:00.0, 580.65.06, "
