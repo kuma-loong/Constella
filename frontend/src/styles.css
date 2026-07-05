@@ -689,7 +689,7 @@ button {
 }
 
 .spark-wrap {
-  height: 58px;
+  height: 82px;
   margin: 16px 0 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -697,7 +697,7 @@ button {
     linear-gradient(rgba(100, 112, 132, 0.12) 1px, transparent 1px),
     linear-gradient(90deg, rgba(100, 112, 132, 0.12) 1px, transparent 1px),
     var(--panel-2);
-  background-size: 100% 18px, 30px 100%;
+  background-size: 100% 26px, 30px 100%;
 }
 
 .spark {
@@ -880,7 +880,7 @@ svg {
     linear-gradient(rgba(100, 112, 132, 0.12) 1px, transparent 1px),
     linear-gradient(90deg, rgba(100, 112, 132, 0.12) 1px, transparent 1px),
     var(--panel-2);
-  background-size: 100% 18px, 30px 100%, auto;
+  background-size: 100% 26px, 30px 100%, auto;
 }
 
 .bar-track {
@@ -1032,30 +1032,6 @@ svg {
 
 .analytics-table-wrap {
   overflow-x: auto;
-}
-
-.rankings-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-}
-
-.subhead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-
-.subhead strong {
-  font-size: 15px;
-}
-
-.subhead span {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .analytics-table {
@@ -1384,9 +1360,6 @@ svg {
     grid-column: span 12;
   }
 
-  .rankings-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 720px) {

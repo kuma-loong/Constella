@@ -337,56 +337,48 @@ export function createAnalyticsController({
     const offHours = payload?.off_hours;
     return `
       <div class="analytics-grid">
-        <article class="analytics-card span-12">
+        <article class="analytics-card span-6">
           <div class="card-title">
-            <span><i data-lucide="bar-chart-3"></i>Usage rankings</span>
+            <span><i data-lucide="bar-chart-3"></i>User GPU hours</span>
             <em>GPU hours are weighted by GPU model</em>
           </div>
-          <div class="rankings-grid">
-            <section>
-              <div class="subhead">
-                <strong>User GPU hours</strong>
-                <span>Top 8</span>
-              </div>
-              ${
-                users.length
-                  ? analyticsTable(
-                      ["User", "GPU hours", "Jobs", "Models", "Last seen"],
-                      users.slice(0, 8).map((item) => [
-                        item.user,
-                        fmtNumber(item.weighted_gpu_hours),
-                        String(item.job_count),
-                        item.top_gpu_models.map((model) => model.name).join(", ") || "n/a",
-                        formatTime(item.last_seen_at),
-                      ]),
-                    )
-                  : emptyInline("no user history in this range")
-              }
-            </section>
-            <section>
-              <div class="subhead">
-                <strong>Job rankings</strong>
-                <span>Top 8</span>
-              </div>
-              ${
-                jobs.length
-                  ? analyticsTable(
-                      ["Task", "User", "Node", "GPU hours", "Runtime", "Status"],
-                      jobs.slice(0, 8).map((item) => [
-                        item.task_name,
-                        item.user,
-                        item.node_id,
-                        fmtNumber(item.weighted_gpu_hours),
-                        fmtDuration(item.duration_seconds),
-                        item.status,
-                      ]),
-                    )
-                  : emptyInline("no job history in this range")
-              }
-            </section>
-          </div>
+          ${
+            users.length
+              ? analyticsTable(
+                  ["User", "GPU hours", "Jobs", "Models", "Last seen"],
+                  users.slice(0, 8).map((item) => [
+                    item.user,
+                    fmtNumber(item.weighted_gpu_hours),
+                    String(item.job_count),
+                    item.top_gpu_models.map((model) => model.name).join(", ") || "n/a",
+                    formatTime(item.last_seen_at),
+                  ]),
+                )
+              : emptyInline("no user history in this range")
+          }
         </article>
-        <article class="analytics-card span-8">
+        <article class="analytics-card span-6">
+          <div class="card-title">
+            <span><i data-lucide="table-2"></i>Job rankings</span>
+            <em>Top 8</em>
+          </div>
+          ${
+            jobs.length
+              ? analyticsTable(
+                  ["Task", "User", "Node", "GPU hours", "Runtime", "Status"],
+                  jobs.slice(0, 8).map((item) => [
+                    item.task_name,
+                    item.user,
+                    item.node_id,
+                    fmtNumber(item.weighted_gpu_hours),
+                    fmtDuration(item.duration_seconds),
+                    item.status,
+                  ]),
+                )
+              : emptyInline("no job history in this range")
+          }
+        </article>
+        <article class="analytics-card span-6">
           <div class="card-title">
             <span><i data-lucide="alert-triangle"></i>Low-utilization reservations</span>
             <em>${anomalies.length} signals</em>
@@ -399,7 +391,7 @@ export function createAnalyticsController({
             }
           </div>
         </article>
-        <article class="analytics-card span-4">
+        <article class="analytics-card span-6">
           <div class="card-title">
             <span><i data-lucide="moon"></i>After-hours lab life</span>
             <em>Beijing time</em>
