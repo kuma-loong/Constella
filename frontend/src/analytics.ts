@@ -8,6 +8,8 @@ import {
   formatBucket,
   formatTime,
 } from "./format";
+import uPlot from "uplot";
+import "uplot/dist/uPlot.min.css";
 
 export type Route = { kind: "overview" } | { kind: "node"; nodeId: string };
 
@@ -142,14 +144,14 @@ const NODE_METRICS: { key: NodeMetric; label: string; max?: number }[] = [
   { key: "avg_temperature_c", label: "Temp", max: 100 },
 ];
 const CHART_COLORS = [
-  "#1f9d72",
-  "#2563eb",
-  "#c2410c",
-  "#7c3aed",
-  "#be123c",
-  "#0f766e",
-  "#b45309",
-  "#4f46e5",
+  "--chart-1",
+  "--chart-2",
+  "--chart-3",
+  "--chart-4",
+  "--chart-5",
+  "--chart-6",
+  "--chart-7",
+  "--chart-8",
 ];
 
 export function createAnalyticsController({
@@ -168,6 +170,8 @@ export function createAnalyticsController({
   let nodePayload: NodeAnalytics | null = null;
   let nodeKey = "";
   let nodeLoading = false;
+  let nodeChart: uPlot | null = null;
+  let nodeChartResize: ResizeObserver | null = null;
 
   function handleClick(target: HTMLButtonElement) {
     const action = target.dataset.analyticsAction;
@@ -194,7 +198,7 @@ export function createAnalyticsController({
     }
     if (action === "node-gpu") {
       updateSelectedGpu(target.dataset.gpuUuid || null);
-      updateGpuSelectionDom();
+      renderNode(currentRoute());
       return true;
     }
     if (action === "overview-refresh") {
@@ -298,6 +302,7 @@ export function createAnalyticsController({
   }
 
   function renderNode(route: Route) {
+    destroyNodeChart();
     if (route.kind !== "node") {
       nodeElement.innerHTML = "";
       return;
@@ -328,6 +333,9 @@ export function createAnalyticsController({
             : nodeBody(payload)
       }
     `;
+    if (!disabled && !nodeLoading && payload?.series?.some((item) => item.points.length)) {
+      mountNodeChart(payload.series, nodeMetric);
+    }
   }
 
   function overviewBody(payload: OverviewAnalytics | null) {
@@ -471,32 +479,6 @@ export function createAnalyticsController({
     selectedGpuUuids.add(gpuUuid);
   }
 
-  function updateGpuSelectionDom() {
-    const series = nodePayload?.series || [];
-    const allSelected = selectedGpuUuids.size === 0;
-    nodeElement
-      .querySelectorAll<SVGPolylineElement>("[data-chart-gpu-uuid]")
-      .forEach((line) => {
-        const selected = allSelected || selectedGpuUuids.has(line.dataset.chartGpuUuid || "");
-        line.classList.toggle("is-selected", selected);
-        line.classList.toggle("is-muted", !selected);
-      });
-    nodeElement.querySelectorAll<HTMLButtonElement>("[data-legend-gpu-uuid]").forEach((button) => {
-      const selected = allSelected || selectedGpuUuids.has(button.dataset.legendGpuUuid || "");
-      button.classList.toggle("is-selected", selected);
-      button.classList.toggle("is-muted", !selected);
-      button.setAttribute("aria-pressed", selected ? "true" : "false");
-    });
-    nodeElement.querySelectorAll<HTMLButtonElement>("[data-legend-all]").forEach((button) => {
-      button.classList.toggle("is-active", allSelected);
-      button.setAttribute("aria-pressed", allSelected ? "true" : "false");
-    });
-    const summary = nodeElement.querySelector<HTMLElement>("[data-node-selection-summary]");
-    if (summary) {
-      summary.textContent = selectionSummary(series);
-    }
-  }
-
   function metricButtons(selected: NodeMetric) {
     return `
       <div class="segmented metric-tabs" role="group">
@@ -516,49 +498,10 @@ export function createAnalyticsController({
   }
 
   function lineChart(series: AnalyticsSeries[], metric: NodeMetric) {
-    const width = 760;
-    const height = 300;
-    const pad = { left: 42, right: 14, top: 16, bottom: 28 };
-    const points = series.flatMap((item) => item.points);
-    const minTime = Math.min(...points.map((point) => point.bucket_start));
-    const maxTime = Math.max(...points.map((point) => point.bucket_start));
-    const metricDef = NODE_METRICS.find((item) => item.key === metric) || NODE_METRICS[0];
-    const maxValue =
-      metricDef.max || Math.max(1, ...points.map((point) => metricValue(point, metric))) * 1.08;
-    const plotWidth = width - pad.left - pad.right;
-    const plotHeight = height - pad.top - pad.bottom;
-    const pathFor = (item: AnalyticsSeries) =>
-      item.points
-        .map((point) => {
-          const x = pad.left + ((point.bucket_start - minTime) / Math.max(1, maxTime - minTime)) * plotWidth;
-          const y = pad.top + plotHeight - (metricValue(point, metric) / maxValue) * plotHeight;
-          return `${x.toFixed(1)},${y.toFixed(1)}`;
-        })
-        .join(" ");
     return `
       <div class="chart-wrap">
-        <div class="chart-plot">
-          <svg class="line-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeAttr(metricDef.label)} history">
-            <line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${height - pad.bottom}"></line>
-            <line x1="${pad.left}" y1="${height - pad.bottom}" x2="${width - pad.right}" y2="${height - pad.bottom}"></line>
-            ${series
-              .map((item, index) => {
-                if (!item.points.length) {
-                  return "";
-                }
-                const selected = isGpuSelected(item.gpu_uuid);
-                return `<polyline
-                  class="${selected ? "is-selected" : "is-muted"}"
-                  data-chart-gpu-uuid="${escapeAttr(item.gpu_uuid)}"
-                  points="${pathFor(item)}"
-                  style="stroke:${CHART_COLORS[index % CHART_COLORS.length]}"
-                ><title>GPU${item.gpu_index ?? "?"} ${escapeHtml(item.gpu_name || item.gpu_uuid)}</title></polyline>`;
-              })
-              .join("")}
-          </svg>
-          <span class="chart-label chart-label-y" style="left:4px;top:${pad.top}px">${escapeHtml(metricTick(maxValue, metric))}</span>
-          <span class="chart-label chart-label-start" style="left:${pad.left}px;bottom:7px">${escapeHtml(formatTime(minTime))}</span>
-          <span class="chart-label chart-label-end" style="right:${pad.right}px;bottom:7px">${escapeHtml(formatTime(maxTime))}</span>
+        <div class="chart-plot uplot-theme">
+          <div class="line-chart" data-node-chart aria-label="${escapeAttr(metricLabel(metric))} history"></div>
         </div>
         <div class="chart-legend">
           <button class="${selectedGpuUuids.size === 0 ? "is-active" : ""}" type="button" data-analytics-action="node-gpu" data-legend-all="true" aria-pressed="${selectedGpuUuids.size === 0 ? "true" : "false"}">
@@ -575,13 +518,92 @@ export function createAnalyticsController({
                   data-gpu-uuid="${escapeAttr(item.gpu_uuid)}"
                   data-legend-gpu-uuid="${escapeAttr(item.gpu_uuid)}"
                   aria-pressed="${selected ? "true" : "false"}"
-                ><b style="background:${CHART_COLORS[index % CHART_COLORS.length]}"></b>GPU${item.gpu_index ?? "?"}</button>
+                ><b style="background:var(${CHART_COLORS[index % CHART_COLORS.length]})"></b>GPU${item.gpu_index ?? "?"}</button>
               `;
             })
             .join("")}
         </div>
       </div>
     `;
+  }
+
+  function mountNodeChart(series: AnalyticsSeries[], metric: NodeMetric) {
+    const target = nodeElement.querySelector<HTMLElement>("[data-node-chart]");
+    if (!target) {
+      return;
+    }
+    const plotSeries = series.filter((item) => item.points.length);
+    const chartData = alignedChartData(plotSeries, metric);
+    if (!chartData.starts.length) {
+      return;
+    }
+    const metricDef = NODE_METRICS.find((item) => item.key === metric) || NODE_METRICS[0];
+    const visibleValues = plotSeries
+      .filter((item) => isGpuSelected(item.gpu_uuid))
+      .flatMap((item) => item.points.map((point) => metricValue(point, metric)));
+    const maxValue = metricDef.max || Math.max(1, ...visibleValues) * 1.08;
+    const colors = chartColors();
+    const width = Math.max(320, target.clientWidth || target.parentElement?.clientWidth || 760);
+    const height = chartHeight();
+    const css = chartCss();
+    const opts: uPlot.Options = {
+      width,
+      height,
+      padding: [8, 10, 0, 0],
+      scales: {
+        x: { time: true },
+        y: { range: [0, maxValue] },
+      },
+      axes: [
+        {
+          stroke: css.muted,
+          grid: { stroke: css.border, width: 1 },
+          space: chartAxisSpace(),
+          ticks: { stroke: css.border },
+          values: (_self, ticks) => sparseAxisLabels(ticks, chartMaxXAxisLabels(width), (value) => formatTime(Number(value))),
+        },
+        {
+          stroke: css.muted,
+          grid: { stroke: css.border, width: 1 },
+          ticks: { stroke: css.border },
+          values: (_self, ticks) => ticks.map((value) => formatMetricTick(Number(value), metric)),
+        },
+      ],
+      cursor: {
+        drag: { x: false, y: false },
+      },
+      legend: {
+        show: true,
+      },
+      series: [
+        {},
+        ...plotSeries.map((item, index) => ({
+          label: `GPU${item.gpu_index ?? "?"}`,
+          show: isGpuSelected(item.gpu_uuid),
+          stroke: colors[index % colors.length],
+          width: 2.5,
+          points: { show: false },
+          spanGaps: false,
+          value: (_self: uPlot, value: number | null | undefined) =>
+            value === null || value === undefined ? "n/a" : formatMetricTick(Number(value), metric),
+        })),
+      ],
+    };
+    nodeChart = new uPlot(opts, chartData.data, target);
+    nodeChartResize = new ResizeObserver(([entry]) => {
+      const nextWidth = Math.max(320, Math.floor(entry.contentRect.width));
+      if (nodeChart && nextWidth !== nodeChart.width) {
+        nodeChart.setSize({ width: nextWidth, height: chartHeight() });
+      }
+    });
+    nodeChartResize.observe(target);
+  }
+
+  function destroyNodeChart() {
+    nodeChartResize?.disconnect();
+    nodeChartResize = null;
+    nodeChart?.destroy();
+    nodeChart = null;
   }
 
   function isGpuSelected(gpuUuid: string) {
@@ -784,7 +806,51 @@ function metricLabel(metric: NodeMetric) {
   return NODE_METRICS.find((item) => item.key === metric)?.label || "GPU";
 }
 
-function metricTick(value: number, metric: NodeMetric) {
+function alignedChartData(series: AnalyticsSeries[], metric: NodeMetric) {
+  const starts = Array.from(
+    new Set(series.flatMap((item) => item.points.map((point) => point.bucket_start))),
+  ).sort((a, b) => a - b);
+  const data: uPlot.AlignedData = [
+    starts,
+    ...series.map((item) => {
+      const values = new Map(item.points.map((point) => [point.bucket_start, metricValue(point, metric)]));
+      return starts.map((start) => values.get(start) ?? null);
+    }),
+  ];
+  return { starts, data };
+}
+
+function chartCss() {
+  const styles = getComputedStyle(document.documentElement);
+  return {
+    border: styles.getPropertyValue("--chart-grid").trim() || styles.getPropertyValue("--border").trim(),
+    muted: styles.getPropertyValue("--chart-axis").trim() || styles.getPropertyValue("--muted").trim(),
+  };
+}
+
+function chartColors() {
+  const styles = getComputedStyle(document.documentElement);
+  return CHART_COLORS.map((token) => styles.getPropertyValue(token).trim()).filter(Boolean);
+}
+
+function chartHeight() {
+  return window.matchMedia("(max-width: 760px)").matches ? 240 : 320;
+}
+
+function chartAxisSpace() {
+  return window.matchMedia("(max-width: 760px)").matches ? 108 : 92;
+}
+
+function chartMaxXAxisLabels(width: number) {
+  return Math.max(2, Math.floor(width / chartAxisSpace()));
+}
+
+function sparseAxisLabels<T>(ticks: T[], maxLabels: number, format: (value: T) => string) {
+  const step = Math.max(1, Math.ceil(ticks.length / maxLabels));
+  return ticks.map((value, index) => (index === 0 || index === ticks.length - 1 || index % step === 0 ? format(value) : ""));
+}
+
+function formatMetricTick(value: number, metric: NodeMetric) {
   if (metric === "avg_memory_used_mb") {
     return fmtGiB(value);
   }
@@ -794,7 +860,7 @@ function metricTick(value: number, metric: NodeMetric) {
   if (metric === "avg_power_watts") {
     return `${value.toFixed(0)} W`;
   }
-  return `${value.toFixed(0)} C`;
+  return `${value.toFixed(0)}°C`;
 }
 
 function heatAxis(starts: number[], payload: NodeAnalytics | null) {

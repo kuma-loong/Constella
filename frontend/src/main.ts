@@ -634,17 +634,25 @@ function renderGpuGrid(nodeId: string, node: NodeSnapshot | null) {
     gpuGrid.innerHTML = `<div class="empty-panel">Node ${escapeHtml(nodeId)} not found</div>`;
     return;
   }
+  const shortIds = shortGpuIds(node.gpus);
   const items = node.gpus.map((gpu) => ({ node, gpu }));
   if (!items.length) {
     gpuGrid.innerHTML = `<div class="empty-panel">${escapeHtml(node.error || "No GPU snapshot available")}</div>`;
     return;
   }
   gpuGrid.innerHTML = items
-    .map(({ node, gpu }) => gpuCard(node, gpu, node.history[gpu.gpu_id || `${node.node_id}:${gpu.uuid}`] || {}))
+    .map(({ node, gpu }) =>
+      gpuCard(
+        node,
+        gpu,
+        shortIds.get(gpu) || shortGpuId(gpu.uuid, gpu.index),
+        node.history[gpu.gpu_id || `${node.node_id}:${gpu.uuid}`] || {},
+      ),
+    )
     .join("");
 }
 
-function gpuCard(node: NodeSnapshot, gpu: GpuInfo, history: Record<string, number[]>) {
+function gpuCard(node: NodeSnapshot, gpu: GpuInfo, shortId: string, history: Record<string, number[]>) {
   const subtitle = [
     node.node_id,
     gpu.pstate,
@@ -666,7 +674,7 @@ function gpuCard(node: NodeSnapshot, gpu: GpuInfo, history: Record<string, numbe
     <article class="gpu-card">
       <div class="gpu-head">
         <div>
-          <span class="gpu-index">${escapeHtml(node.node_id)} / GPU ${gpu.index}</span>
+          <span class="gpu-index" title="${escapeAttr(gpu.uuid)}">${escapeHtml(shortId)}</span>
           <h3>${escapeHtml(compactGpuName(gpu.name))}</h3>
           <p>${escapeHtml(subtitle || gpu.uuid)}</p>
         </div>
@@ -982,6 +990,39 @@ function icon(name: string) {
 
 function compactGpuName(name: string) {
   return name.replace(/^NVIDIA\s+/, "");
+}
+
+function shortGpuIds(gpus: GpuInfo[]) {
+  const firstPass = gpus.map((gpu) => gpuIdSuffix(gpu.uuid, gpu.index, 4));
+  const firstCounts = countValues(firstPass);
+  const suffixes = gpus.map((gpu, index) =>
+    firstCounts.get(firstPass[index]) === 1 ? firstPass[index] : gpuIdSuffix(gpu.uuid, gpu.index, 6),
+  );
+  const finalCounts = countValues(suffixes);
+  return new Map(
+    gpus.map((gpu, index) => {
+      const suffix = suffixes[index];
+      const uniqueSuffix = finalCounts.get(suffix) === 1 ? suffix : `${suffix}-${gpu.index}`;
+      return [gpu, `GPU-${uniqueSuffix.toLowerCase()}`];
+    }),
+  );
+}
+
+function shortGpuId(uuid: string, index: number) {
+  return `GPU-${gpuIdSuffix(uuid, index, 4).toLowerCase()}`;
+}
+
+function gpuIdSuffix(uuid: string, index: number, length: number) {
+  const compact = uuid.replace(/[^a-zA-Z0-9]/g, "");
+  return compact.slice(-length) || String(index).padStart(2, "0");
+}
+
+function countValues(values: string[]) {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    counts.set(value, (counts.get(value) || 0) + 1);
+  }
+  return counts;
 }
 
 function sameInterval(left: number | null, right: number | null) {
