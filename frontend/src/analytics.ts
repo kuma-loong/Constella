@@ -543,7 +543,7 @@ export function createAnalyticsController({
       .flatMap((item) => item.points.map((point) => metricValue(point, metric)));
     const maxValue = metricDef.max || Math.max(1, ...visibleValues) * 1.08;
     const colors = chartColors();
-    const width = Math.max(320, target.clientWidth || target.parentElement?.clientWidth || 760);
+    const width = chartTargetWidth(target);
     const height = chartHeight();
     const css = chartCss();
     const opts: uPlot.Options = {
@@ -563,6 +563,8 @@ export function createAnalyticsController({
           values: (_self, ticks) => sparseAxisLabels(ticks, chartMaxXAxisLabels(width), (value) => formatTime(Number(value))),
         },
         {
+          size: chartYAxisSize(metric),
+          gap: 8,
           stroke: css.muted,
           grid: { stroke: css.border, width: 1 },
           ticks: { stroke: css.border },
@@ -837,12 +839,29 @@ function chartHeight() {
   return window.matchMedia("(max-width: 760px)").matches ? 240 : 320;
 }
 
+function chartTargetWidth(target: HTMLElement) {
+  const styles = getComputedStyle(target);
+  const padding = Number.parseFloat(styles.paddingLeft) + Number.parseFloat(styles.paddingRight);
+  const measuredWidth = target.clientWidth || target.parentElement?.clientWidth || 760;
+  return Math.max(320, Math.floor(measuredWidth - padding));
+}
+
 function chartAxisSpace() {
   return window.matchMedia("(max-width: 760px)").matches ? 108 : 92;
 }
 
 function chartMaxXAxisLabels(width: number) {
   return Math.max(2, Math.floor(width / chartAxisSpace()));
+}
+
+function chartYAxisSize(metric: NodeMetric) {
+  if (metric === "avg_memory_used_mb") {
+    return 82;
+  }
+  if (metric === "avg_power_watts") {
+    return 66;
+  }
+  return 58;
 }
 
 function sparseAxisLabels<T>(ticks: T[], maxLabels: number, format: (value: T) => string) {
