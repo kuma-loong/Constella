@@ -1,4 +1,4 @@
-import type { ClusterSnapshot, GpuInfo, NodeSnapshot } from "./types";
+import type { ClusterSnapshot, NodeSnapshot } from "./types";
 
 export type FabricConfigItem = {
   count: number;
@@ -84,39 +84,6 @@ export function fabricNodeSizeClass(node: NodeSnapshot) {
 
 export function compactGpuName(name: string) {
   return name.replace(/^NVIDIA\s+/, "");
-}
-
-export function shortGpuIds(gpus: GpuInfo[]) {
-  const firstPass = gpus.map((gpu) => gpuIdSuffix(gpu.uuid, gpu.index, 4));
-  const firstCounts = countValues(firstPass);
-  const suffixes = gpus.map((gpu, index) =>
-    firstCounts.get(firstPass[index]) === 1 ? firstPass[index] : gpuIdSuffix(gpu.uuid, gpu.index, 6),
-  );
-  const finalCounts = countValues(suffixes);
-  return new Map(
-    gpus.map((gpu, index) => {
-      const suffix = suffixes[index];
-      const uniqueSuffix = finalCounts.get(suffix) === 1 ? suffix : `${suffix}-${gpu.index}`;
-      return [gpu, `GPU-${uniqueSuffix.toLowerCase()}`];
-    }),
-  );
-}
-
-export function shortGpuId(uuid: string, index: number) {
-  return `GPU-${gpuIdSuffix(uuid, index, 4).toLowerCase()}`;
-}
-
-function gpuIdSuffix(uuid: string, index: number, length: number) {
-  const compact = uuid.replace(/[^a-zA-Z0-9]/g, "");
-  return compact.slice(-length) || String(index).padStart(2, "0");
-}
-
-function countValues(values: string[]) {
-  const counts = new Map<string, number>();
-  for (const value of values) {
-    counts.set(value, (counts.get(value) || 0) + 1);
-  }
-  return counts;
 }
 
 export function sameInterval(left: number | null, right: number | null) {

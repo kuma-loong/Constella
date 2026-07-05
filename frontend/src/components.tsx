@@ -11,8 +11,6 @@ import {
   maxClusterLatency,
   nodeHealthPercent,
   sameInterval,
-  shortGpuId,
-  shortGpuIds,
   statusClass,
   tempClass,
 } from "./cluster-utils";
@@ -426,7 +424,6 @@ export function GpuGrid({ nodeId, node }: { nodeId: string; node: NodeSnapshot |
   if (!node.gpus.length) {
     return <div class="empty-panel">{node.error || "No GPU snapshot available"}</div>;
   }
-  const shortIds = shortGpuIds(node.gpus);
   return (
     <>
       {node.gpus.map((gpu) => (
@@ -434,7 +431,6 @@ export function GpuGrid({ nodeId, node }: { nodeId: string; node: NodeSnapshot |
           key={gpu.uuid}
           node={node}
           gpu={gpu}
-          shortId={shortIds.get(gpu) || shortGpuId(gpu.uuid, gpu.index)}
           history={node.history[gpu.gpu_id || `${node.node_id}:${gpu.uuid}`] || {}}
         />
       ))}
@@ -445,12 +441,10 @@ export function GpuGrid({ nodeId, node }: { nodeId: string; node: NodeSnapshot |
 export function GpuCard({
   node,
   gpu,
-  shortId,
   history,
 }: {
   node: NodeSnapshot;
   gpu: GpuInfo;
-  shortId: string;
   history: Record<string, number[]>;
 }) {
   const subtitle = [
@@ -470,7 +464,7 @@ export function GpuCard({
       <div class="gpu-head">
         <div>
           <span class="gpu-index" title={gpu.uuid}>
-            {shortId}
+            GPU{gpu.index}
           </span>
           <h3>{compactGpuName(gpu.name)}</h3>
           <p>{subtitle || gpu.uuid}</p>
@@ -513,7 +507,7 @@ export function GpuCard({
         </span>
         <span>
           <Icon name="cpu" />
-          {gpu.pci_bus_id || gpu.uuid}
+          {gpu.pci_bus_id || `UUID ${gpu.uuid}`}
         </span>
       </div>
     </article>
