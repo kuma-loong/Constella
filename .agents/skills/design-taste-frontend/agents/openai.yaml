@@ -1,0 +1,4 @@
+interface:
+  display_name: "Design Taste Frontend"
+  short_description: "Ship distinctive frontend pages and redesigns"
+  default_prompt: "Use $design-taste-frontend to build a distinctive, polished frontend experience for this project."

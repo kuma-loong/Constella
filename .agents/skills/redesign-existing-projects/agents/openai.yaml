@@ -1,0 +1,4 @@
+interface:
+  display_name: "Redesign Existing Projects"
+  short_description: "Upgrade existing app and website UI"
+  default_prompt: "Use $redesign-existing-projects to audit and upgrade the existing UI without breaking functionality."
