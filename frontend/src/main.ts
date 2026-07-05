@@ -928,7 +928,7 @@ function applyTheme() {
   const resolved = themeMode === "system" ? (schemeQuery.matches ? "dark" : "light") : themeMode;
   document.documentElement.dataset.theme = themeMode;
   document.documentElement.dataset.resolvedTheme = resolved;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", resolved === "dark" ? "#111510" : "#f4f7f5");
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", resolved === "dark" ? "#0f1113" : "#f7f7f4");
   const iconName = themeMode === "system" ? "monitor" : themeMode === "dark" ? "moon" : "sun";
   themeButton.innerHTML = icon(iconName);
   themeButton.setAttribute("aria-label", `Theme: ${themeMode}`);
