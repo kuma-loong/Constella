@@ -136,6 +136,8 @@ def test_overview_analytics_aggregates_users_jobs_and_anomalies(tmp_path) -> Non
         assert round(user["weighted_gpu_hours"], 2) == 4.22
         assert payload["job_rankings"][0]["gpu_count"] == 2
         assert payload["anomalies"][0]["user"] == "alice"
+        assert payload["anomalies"][0]["gpu_indices"] == [0, 1]
+        assert payload["anomalies"][0]["pids"] == [111]
         assert payload["anomalies"][0]["recent_avg_gpu_utilization"] < 5
     finally:
         store.close()
@@ -155,7 +157,7 @@ def test_node_analytics_returns_series_and_heatmap(tmp_path) -> None:
         assert payload["gpus"][0]["uuid"] == "GPU-0"
         assert payload["series"][0]["gpu_uuid"] == "GPU-0"
         assert payload["series"][0]["points"][0]["avg_gpu_utilization"] == 3.0
-        assert payload["heatmap_bucket_seconds"] == 1800
+        assert payload["heatmap_bucket_seconds"] == 3600
         assert payload["heatmap"][0]["buckets"]
     finally:
         store.close()

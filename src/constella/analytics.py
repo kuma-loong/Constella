@@ -49,6 +49,8 @@ class JobUsage:
     weighted_gpu_hours: float = 0.0
     sessions: set[str] = field(default_factory=set)
     gpu_uuids: set[str] = field(default_factory=set)
+    gpu_indices: set[int] = field(default_factory=set)
+    pids: set[int] = field(default_factory=set)
     memory_seconds: float = 0.0
     usage_seconds: float = 0.0
 
@@ -65,12 +67,29 @@ def overview_analytics(store: SQLiteStore, *, range_name: str = "7d", now: float
     rows = _usage_rows(store, range_start=range_start, range_end=range_end)
     users, jobs = _roll_up_usage(rows, range_start=range_start, range_end=range_end)
     jobs_sorted = sorted(jobs.values(), key=lambda item: item.weighted_gpu_hours, reverse=True)
+    anomaly_start = range_end - RANGES["24h"]
+    anomaly_rows = _usage_rows(store, range_start=anomaly_start, range_end=range_end)
+    _, anomaly_jobs = _roll_up_usage(
+        anomaly_rows,
+        range_start=anomaly_start,
+        range_end=range_end,
+    )
+    anomaly_jobs_sorted = sorted(
+        anomaly_jobs.values(),
+        key=lambda item: item.weighted_gpu_hours,
+        reverse=True,
+    )
 
     return {
         **_meta(range_start=range_start, range_end=range_end, generated_at=range_end),
         "user_gpu_hours": [_user_payload(item) for item in _top(users.values(), "weighted_gpu_hours", 20)],
         "job_rankings": [_job_payload(item) for item in jobs_sorted[:20]],
-        "anomalies": _anomaly_payloads(store, jobs_sorted, range_start=range_start, range_end=range_end),
+        "anomalies": _anomaly_payloads(
+            store,
+            anomaly_jobs_sorted,
+            range_start=anomaly_start,
+            range_end=range_end,
+        ),
         "off_hours": _off_hours(rows, range_start=range_start, range_end=range_end),
     }
 
@@ -196,6 +215,10 @@ def _roll_up_usage(
         job.weighted_gpu_hours += seconds * weight / 3600
         job.sessions.add(row["session_id"])
         job.gpu_uuids.add(row["gpu_uuid"])
+        if row["gpu_index"] is not None:
+            job.gpu_indices.add(int(row["gpu_index"]))
+        if row["pid"] is not None:
+            job.pids.add(int(row["pid"]))
         job.memory_seconds += float(row["avg_memory_mb"] or 0.0) * seconds
         job.usage_seconds += seconds
     return users, jobs
@@ -242,6 +265,8 @@ def _anomaly_payloads(
                 "lifetime_avg_gpu_utilization": round(lifetime_avg or 0.0, 1),
                 "idle_tail_seconds": 3600 if recent_avg is not None else 0,
                 "gpu_uuids": sorted(job.gpu_uuids),
+                "gpu_indices": sorted(job.gpu_indices),
+                "pids": sorted(job.pids),
                 "last_seen_at": job.last_seen_at,
                 "reason": "long memory-heavy job with low recent GPU utilization",
             }
@@ -537,11 +562,13 @@ def _target_bucket(span: float, source_bucket: int, *, target_points: int) -> in
 
 
 def _heatmap_bucket(span: float) -> int:
+    if span <= 60 * 60:
+        return 5 * 60
     if span <= 24 * 60 * 60:
-        return 30 * 60
+        return 60 * 60
     if span <= 7 * 24 * 60 * 60:
-        return 2 * 60 * 60
-    return 4 * 60 * 60
+        return 6 * 60 * 60
+    return 24 * 60 * 60
 
 
 def compact_gpu_name(name: str | None) -> str:
