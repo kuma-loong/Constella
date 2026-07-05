@@ -61,6 +61,8 @@ type AnomalyItem = {
   recent_avg_gpu_utilization: number;
   idle_tail_seconds: number;
   gpu_uuids: string[];
+  gpu_indices?: number[];
+  pids?: number[];
   last_seen_at: number;
   reason: string;
 };
@@ -335,45 +337,54 @@ export function createAnalyticsController({
     const offHours = payload?.off_hours;
     return `
       <div class="analytics-grid">
-        <article class="analytics-card span-6">
+        <article class="analytics-card span-12">
           <div class="card-title">
-            <span><i data-lucide="bar-chart-3"></i>User GPU hours</span>
-            <em>weighted sort</em>
+            <span><i data-lucide="bar-chart-3"></i>Usage rankings</span>
+            <em>GPU hours are weighted by GPU model</em>
           </div>
-          ${
-            users.length
-              ? analyticsTable(
-                  ["User", "GPU h", "Weighted", "Tasks", "Models"],
-                  users.slice(0, 8).map((item) => [
-                    item.user,
-                    fmtNumber(item.gpu_hours),
-                    fmtNumber(item.weighted_gpu_hours),
-                    `${item.task_count} / ${item.job_count}`,
-                    item.top_gpu_models.map((model) => model.name).join(", ") || "n/a",
-                  ]),
-                )
-              : emptyInline("no user history in this range")
-          }
-        </article>
-        <article class="analytics-card span-6">
-          <div class="card-title">
-            <span><i data-lucide="table-2"></i>Job rankings</span>
-            <em>top 8</em>
+          <div class="rankings-grid">
+            <section>
+              <div class="subhead">
+                <strong>User GPU hours</strong>
+                <span>Top 8</span>
+              </div>
+              ${
+                users.length
+                  ? analyticsTable(
+                      ["User", "GPU hours", "Jobs", "Models", "Last seen"],
+                      users.slice(0, 8).map((item) => [
+                        item.user,
+                        fmtNumber(item.weighted_gpu_hours),
+                        String(item.job_count),
+                        item.top_gpu_models.map((model) => model.name).join(", ") || "n/a",
+                        formatTime(item.last_seen_at),
+                      ]),
+                    )
+                  : emptyInline("no user history in this range")
+              }
+            </section>
+            <section>
+              <div class="subhead">
+                <strong>Job rankings</strong>
+                <span>Top 8</span>
+              </div>
+              ${
+                jobs.length
+                  ? analyticsTable(
+                      ["Task", "User", "Node", "GPU hours", "Runtime", "Status"],
+                      jobs.slice(0, 8).map((item) => [
+                        item.task_name,
+                        item.user,
+                        item.node_id,
+                        fmtNumber(item.weighted_gpu_hours),
+                        fmtDuration(item.duration_seconds),
+                        item.status,
+                      ]),
+                    )
+                  : emptyInline("no job history in this range")
+              }
+            </section>
           </div>
-          ${
-            jobs.length
-              ? analyticsTable(
-                  ["Task", "User", "Node", "GPU h", "Runtime"],
-                  jobs.slice(0, 8).map((item) => [
-                    item.task_name,
-                    item.user,
-                    item.node_id,
-                    fmtNumber(item.weighted_gpu_hours),
-                    fmtDuration(item.duration_seconds),
-                  ]),
-                )
-              : emptyInline("no job history in this range")
-          }
         </article>
         <article class="analytics-card span-8">
           <div class="card-title">
@@ -390,7 +401,7 @@ export function createAnalyticsController({
         </article>
         <article class="analytics-card span-4">
           <div class="card-title">
-            <span><i data-lucide="moon"></i>Off-hour activity</span>
+            <span><i data-lucide="moon"></i>After-hours lab life</span>
             <em>Beijing time</em>
           </div>
           ${offHoursCard(offHours)}
@@ -632,14 +643,27 @@ function analyticsTable(headers: string[], rows: string[][]) {
 }
 
 function anomalyCard(item: AnomalyItem) {
+  const gpuLabel = item.gpu_indices?.length
+    ? item.gpu_indices.map((index) => `GPU${index}`).join(", ")
+    : `${item.gpu_uuids.length} GPU${item.gpu_uuids.length === 1 ? "" : "s"}`;
+  const pidLabel = compactPids(item.pids || []);
+  const detailTitle = [
+    item.reason,
+    item.gpu_uuids.length ? `GPU UUIDs: ${item.gpu_uuids.join(", ")}` : "",
+    item.pids?.length ? `PIDs: ${item.pids.join(", ")}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
   return `
-    <div class="anomaly-card">
+    <div class="anomaly-card" title="${escapeAttr(detailTitle)}">
       <strong>${escapeHtml(item.task_name)}</strong>
-      <span>${escapeHtml(item.user)} · ${escapeHtml(item.node_id)} · ${fmtDuration(item.duration_seconds)}</span>
+      <span>${escapeHtml(item.user)} · ${escapeHtml(item.node_id)} · ${escapeHtml(gpuLabel)} · ${escapeHtml(pidLabel)}</span>
       <div>
         <b>${fmtNumber(item.gpu_memory_gb)} GiB</b>
         <b>${fmtPct(item.recent_avg_gpu_utilization)} recent GPU</b>
         <b>${fmtDuration(item.idle_tail_seconds)} idle tail</b>
+        <b>${fmtDuration(item.duration_seconds)} runtime</b>
+        <b>${formatTime(item.last_seen_at)} last seen</b>
       </div>
     </div>
   `;
@@ -649,7 +673,9 @@ function offHoursCard(item: OffHours | undefined) {
   if (!item) {
     return emptyInline("no off-hour data");
   }
+  const topUser = item.top_users?.[0]?.user || "n/a";
   return `
+    <p class="offhour-note">${escapeHtml(offHoursInsight(item))}</p>
     <div class="offhour-grid">
       <span><b>${item.night_job_count}</b><small>night jobs</small></span>
       <span><b>${item.weekend_job_count}</b><small>weekend jobs</small></span>
@@ -657,13 +683,49 @@ function offHoursCard(item: OffHours | undefined) {
       <span><b>${fmtNumber(item.weekend_gpu_hours)}</b><small>weekend GPU h</small></span>
     </div>
     <div class="top-users">
+      <span>Most active <b>${escapeHtml(topUser)}</b></span>
       ${
         (item.top_users || [])
-          .map((user) => `<span>${escapeHtml(user.user)} <b>${user.job_count}</b></span>`)
+          .slice(0, 4)
+          .map((user) => `<span>${escapeHtml(offHourUserLabel(item, user.user))} <b>${user.job_count}</b></span>`)
           .join("") || `<span>no off-hour users</span>`
       }
     </div>
   `;
+}
+
+function compactPids(pids: number[]) {
+  if (!pids.length) {
+    return "pid n/a";
+  }
+  const sorted = [...pids].sort((a, b) => a - b);
+  return sorted.length === 1 ? `pid ${sorted[0]}` : `pid ${sorted[0]} +${sorted.length - 1}`;
+}
+
+function offHoursInsight(item: OffHours) {
+  const nightBusy = item.night_job_count > 0 || item.night_gpu_hours > 0;
+  const weekendBusy = item.weekend_job_count > 0 || item.weekend_gpu_hours > 0;
+  if (!nightBusy && !weekendBusy) {
+    return "This range stayed quiet outside regular hours.";
+  }
+  if (!nightBusy && weekendBusy) {
+    return "Weekend compute stayed active while nights were quiet.";
+  }
+  if (nightBusy && !weekendBusy) {
+    return "Midnight to 6 a.m. still had training activity.";
+  }
+  return "Both nights and weekends carried meaningful GPU activity.";
+}
+
+function offHourUserLabel(item: OffHours, user: string) {
+  const top = item.top_users?.[0]?.user;
+  if (user === top && item.weekend_gpu_hours > item.night_gpu_hours) {
+    return "Weekend regular";
+  }
+  if (user === top && item.night_gpu_hours >= item.weekend_gpu_hours) {
+    return "Night regular";
+  }
+  return user;
 }
 
 function heatmapChart(items: AnalyticsHeatmap[], payload: NodeAnalytics | null) {
