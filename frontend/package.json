@@ -12,9 +12,11 @@
     "@fontsource-variable/geist": "^5.2.9",
     "@fontsource-variable/geist-mono": "^5.2.8",
     "lucide": "^0.468.0",
+    "preact": "^10.29.4",
     "uplot": "^1.6.32"
   },
   "devDependencies": {
+    "@preact/preset-vite": "^2.10.5",
     "typescript": "^5.7.2",
     "vite": "^6.0.3"
   }
