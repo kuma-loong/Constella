@@ -1150,6 +1150,10 @@ svg {
   min-width: 0;
 }
 
+.chart-plot {
+  position: relative;
+}
+
 .line-chart {
   display: block;
   width: 100%;
@@ -1183,9 +1187,17 @@ svg {
   opacity: 0.96;
 }
 
-.line-chart text {
-  fill: var(--muted);
+.chart-label {
+  position: absolute;
+  color: var(--muted);
   font-size: 12px;
+  line-height: 1;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.chart-label-end {
+  text-align: right;
 }
 
 .chart-legend {

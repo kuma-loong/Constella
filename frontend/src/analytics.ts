@@ -537,27 +537,29 @@ export function createAnalyticsController({
         .join(" ");
     return `
       <div class="chart-wrap">
-        <svg class="line-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeAttr(metricDef.label)} history">
-          <line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${height - pad.bottom}"></line>
-          <line x1="${pad.left}" y1="${height - pad.bottom}" x2="${width - pad.right}" y2="${height - pad.bottom}"></line>
-          <text x="4" y="${pad.top + 8}">${escapeHtml(metricTick(maxValue, metric))}</text>
-          <text x="${pad.left}" y="${height - 7}">${escapeHtml(formatTime(minTime))}</text>
-          <text x="${width - pad.right - 92}" y="${height - 7}">${escapeHtml(formatTime(maxTime))}</text>
-          ${series
-            .map((item, index) => {
-              if (!item.points.length) {
-                return "";
-              }
-              const selected = isGpuSelected(item.gpu_uuid);
-              return `<polyline
-                class="${selected ? "is-selected" : "is-muted"}"
-                data-chart-gpu-uuid="${escapeAttr(item.gpu_uuid)}"
-                points="${pathFor(item)}"
-                style="stroke:${CHART_COLORS[index % CHART_COLORS.length]}"
-              ><title>GPU${item.gpu_index ?? "?"} ${escapeHtml(item.gpu_name || item.gpu_uuid)}</title></polyline>`;
-            })
-            .join("")}
-        </svg>
+        <div class="chart-plot">
+          <svg class="line-chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeAttr(metricDef.label)} history">
+            <line x1="${pad.left}" y1="${pad.top}" x2="${pad.left}" y2="${height - pad.bottom}"></line>
+            <line x1="${pad.left}" y1="${height - pad.bottom}" x2="${width - pad.right}" y2="${height - pad.bottom}"></line>
+            ${series
+              .map((item, index) => {
+                if (!item.points.length) {
+                  return "";
+                }
+                const selected = isGpuSelected(item.gpu_uuid);
+                return `<polyline
+                  class="${selected ? "is-selected" : "is-muted"}"
+                  data-chart-gpu-uuid="${escapeAttr(item.gpu_uuid)}"
+                  points="${pathFor(item)}"
+                  style="stroke:${CHART_COLORS[index % CHART_COLORS.length]}"
+                ><title>GPU${item.gpu_index ?? "?"} ${escapeHtml(item.gpu_name || item.gpu_uuid)}</title></polyline>`;
+              })
+              .join("")}
+          </svg>
+          <span class="chart-label chart-label-y" style="left:4px;top:${pad.top}px">${escapeHtml(metricTick(maxValue, metric))}</span>
+          <span class="chart-label chart-label-start" style="left:${pad.left}px;bottom:7px">${escapeHtml(formatTime(minTime))}</span>
+          <span class="chart-label chart-label-end" style="right:${pad.right}px;bottom:7px">${escapeHtml(formatTime(maxTime))}</span>
+        </div>
         <div class="chart-legend">
           <button class="${selectedGpuUuids.size === 0 ? "is-active" : ""}" type="button" data-analytics-action="node-gpu" data-legend-all="true" aria-pressed="${selectedGpuUuids.size === 0 ? "true" : "false"}">
             <b style="background:var(--text)"></b>All
