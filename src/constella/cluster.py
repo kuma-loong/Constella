@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
@@ -19,6 +20,8 @@ from .schema import (
 )
 
 SCHEMA_VERSION = 1
+HISTORY_SIZE = 120
+HISTORY_METRICS = ("gpu", "memory", "power", "temperature")
 
 
 @dataclass(slots=True)
@@ -43,6 +46,40 @@ class NodeRuntime:
     hardware: NodeHardware | None = None
 
 
+class HistoryAccumulator:
+    def __init__(self, history_size: int = HISTORY_SIZE):
+        self.history_size = history_size
+        self._history: dict[str, dict[str, deque[float]]] = {}
+
+    def update(self, snapshot: NodeSnapshot) -> None:
+        for gpu in snapshot.gpus:
+            gpu_id = gpu.gpu_id or gpu_global_id(snapshot.node_id, gpu)
+            gpu.gpu_id = gpu_id
+            series = self._series_for(gpu_id)
+            series["gpu"].append(float(gpu.utilization_gpu))
+            series["memory"].append(float(gpu.memory_percent))
+            series["power"].append(float(gpu.power_percent))
+            series["temperature"].append(float(gpu.temperature_c))
+        snapshot.history = self.payload_for_node(snapshot)
+
+    def payload_for_node(self, snapshot: NodeSnapshot) -> dict[str, dict[str, list[float]]]:
+        payload: dict[str, dict[str, list[float]]] = {}
+        for gpu in snapshot.gpus:
+            gpu_id = gpu.gpu_id or gpu_global_id(snapshot.node_id, gpu)
+            if gpu_id in self._history:
+                payload[gpu_id] = {
+                    name: list(values) for name, values in self._history[gpu_id].items()
+                }
+        return payload
+
+    def _series_for(self, gpu_id: str) -> dict[str, deque[float]]:
+        if gpu_id not in self._history:
+            self._history[gpu_id] = {
+                metric: deque(maxlen=self.history_size) for metric in HISTORY_METRICS
+            }
+        return self._history[gpu_id]
+
+
 class ClusterState:
     def __init__(
         self,
@@ -50,11 +87,13 @@ class ClusterState:
         local_node_id: str,
         stale_after: float | None = None,
         offline_after: float | None = None,
+        history_size: int = HISTORY_SIZE,
     ):
         self.local_node_id = local_node_id
         self.stale_after = stale_after
         self.offline_after = offline_after
         self.latest_by_node: dict[str, NodeRuntime] = {}
+        self._history = HistoryAccumulator(history_size)
         self._seq = 0
         self._event = asyncio.Event()
 
@@ -146,6 +185,7 @@ class ClusterState:
             agent_version=runtime.agent_version if runtime else None,
             hardware=runtime.hardware if runtime else None,
         )
+        self._history.update(snapshot)
         self.latest_by_node[node_id] = NodeRuntime(
             node_id=node_id,
             hostname=snapshot.hostname,
@@ -278,7 +318,6 @@ def node_snapshot_from_agent_sample(
     sampled_at = float(message.get("sampled_at") or payload.get("timestamp") or received_at)
     refresh_interval = float(message.get("refresh_interval") or payload.get("refresh_interval") or 1.0)
     process_interval = float(message.get("process_interval") or payload.get("process_interval") or 3.0)
-    history = _history_by_gpu_id(node_id, payload.get("history"), gpus)
     return NodeSnapshot(
         node_id=node_id,
         hostname=str(payload.get("hostname") or hostname or node_id),
@@ -297,7 +336,6 @@ def node_snapshot_from_agent_sample(
         cuda_driver_version=payload.get("cuda_driver_version"),
         nvml_version=payload.get("nvml_version"),
         elapsed_ms=float(payload.get("elapsed_ms") or 0.0),
-        history=history,
         hardware=hardware,
     )
 
@@ -381,23 +419,3 @@ def _process_from_dict(data: dict[str, Any]) -> GpuProcess:
         detail_error=data.get("detail_error"),
     )
 
-
-def _history_by_gpu_id(
-    node_id: str,
-    payload: Any,
-    gpus: list[GpuInfo],
-) -> dict[str, dict[str, list[float]]]:
-    if not isinstance(payload, dict):
-        return {}
-    index_to_gpu_id = {str(gpu.index): gpu.gpu_id or gpu_global_id(node_id, gpu) for gpu in gpus}
-    result: dict[str, dict[str, list[float]]] = {}
-    for key, series in payload.items():
-        if not isinstance(series, dict):
-            continue
-        gpu_id = index_to_gpu_id.get(str(key), str(key))
-        result[gpu_id] = {
-            name: [float(value) for value in values]
-            for name, values in series.items()
-            if isinstance(values, list)
-        }
-    return result

@@ -276,8 +276,14 @@ def agent_sample(
         "sampled_at": snapshot.timestamp,
         "refresh_interval": snapshot.refresh_interval,
         "process_interval": process_interval if process_interval is not None else config.process_interval,
-        "snapshot": snapshot.to_dict(),
+        "snapshot": snapshot_to_agent_payload(snapshot),
     }
+
+
+def snapshot_to_agent_payload(snapshot: Snapshot) -> dict[str, Any]:
+    payload = snapshot.to_dict()
+    payload.pop("history", None)
+    return payload
 
 
 def agent_heartbeat(config: AgentConfig, seq: int) -> dict[str, Any]:

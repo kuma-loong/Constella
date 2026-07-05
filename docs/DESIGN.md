@@ -10,7 +10,8 @@
 flowchart LR
   L["Local GPU agent<br/>NVML + nvidia-smi fallback"] -->|"WS /api/agents/ws"| M["Manager<br/>FastAPI + ingest"]
   R["Remote GPU agent<br/>NVML + nvidia-smi fallback"] -->|"WS /api/agents/ws"| M
-  M --> S["Cluster state<br/>latest by node"]
+  M --> A["History accumulator<br/>120-point realtime cache"]
+  A --> S["Cluster state<br/>latest by node"]
   S --> G["FastAPI HTTP<br/>/api/cluster/snapshot"]
   S --> H["FastAPI WebSocket<br/>/ws/cluster"]
   H --> F["Vite TypeScript UI"]
@@ -19,7 +20,7 @@ flowchart LR
 
 manager 不直接采样本机 GPU。启用本机监控时，服务脚本会额外启动一个 local agent；这个 agent 和远端 agent 使用同一条 WebSocket ingest、ClusterState、DB sink 和前端 API 路径。浏览器连接数增加时，不会增加 NVML 调用次数，只会复用 manager 中的最新 `ClusterSnapshot`。
 
-manager 维护每个节点的 latest `NodeSnapshot`，再聚合成 `ClusterSnapshot` 推给前端。SSH 只用于安装、写配置、启动、停止和状态查询，不作为实时数据通道；agent 主动通过 WebSocket 回连 manager，不开放入站 HTTP 服务。
+manager 在 ingest 当前采样点后维护每张 GPU 的 120 点实时短历史，再把每个节点的 latest `NodeSnapshot` 聚合成 `ClusterSnapshot` 推给前端。SSH 只用于安装、写配置、启动、停止和状态查询，不作为实时数据通道；agent 主动通过 WebSocket 回连 manager，不开放入站 HTTP 服务。
 
 ## 数据路径
 
@@ -27,9 +28,9 @@ manager 维护每个节点的 latest `NodeSnapshot`，再聚合成 `ClusterSnaps
 2. 按全局刷新率读取 GPU 名称、UUID、显存、利用率、温度、功耗、时钟、P-state、Compute Mode、ECC 和 MIG；刷新率可在 Web 端切换为 0.5 秒、1 秒、2 秒或 5 秒。
 3. 进程枚举默认每 3 秒执行一次并缓存，实际间隔不低于当前核心刷新率，降低多用户进程查询带来的抖动。
 4. 如果 NVML 初始化或单次采样失败，关闭当前 NVML 句柄并执行 `nvidia-smi --query-gpu=... --format=csv,noheader,nounits`。
-5. agent 内部 collector 给快照补充序号、当前刷新间隔和 120 点短历史数据。
+5. agent 内部 collector 给快照补充序号和当前刷新间隔；WebSocket sample 只携带当前采样点，不携带短历史数组。
 6. agent 通过 `WS /api/agents/ws` 发送 `hello`、`sample` 和 `heartbeat`。
-7. manager 按 `node_id` 维护 latest state，丢弃同节点旧 `seq`，并按本地接收时间标记 stale/offline。
+7. manager 按 `node_id` 维护 latest state，丢弃同节点旧 `seq`，用 `HistoryAccumulator` 从当前点生成 120 点短历史，并按本地接收时间标记 stale/offline。
 8. manager 把接受的 `NodeSnapshot` 提交给可选 SQLite sink；本机 agent 与远端 agent 写库路径完全一致。
 9. WebSocket 客户端收到 `ClusterSnapshot` 后刷新前端路由：`/overview` 只显示集群 KPI 和按节点拆分的 fabric 卡片；`/nodes/<node_id>` 只显示对应节点的 GPU 卡片、任务表和历史曲线。
 
@@ -40,7 +41,7 @@ manager 维护每个节点的 latest `NodeSnapshot`，再聚合成 `ClusterSnaps
 - 刷新率是 manager 维护并广播给 agent 的运行时设置，浏览器切换不会创建额外 collector。
 - 进程列表降频采样，避免 `/proc` 和驱动进程查询影响核心指标刷新。
 - 前端不依赖大型图表库，短曲线用 SVG polyline 绘制。
-- agent 只保留最近 120 个实时采样点；数据库为可选模块，并通过 manager 有界队列异步写入。
+- 实时短历史由 manager 在内存中维护，agent sample 只上报当前点，避免远端节点重复传输完整曲线。
 
 ## 普通用户权限
 

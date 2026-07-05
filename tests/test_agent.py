@@ -10,6 +10,7 @@ from constella.agent import (
     agent_hello,
     agent_sample,
     reconnect_delay,
+    snapshot_to_agent_payload,
     write_state_file,
 )
 from constella.schema import GpuHardwareInfo, GpuInfo, NodeHardware, Snapshot
@@ -48,6 +49,7 @@ def test_agent_protocol_messages_include_required_fields() -> None:
         elapsed_ms=2.0,
         seq=4,
         refresh_interval=1.0,
+        history={"0": {"gpu": [10.0], "memory": [20.0]}},
         gpus=[GpuInfo(index=0, uuid="GPU-a", memory_total_mb=100, memory_used_mb=20)],
     )
 
@@ -71,10 +73,30 @@ def test_agent_protocol_messages_include_required_fields() -> None:
     assert hello["hardware"]["gpus"][0]["architecture"] == "Hopper"
     assert sample["type"] == "sample"
     assert sample["seq"] == 7
+    assert "history" not in sample["snapshot"]
     assert sample["snapshot"]["gpus"][0]["uuid"] == "GPU-a"
     assert "architecture" not in sample["snapshot"]["gpus"][0]
     assert heartbeat["type"] == "heartbeat"
     assert heartbeat["seq"] == 8
+
+
+def test_snapshot_to_agent_payload_drops_short_history() -> None:
+    snapshot = Snapshot(
+        ok=True,
+        source="test",
+        hostname="node-a-host",
+        timestamp=10.0,
+        elapsed_ms=2.0,
+        seq=4,
+        refresh_interval=1.0,
+        history={"0": {"gpu": [10.0], "memory": [20.0]}},
+        gpus=[GpuInfo(index=0, uuid="GPU-a", memory_total_mb=100, memory_used_mb=20)],
+    )
+
+    payload = snapshot_to_agent_payload(snapshot)
+
+    assert "history" in snapshot.to_dict()
+    assert "history" not in payload
 
 
 def test_write_state_file_is_private_json(tmp_path) -> None:

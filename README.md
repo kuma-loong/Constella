@@ -27,7 +27,7 @@ Lightweight realtime NVIDIA GPU monitoring for one server or a small GPU cluster
 ## Features
 
 - Realtime NVIDIA GPU monitoring for a single server or small cluster, with a modular architecture and optional components.
-- Low-overhead sampling: one persistent sampler per GPU node, shared in-memory snapshots, and no per-browser GPU polling.
+- Low-overhead sampling: one persistent sampler per GPU node, current-point agent payloads, manager-side realtime history, and no per-browser GPU polling.
 - Rich GPU and process telemetry: utilization, memory, power, temperature, clocks, P-state, ECC, MIG, process memory, runtime, users, PIDs, and command fingerprints.
 - Resilient agent sampling path: NVML first, `nvidia-smi` fallback, selectable refresh rates, and lower-cadence process sampling to reduce jitter.
 - User-level deployment with no sudo or system service required; optional SQLite history is available when persisted metrics are needed.
@@ -100,7 +100,7 @@ Start, inspect, and stop remote agents:
 
 `constella cluster start` uses SSH only for setup/control. The remote agent token is written through stdin into `~/.constella/run/agent.env` with mode `600`; it is not placed on the remote command line.
 
-Remote GPU nodes do not need `uv`. The manager builds a minimal agent runtime bundle locally and syncs only the agent-side Constella modules plus `websockets`; the remote start script runs it with `python3 -m constella.agent_main`.
+Remote GPU nodes do not need `uv`. The manager builds a minimal agent runtime bundle locally and syncs only the agent-side Constella modules plus `websockets`; the remote start script runs it with `python3 -m constella.agent_main`. Restart all agents after upgrading the manager so every node uses the current-point sample protocol.
 
 ## Optional Components
 

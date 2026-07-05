@@ -60,6 +60,39 @@ def test_cluster_state_registers_sample_and_drops_old_seq() -> None:
     assert node.gpus[0].utilization_gpu == 40
     assert node.gpus[0].processes[0].ppid == 42
     assert node.gpus[0].processes[0].parent_start_time == 80.0
+    assert node.history["node-a:GPU-abc"]["gpu"] == [40.0]
+    assert node.history["node-a:GPU-abc"]["memory"] == [25.0]
+
+
+def test_cluster_state_builds_short_history_from_samples_without_agent_history() -> None:
+    state = ClusterState(local_node_id="manager", history_size=2)
+    state.register_hello(AgentHello(node_id="node-a", hostname="host-a"), now=10.0)
+
+    for seq, util in ((1, 40), (2, 55), (3, 70)):
+        message = sample_message("node-a", seq, util=util)
+        assert "history" not in message["snapshot"]
+        assert state.ingest_sample(message, received_at=10.0 + seq)
+
+    node = state.snapshot(now=14.0).nodes[0]
+    history = node.history["node-a:GPU-abc"]
+    assert history["gpu"] == [55.0, 70.0]
+    assert history["memory"] == [25.0, 25.0]
+    assert history["power"] == [0.0, 0.0]
+    assert history["temperature"] == [0.0, 0.0]
+
+
+def test_cluster_state_uses_same_history_path_for_local_and_remote_agents() -> None:
+    state = ClusterState(local_node_id="manager")
+    state.register_hello(AgentHello(node_id="manager", hostname="manager-host"), now=10.0)
+    state.register_hello(AgentHello(node_id="node-a", hostname="node-a-host"), now=10.0)
+
+    assert state.ingest_sample(sample_message("manager", 1, util=35), received_at=11.0)
+    assert state.ingest_sample(sample_message("node-a", 1, util=65), received_at=11.0)
+
+    cluster = state.snapshot(now=12.0)
+    histories = {node.node_id: node.history for node in cluster.nodes}
+    assert histories["manager"]["manager:GPU-abc"]["gpu"] == [35.0]
+    assert histories["node-a"]["node-a:GPU-abc"]["gpu"] == [65.0]
 
 
 def test_cluster_state_marks_stale_offline_and_disconnect() -> None:

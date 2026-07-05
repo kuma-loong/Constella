@@ -27,7 +27,7 @@
 ## 功能
 
 - 面向单机或小型集群的 NVIDIA GPU 实时监控，采用模块化架构，功能可按需启用。
-- 低开销采样：每个 GPU 节点只有一个常驻采样器，浏览器共享 manager 内存快照，避免重复访问 GPU 驱动。
+- 低开销采样：每个 GPU 节点只有一个常驻采样器，agent 只上报当前采样点，短历史由 manager 维护，浏览器共享 manager 内存快照。
 - 完整 GPU 与进程指标：利用率、显存、功耗、温度、时钟、P-state、ECC、MIG、进程显存、运行时间、用户、PID 和命令指纹。
 - 稳定 agent 采样路径：NVML 优先、`nvidia-smi` 兜底，支持可选刷新率，并用低频进程采样降低抖动。
 - 普通用户级部署：无需 sudo 或 system service；需要持久化指标时可启用 SQLite 历史库。
@@ -96,7 +96,7 @@ cp docs/nodes.example.yaml nodes.yaml
 
 `constella cluster start` 只把 SSH 用作安装、写配置和启停控制。agent token 通过 stdin 写入远端 `~/.constella/run/agent.env`，权限为 `600`，不会出现在远端命令行参数中。
 
-远端 GPU 节点不需要安装 `uv`。manager 会在本地构建最小 agent runtime，只同步 agent 侧需要的 Constella 模块和 `websockets`，远端启动脚本使用 `python3 -m constella.agent_main` 运行。
+远端 GPU 节点不需要安装 `uv`。manager 会在本地构建最小 agent runtime，只同步 agent 侧需要的 Constella 模块和 `websockets`，远端启动脚本使用 `python3 -m constella.agent_main` 运行。升级 manager 后需要重启所有 agent，确保全部节点使用只上报当前点的新协议。
 
 ## 可选组件
 
