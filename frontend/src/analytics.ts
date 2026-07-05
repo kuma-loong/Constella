@@ -276,8 +276,8 @@ export function createAnalyticsController({
     overviewElement.innerHTML = `
       <div class="analytics-head">
         <div>
-          <span class="section-kicker">Historical analytics</span>
-          <h2>Usage & jobs</h2>
+          <span class="section-kicker">History</span>
+          <h2>Usage and jobs</h2>
           <p>${disabled ? "SQLite history is not enabled" : metaText(payload)}</p>
         </div>
         <div class="analytics-actions">
@@ -380,8 +380,8 @@ export function createAnalyticsController({
         </article>
         <div class="analytics-head analytics-inline-head span-12">
           <div>
-            <span class="section-kicker">Historical analytics</span>
-            <h2>Ghost Occupancy & Silent Oversight</h2>
+            <span class="section-kicker">Operations</span>
+            <h2>Reservations and off-hour use</h2>
             <p>${metaText(payload)}</p>
           </div>
         </div>
@@ -400,7 +400,7 @@ export function createAnalyticsController({
         </article>
         <article class="analytics-card span-6">
           <div class="card-title">
-            <span><i data-lucide="moon"></i>After-hours lab life</span>
+            <span><i data-lucide="moon"></i>Off-hour activity</span>
             <em>Beijing time</em>
           </div>
           ${offHoursCard(offHours)}
@@ -417,7 +417,7 @@ export function createAnalyticsController({
         <article class="analytics-card span-12">
           <div class="card-title">
             <span><i data-lucide="line-chart"></i>${metricLabel(nodeMetric)} history</span>
-            <em><span data-node-selection-summary>${selectionSummary(series)}</span> · ${
+            <em><span data-node-selection-summary>${selectionSummary(series)}</span> / ${
               payload?.bucket_seconds ? `${formatBucket(payload.bucket_seconds)} buckets` : "rollup"
             }</em>
           </div>
@@ -658,7 +658,7 @@ function anomalyCard(item: AnomalyItem) {
   return `
     <div class="anomaly-card" title="${escapeAttr(detailTitle)}">
       <strong>${escapeHtml(item.task_name)}</strong>
-      <span>${escapeHtml(item.user)} · ${escapeHtml(item.node_id)} · ${escapeHtml(gpuLabel)} · ${escapeHtml(pidLabel)}</span>
+      <span>${escapeHtml(item.user)} / ${escapeHtml(item.node_id)} / ${escapeHtml(gpuLabel)} / ${escapeHtml(pidLabel)}</span>
       <div>
         <b>${fmtNumber(item.gpu_memory_gb)} GiB</b>
         <b>${fmtPct(item.recent_avg_gpu_utilization)} recent GPU</b>
@@ -756,7 +756,7 @@ function heatmapChart(items: AnalyticsHeatmap[], payload: NodeAnalytics | null) 
                       `${fmtPct(bucket?.max_gpu_utilization || 0)} max GPU`,
                       `${fmtGiB(bucket?.avg_memory_used_mb || 0)} avg memory`,
                       `${bucket?.sample_count || 0} samples`,
-                    ].join(" · ");
+                    ].join(" / ");
                     return `<span class="heat" title="${escapeAttr(title)}" style="grid-column:${(indexByStart.get(start) || 0) + 1};background:${heatColor(value)}"></span>`;
                   })
                   .join("")}
@@ -865,7 +865,7 @@ function metaText(payload: AnalyticsMeta | null) {
     payload.range_start && payload.range_end
       ? `${formatTime(payload.range_start)} - ${formatTime(payload.range_end)}`
       : "selected range";
-  return `${range} · generated ${formatTime(payload.generated_at)} · ${payload.timezone || "Asia/Shanghai"}`;
+  return `${range} / generated ${formatTime(payload.generated_at)} / ${payload.timezone || "Asia/Shanghai"}`;
 }
 
 function disabledAnalytics(message: string) {

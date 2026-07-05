@@ -1,12 +1,18 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="system">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Constella</title>
+    <meta
+      name="description"
+      content="Constella provides realtime NVIDIA GPU cluster monitoring, analytics, and node-level task visibility."
+    />
+    <meta name="theme-color" content="#f4f7f5" />
+    <title>Constella GPU Console</title>
     <link rel="icon" type="image/svg+xml" href="/logo.svg?v=20260627" />
   </head>
   <body>
+    <a class="skip-link" href="#mainContent">Skip to content</a>
     <div id="app">
       <header class="topbar">
         <div class="brand">
@@ -19,6 +25,9 @@
         <nav id="topNav" class="top-nav" aria-label="Primary navigation"></nav>
         <div class="status-cluster">
           <div id="refreshControl" class="refresh-control" role="group" aria-label="Refresh interval"></div>
+          <button id="themeButton" class="icon-button theme-button" type="button" aria-label="Theme: system" title="Theme: system">
+            <i data-lucide="monitor"></i>
+          </button>
           <span id="liveState" class="live-pill is-pending">
             <span></span>
             connecting
@@ -32,17 +41,36 @@
         </div>
       </header>
 
-      <main class="shell">
-        <section class="summary-grid" id="summaryGrid"></section>
-        <section class="fabric-band" id="fabricBand"></section>
+      <main class="shell" id="mainContent">
+        <section class="summary-grid" id="summaryGrid">
+          <article class="metric-card skeleton-card"><div class="metric-icon"></div><div><span>Nodes</span><strong>waiting</strong><small>cluster snapshot</small></div></article>
+          <article class="metric-card skeleton-card"><div class="metric-icon"></div><div><span>GPU Avg</span><strong>waiting</strong><small>realtime stream</small></div></article>
+          <article class="metric-card skeleton-card"><div class="metric-icon"></div><div><span>Memory</span><strong>waiting</strong><small>aggregate usage</small></div></article>
+          <article class="metric-card skeleton-card"><div class="metric-icon"></div><div><span>Power</span><strong>waiting</strong><small>cluster draw</small></div></article>
+          <article class="metric-card skeleton-card"><div class="metric-icon"></div><div><span>Tasks</span><strong>waiting</strong><small>active workloads</small></div></article>
+        </section>
+        <section class="fabric-band" id="fabricBand">
+          <div class="empty-panel">waiting for cluster fabric</div>
+        </section>
         <section class="analytics-section" id="overviewAnalytics" hidden></section>
         <section class="gpu-grid" id="gpuGrid"></section>
-        <section class="process-section" id="processSection">
+        <section class="process-section collapsible-section" id="processSection" data-collapse-section="processes">
           <div class="section-head">
-            <h2>Tasks</h2>
-            <span id="processMeta"></span>
+            <div>
+              <h2>Active GPU tasks</h2>
+              <span id="processMeta"></span>
+            </div>
+            <button
+              class="section-toggle"
+              type="button"
+              data-collapse-target="processes"
+              aria-expanded="true"
+              aria-controls="processTablePanel"
+            >
+              Collapse
+            </button>
           </div>
-          <div class="process-table-wrap">
+          <div class="process-table-wrap" id="processTablePanel" data-collapse-panel>
             <table class="process-table">
               <thead>
                 <tr>

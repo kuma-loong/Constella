@@ -8,17 +8,21 @@ import {
   Gauge,
   LineChart,
   ListTree,
+  Monitor,
   Moon,
   Pause,
   Play,
   RefreshCw,
   Server,
+  Sun,
   Table2,
   Thermometer,
   Users,
   Zap,
   createIcons,
 } from "lucide";
+import "@fontsource-variable/geist";
+import "@fontsource-variable/geist-mono";
 import { createAnalyticsController, type Route } from "./analytics";
 import { escapeAttr, escapeHtml, fmtDuration, fmtGiB, fmtPct } from "./format";
 import "./styles.css";
@@ -33,11 +37,13 @@ const iconSet = {
   Gauge,
   LineChart,
   ListTree,
+  Monitor,
   Moon,
   Pause,
   Play,
   RefreshCw,
   Server,
+  Sun,
   Table2,
   Thermometer,
   Users,
@@ -181,6 +187,7 @@ const topNav = mustGet<HTMLElement>("topNav");
 const refreshControl = mustGet<HTMLElement>("refreshControl");
 const pauseButton = mustGet<HTMLButtonElement>("pauseButton");
 const refreshButton = mustGet<HTMLButtonElement>("refreshButton");
+const themeButton = mustGet<HTMLButtonElement>("themeButton");
 
 let socket: WebSocket | null = null;
 let reconnectTimer = 0;
@@ -189,6 +196,11 @@ let lastSnapshot: ClusterSnapshot | null = null;
 let lastSettings: Settings | null = null;
 let currentRefreshInterval: number | null = null;
 let refreshPending = false;
+type ThemeMode = "system" | "light" | "dark";
+const THEME_STORAGE_KEY = "constella.theme";
+const COLLAPSE_STORAGE_KEY = "constella.collapsed";
+let themeMode: ThemeMode = readThemeMode();
+const collapsedSections = readCollapsedSections();
 
 const analytics = createAnalyticsController({
   overviewElement: overviewAnalytics,
@@ -210,6 +222,11 @@ refreshButton.addEventListener("click", () => {
   fetchSnapshot();
 });
 
+themeButton.addEventListener("click", () => {
+  const modes: ThemeMode[] = ["system", "light", "dark"];
+  setThemeMode(modes[(modes.indexOf(themeMode) + 1) % modes.length]);
+});
+
 refreshControl.addEventListener("click", (event) => {
   const target = (event.target as HTMLElement).closest("[data-refresh-interval]") as HTMLButtonElement | null;
   if (!target || target.disabled) {
@@ -222,6 +239,13 @@ refreshControl.addEventListener("click", (event) => {
 });
 
 appRoot.addEventListener("click", (event) => {
+  const collapseTarget = (event.target as HTMLElement).closest("[data-collapse-target]") as HTMLButtonElement | null;
+  if (collapseTarget) {
+    event.preventDefault();
+    toggleSection(collapseTarget.dataset.collapseTarget || "");
+    return;
+  }
+
   const target = (event.target as HTMLElement).closest("[data-analytics-action]") as HTMLButtonElement | null;
   if (!target || target.disabled) {
     return;
@@ -244,6 +268,15 @@ window.addEventListener("popstate", () => {
   renderCurrentRoute();
 });
 
+const schemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+schemeQuery.addEventListener("change", () => {
+  if (themeMode === "system") {
+    applyTheme();
+  }
+});
+
+applyTheme();
+applyCollapsedSections();
 renderRefreshControl(DEFAULT_REFRESH_INTERVALS, null);
 normalizeInitialRoute();
 renderNav(null, currentRoute());
@@ -422,6 +455,7 @@ function render(snapshot: ClusterSnapshot) {
     void analytics.fetchNode(route);
     renderProcesses(route.nodeId, selectedNode);
   }
+  applyCollapsedSections();
   createIcons({ icons: iconSet });
 }
 
@@ -462,10 +496,10 @@ function renderHeader(snapshot: ClusterSnapshot, route: Route, selectedNode: Nod
   const latencyText = latency === null ? "latency n/a" : `${latency.toFixed(0)} ms max`;
   if (route.kind === "node") {
     nodeLine.textContent = selectedNode
-      ? `${selectedNode.node_id} · ${selectedNode.status} · ${selectedNode.totals.gpu_count} GPUs · ${fmtLatency(selectedNode)} · seq ${selectedNode.seq}`
-      : `${route.nodeId} · node not found · ${totals.node_count} nodes`;
+      ? `${selectedNode.node_id} / ${selectedNode.status} / ${selectedNode.totals.gpu_count} GPUs / ${fmtLatency(selectedNode)} / seq ${selectedNode.seq}`
+      : `${route.nodeId} / node not found / ${totals.node_count} nodes`;
   } else {
-    nodeLine.textContent = `${totals.node_count} nodes · ${totals.online_node_count} online · ${totals.gpu_count} GPUs · ${latencyText} · seq ${snapshot.seq}`;
+    nodeLine.textContent = `${totals.node_count} nodes / ${totals.online_node_count} online / ${totals.gpu_count} GPUs / ${latencyText} / seq ${snapshot.seq}`;
   }
   setLiveState(paused ? "paused" : snapshot.ok ? "live" : totals.node_count ? "error" : "connecting");
 }
@@ -496,7 +530,7 @@ function renderNav(snapshot: ClusterSnapshot | null, route: Route) {
 function renderSummary(snapshot: ClusterSnapshot) {
   const totals = snapshot.totals;
   summaryGrid.innerHTML = [
-    metricCard("server", "Nodes", `${totals.online_node_count} / ${totals.node_count}`, `${totals.stale_node_count} stale · ${totals.offline_node_count} offline`, nodeHealthPercent(totals), "green"),
+    metricCard("server", "Nodes", `${totals.online_node_count} / ${totals.node_count}`, `${totals.stale_node_count} stale / ${totals.offline_node_count} offline`, nodeHealthPercent(totals), "green"),
     metricCard("activity", "GPU Avg", fmtPct(totals.avg_gpu_utilization), `${totals.gpu_count} GPUs`, totals.avg_gpu_utilization, "cyan"),
     metricCard("database", "Memory Used", `${fmtGiB(totals.memory_used_mb)} / ${fmtGiB(totals.memory_total_mb)}`, fmtPct(totals.avg_memory_utilization), totals.avg_memory_utilization, "violet"),
     metricCard("zap", "Power", `${totals.power_watts.toFixed(0)} W / ${totals.power_limit_watts.toFixed(0)} W`, totals.power_limit_watts ? fmtPct((totals.power_watts / totals.power_limit_watts) * 100) : "n/a", totals.power_limit_watts ? (totals.power_watts / totals.power_limit_watts) * 100 : 0, "amber"),
@@ -518,7 +552,7 @@ function renderNodeSummary(nodeId: string, node: NodeSnapshot | null) {
 
   const totals = node.totals;
   summaryGrid.innerHTML = [
-    metricCard("server", "Node", node.node_id, `${node.status} · ${node.hostname}`, node.status === "online" ? 100 : 0, node.status === "online" ? "green" : "red"),
+    metricCard("server", "Node", node.node_id, `${node.status} / ${node.hostname}`, node.status === "online" ? 100 : 0, node.status === "online" ? "green" : "red"),
     metricCard("activity", "GPU Avg", fmtPct(totals.avg_gpu_utilization), `${totals.gpu_count} GPUs`, totals.avg_gpu_utilization, "cyan"),
     metricCard("database", "Memory Used", `${fmtGiB(totals.memory_used_mb)} / ${fmtGiB(totals.memory_total_mb)}`, fmtPct(totals.avg_memory_utilization), totals.avg_memory_utilization, "violet"),
     metricCard("zap", "Power", `${totals.power_watts.toFixed(0)} W / ${totals.power_limit_watts.toFixed(0)} W`, totals.power_limit_watts ? fmtPct((totals.power_watts / totals.power_limit_watts) * 100) : "n/a", totals.power_limit_watts ? (totals.power_watts / totals.power_limit_watts) * 100 : 0, "amber"),
@@ -544,7 +578,7 @@ function renderFabric(snapshot: ClusterSnapshot) {
             <em>${escapeHtml(node.status)}</em>
           </div>
           <div class="fabric-node-meta">
-            ${node.totals.gpu_count} GPUs · ${fmtPct(node.totals.avg_gpu_utilization)} avg · ${fmtLatency(node)}
+            ${node.totals.gpu_count} GPUs / ${fmtPct(node.totals.avg_gpu_utilization)} avg / ${fmtLatency(node)}
           </div>
           <div class="fabric-node-gpus">
             ${node.gpus.map((gpu) => fabricGpuChip(node, gpu)).join("") || `<span class="fabric-empty">no GPUs</span>`}
@@ -619,20 +653,20 @@ function gpuCard(node: NodeSnapshot, gpu: GpuInfo, history: Record<string, numbe
     gpu.ecc_mode ? `ECC ${gpu.ecc_mode}` : null,
   ]
     .filter(Boolean)
-    .join(" · ");
+    .join(" / ");
 
   const clock = [
     gpu.clock_sm_mhz ? `SM ${gpu.clock_sm_mhz} MHz` : null,
     gpu.clock_mem_mhz ? `MEM ${gpu.clock_mem_mhz} MHz` : null,
   ]
     .filter(Boolean)
-    .join(" · ");
+    .join(" / ");
 
   return `
     <article class="gpu-card">
       <div class="gpu-head">
         <div>
-          <span class="gpu-index">${escapeHtml(node.node_id)} · GPU ${gpu.index}</span>
+          <span class="gpu-index">${escapeHtml(node.node_id)} / GPU ${gpu.index}</span>
           <h3>${escapeHtml(compactGpuName(gpu.name))}</h3>
           <p>${escapeHtml(subtitle || gpu.uuid)}</p>
         </div>
@@ -652,7 +686,7 @@ function gpuCard(node: NodeSnapshot, gpu: GpuInfo, history: Record<string, numbe
       <div class="mini-stats">
         <span><i data-lucide="gauge"></i>${fmtPct(gpu.utilization_mem)} mem util</span>
         <span><i data-lucide="clock-3"></i>${escapeHtml(clock || "clock n/a")}</span>
-        <span><i data-lucide="server"></i>${escapeHtml(node.status)} · ${fmtLatency(node)}</span>
+        <span><i data-lucide="server"></i>${escapeHtml(node.status)} / ${fmtLatency(node)}</span>
         <span><i data-lucide="cpu"></i>${escapeHtml(gpu.pci_bus_id || gpu.uuid)}</span>
       </div>
     </article>
@@ -705,7 +739,7 @@ function renderProcesses(nodeId: string, node: NodeSnapshot | null) {
   }
 
   rows.sort((a, b) => a.node.localeCompare(b.node) || a.gpu - b.gpu || b.memory - a.memory || (b.runtime || 0) - (a.runtime || 0));
-  processMeta.textContent = `${node?.node_id || nodeId} · ${rows.length} active`;
+  processMeta.textContent = `${node?.node_id || nodeId} / ${rows.length} active`;
   if (!rows.length) {
     processRows.innerHTML = `<tr><td colspan="8" class="empty">no active GPU tasks</td></tr>`;
     return;
@@ -824,7 +858,7 @@ function fabricConfigSummary(snapshot: ClusterSnapshot, items: FabricConfigItem[
   if (architectureCount) {
     parts.push(`${architectureCount} ${architectureCount === 1 ? "architecture" : "architectures"}`);
   }
-  return parts.join(" · ");
+  return parts.join(" / ");
 }
 
 type FabricConfigItem = {
@@ -876,6 +910,70 @@ function renderFabricConfigChips(items: FabricConfigItem[]) {
 function setLiveState(state: "connecting" | "live" | "paused" | "offline" | "error") {
   liveState.className = `live-pill is-${state}`;
   liveState.innerHTML = `<span></span>${state}`;
+}
+
+function readThemeMode(): ThemeMode {
+  const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+  return saved === "light" || saved === "dark" || saved === "system" ? saved : "system";
+}
+
+function setThemeMode(mode: ThemeMode) {
+  themeMode = mode;
+  window.localStorage.setItem(THEME_STORAGE_KEY, mode);
+  applyTheme();
+  createIcons({ icons: iconSet });
+}
+
+function applyTheme() {
+  const resolved = themeMode === "system" ? (schemeQuery.matches ? "dark" : "light") : themeMode;
+  document.documentElement.dataset.theme = themeMode;
+  document.documentElement.dataset.resolvedTheme = resolved;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", resolved === "dark" ? "#111510" : "#f4f7f5");
+  const iconName = themeMode === "system" ? "monitor" : themeMode === "dark" ? "moon" : "sun";
+  themeButton.innerHTML = icon(iconName);
+  themeButton.setAttribute("aria-label", `Theme: ${themeMode}`);
+  themeButton.setAttribute("title", `Theme: ${themeMode}`);
+}
+
+function readCollapsedSections() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(COLLAPSE_STORAGE_KEY) || "[]");
+    return new Set(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []);
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function saveCollapsedSections() {
+  window.localStorage.setItem(COLLAPSE_STORAGE_KEY, JSON.stringify(Array.from(collapsedSections)));
+}
+
+function toggleSection(section: string) {
+  if (!section) {
+    return;
+  }
+  if (collapsedSections.has(section)) {
+    collapsedSections.delete(section);
+  } else {
+    collapsedSections.add(section);
+  }
+  saveCollapsedSections();
+  applyCollapsedSections();
+}
+
+function applyCollapsedSections() {
+  document.querySelectorAll<HTMLElement>("[data-collapse-section]").forEach((section) => {
+    const key = section.dataset.collapseSection || "";
+    const collapsed = collapsedSections.has(key);
+    section.classList.toggle("is-collapsed", collapsed);
+    section.querySelectorAll<HTMLElement>("[data-collapse-panel]").forEach((panel) => {
+      panel.hidden = collapsed;
+    });
+    section.querySelectorAll<HTMLButtonElement>("[data-collapse-target]").forEach((button) => {
+      button.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      button.textContent = collapsed ? "Expand" : "Collapse";
+    });
+  });
 }
 
 function icon(name: string) {
