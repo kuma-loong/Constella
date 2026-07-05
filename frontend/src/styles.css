@@ -921,6 +921,14 @@ svg {
   font-size: 15px;
 }
 
+.analytics-inline-head {
+  margin: 16px 0 0;
+}
+
+.analytics-inline-head h2 {
+  font-size: clamp(24px, 2vw, 34px);
+}
+
 .section-kicker {
   display: block;
   font-weight: 700;

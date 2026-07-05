@@ -277,7 +277,7 @@ export function createAnalyticsController({
       <div class="analytics-head">
         <div>
           <span class="section-kicker">Historical analytics</span>
-          <h2>Usage, jobs, and low-utilization signals</h2>
+          <h2>Usage & jobs</h2>
           <p>${disabled ? "SQLite history is not enabled" : metaText(payload)}</p>
         </div>
         <div class="analytics-actions">
@@ -378,6 +378,13 @@ export function createAnalyticsController({
               : emptyInline("no job history in this range")
           }
         </article>
+        <div class="analytics-head analytics-inline-head span-12">
+          <div>
+            <span class="section-kicker">Historical analytics</span>
+            <h2>Ghost Occupancy & Silent Oversight</h2>
+            <p>${metaText(payload)}</p>
+          </div>
+        </div>
         <article class="analytics-card span-6">
           <div class="card-title">
             <span><i data-lucide="alert-triangle"></i>Low-utilization reservations</span>
