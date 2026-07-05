@@ -90,4 +90,8 @@ Relevant APIs:
 
 Analytics APIs read only from SQLite rollups and task session tables. They return `enabled:false` when SQLite is disabled and do not participate in the realtime WebSocket path.
 
-Overview analytics includes user GPU hours, weighted GPU hours, job rankings, low-utilization reservation signals, and Beijing-time off-hour activity. Node analytics includes downsampled per-GPU time series and utilization heatmaps. Supported ranges are `24h`, `7d`, and `30d` for Overview, and `1h`, `24h`, `7d`, and `30d` for Node history.
+Overview analytics includes weighted user GPU hours, job rankings, low-utilization reservation signals, and Beijing-time after-hours activity. User-facing `GPU hours` values are weighted by GPU model so mixed hardware is easier to compare.
+
+Node analytics includes downsampled per-GPU time series and utilization heatmaps. The frontend supports local multi-select GPU highlighting for the trend chart without refetching or rebuilding the heatmap. Heatmap resolution is range-aware: `1h` uses 5 minute buckets, `24h` uses 1 hour buckets, `7d` uses 6 hour buckets, and `30d` uses 1 day buckets.
+
+Supported ranges are `24h`, `7d`, and `30d` for Overview, and `1h`, `24h`, `7d`, and `30d` for Node history.

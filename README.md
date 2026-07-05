@@ -31,6 +31,7 @@ Lightweight realtime NVIDIA GPU monitoring for one server or a small GPU cluster
 - Rich GPU and process telemetry: utilization, memory, power, temperature, clocks, P-state, ECC, MIG, process memory, runtime, users, PIDs, and command fingerprints.
 - Resilient agent sampling path: NVML first, `nvidia-smi` fallback, selectable refresh rates, and lower-cadence process sampling to reduce jitter.
 - User-level deployment with no sudo or system service required; optional SQLite history is available when persisted metrics are needed.
+- Optional analytics dashboards for weighted GPU hours, job rankings, low-utilization reservations, off-hour activity, per-node trends, and range-aware heatmaps.
 - Standard APIs for custom frontends, dashboards, and automation.
 
 ## Layout

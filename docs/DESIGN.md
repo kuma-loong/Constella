@@ -76,7 +76,11 @@ SQLite sink 默认关闭。启用后，实时链路仍然是 `agent sample -> ma
 optional SQLite DB -> analytics query layer -> HTTP API -> frontend dashboard widgets
 ```
 
-`src/constella/analytics.py` 负责用户卡时、加权卡时、启发式作业合并、异常占用检测、节点历史曲线和热力图聚合。`app.py` 只暴露 `GET /api/analytics/overview` 和 `GET /api/analytics/node/{node_id}`。SQLite 未启用时，这两个 API 返回 `enabled:false`，前端只保留实时监控页面，不把数据库变成必需路径。
+`src/constella/analytics.py` 负责用户卡时、加权卡时、启发式作业合并、异常占用检测、节点历史曲线和热力图聚合。异常占用检测固定读取最近 24 小时窗口，避免 Overview 长时间窗扩大扫描范围。Node 热力图按展示窗口二次聚合为 5 分钟、1 小时、6 小时或 1 天 bucket，前端用连续 band 展示。
+
+`app.py` 只暴露 `GET /api/analytics/overview` 和 `GET /api/analytics/node/{node_id}`。SQLite 未启用时，这两个 API 返回 `enabled:false`，前端只保留实时监控页面，不把数据库变成必需路径。
+
+分析前端仍使用原生 SVG/CSS。Node History 的 GPU 多选只是本地视觉状态：图例点击更新已有曲线和按钮 class，不重新请求分析 API，也不重建热力图 DOM。时间窗切换才重新读取节点分析数据。
 
 ## 参考资料
 
