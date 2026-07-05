@@ -674,7 +674,7 @@ function gpuCard(node: NodeSnapshot, gpu: GpuInfo, history: Record<string, numbe
       </div>
 
       <div class="spark-wrap">
-        ${sparkline(history.gpu || [], "var(--green)", 100)}
+        ${sparkline(history.gpu || [], "var(--accent)", 100)}
       </div>
 
       <div class="bar-stack">
