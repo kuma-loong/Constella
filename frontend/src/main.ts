@@ -1,32 +1,44 @@
 import {
   Activity,
+  AlertTriangle,
+  BarChart3,
   Clock3,
   Cpu,
   Database,
   Gauge,
+  LineChart,
   ListTree,
+  Moon,
   Pause,
   Play,
   RefreshCw,
   Server,
+  Table2,
   Thermometer,
   Users,
   Zap,
   createIcons,
 } from "lucide";
+import { createAnalyticsController, type Route } from "./analytics";
+import { escapeAttr, escapeHtml, fmtDuration, fmtGiB, fmtPct } from "./format";
 import "./styles.css";
 
 const iconSet = {
   Activity,
+  AlertTriangle,
+  BarChart3,
   Clock3,
   Cpu,
   Database,
   Gauge,
+  LineChart,
   ListTree,
+  Moon,
   Pause,
   Play,
   RefreshCw,
   Server,
+  Table2,
   Thermometer,
   Users,
   Zap,
@@ -152,13 +164,13 @@ type Settings = {
   process_interval: number;
 };
 
-type Route = { kind: "overview" } | { kind: "node"; nodeId: string };
-
 const DEFAULT_REFRESH_INTERVALS = [0.5, 1, 2, 5];
 
 const summaryGrid = mustGet<HTMLElement>("summaryGrid");
 const gpuGrid = mustGet<HTMLElement>("gpuGrid");
 const fabricBand = mustGet<HTMLElement>("fabricBand");
+const overviewAnalytics = mustGet<HTMLElement>("overviewAnalytics");
+const nodeHistorySection = mustGet<HTMLElement>("nodeHistorySection");
 const processSection = mustGet<HTMLElement>("processSection");
 const processRows = mustGet<HTMLElement>("processRows");
 const processMeta = mustGet<HTMLElement>("processMeta");
@@ -177,6 +189,13 @@ let lastSnapshot: ClusterSnapshot | null = null;
 let lastSettings: Settings | null = null;
 let currentRefreshInterval: number | null = null;
 let refreshPending = false;
+
+const analytics = createAnalyticsController({
+  overviewElement: overviewAnalytics,
+  nodeElement: nodeHistorySection,
+  currentRoute,
+  renderIcons: () => createIcons({ icons: iconSet }),
+});
 
 pauseButton.addEventListener("click", () => {
   paused = !paused;
@@ -199,6 +218,16 @@ refreshControl.addEventListener("click", (event) => {
   const interval = Number(target.dataset.refreshInterval);
   if (Number.isFinite(interval)) {
     setRefreshInterval(interval);
+  }
+});
+
+appRoot.addEventListener("click", (event) => {
+  const target = (event.target as HTMLElement).closest("[data-analytics-action]") as HTMLButtonElement | null;
+  if (!target || target.disabled) {
+    return;
+  }
+  if (analytics.handleClick(target)) {
+    event.preventDefault();
   }
 });
 
@@ -371,18 +400,26 @@ function render(snapshot: ClusterSnapshot) {
   renderHeader(snapshot, route, selectedNode);
   if (route.kind === "overview") {
     summaryGrid.hidden = false;
+    overviewAnalytics.hidden = false;
     fabricBand.hidden = false;
     gpuGrid.hidden = true;
+    nodeHistorySection.hidden = true;
     processSection.hidden = true;
     renderSummary(snapshot);
+    analytics.renderOverview();
     renderFabric(snapshot);
+    void analytics.fetchOverview();
   } else {
     summaryGrid.hidden = false;
+    overviewAnalytics.hidden = true;
     fabricBand.hidden = true;
     gpuGrid.hidden = false;
+    nodeHistorySection.hidden = false;
     processSection.hidden = false;
     renderNodeSummary(route.nodeId, selectedNode);
     renderGpuGrid(route.nodeId, selectedNode);
+    analytics.renderNode(route);
+    void analytics.fetchNode(route);
     renderProcesses(route.nodeId, selectedNode);
   }
   createIcons({ icons: iconSet });
@@ -860,39 +897,6 @@ function formatInterval(seconds: number) {
   return seconds < 1 ? `${seconds.toFixed(1)}s` : `${seconds.toFixed(0)}s`;
 }
 
-function fmtGiB(mib: number) {
-  if (!Number.isFinite(mib)) {
-    return "n/a";
-  }
-  return `${(mib / 1024).toFixed(mib >= 10240 ? 1 : 2)} GiB`;
-}
-
-function fmtPct(value: number) {
-  if (!Number.isFinite(value)) {
-    return "n/a";
-  }
-  return `${value.toFixed(value % 1 ? 1 : 0)}%`;
-}
-
-function fmtDuration(seconds: number | null) {
-  if (seconds === null || !Number.isFinite(seconds)) {
-    return "n/a";
-  }
-  if (seconds < 60) {
-    return `${Math.max(0, Math.floor(seconds))}s`;
-  }
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) {
-    return `${minutes}m ${Math.floor(seconds % 60)}s`;
-  }
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return `${hours}h ${minutes % 60}m`;
-  }
-  const days = Math.floor(hours / 24);
-  return `${days}d ${hours % 24}h`;
-}
-
 function clamp(value: number) {
   if (!Number.isFinite(value)) {
     return 0;
@@ -910,21 +914,4 @@ function tempClass(value: number) {
   if (value >= 80) return "is-hot";
   if (value >= 65) return "is-warm";
   return "is-cool";
-}
-
-function escapeHtml(value: string) {
-  return value.replace(/[&<>"']/g, (char) => {
-    const map: Record<string, string> = {
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;",
-    };
-    return map[char] || char;
-  });
-}
-
-function escapeAttr(value: string) {
-  return escapeHtml(value).replace(/\n/g, " ");
 }

@@ -31,6 +31,7 @@
 - 完整 GPU 与进程指标：利用率、显存、功耗、温度、时钟、P-state、ECC、MIG、进程显存、运行时间、用户、PID 和命令指纹。
 - 稳定 agent 采样路径：NVML 优先、`nvidia-smi` 兜底，支持可选刷新率，并用低频进程采样降低抖动。
 - 普通用户级部署：无需 sudo 或 system service；需要持久化指标时可启用 SQLite 历史库。
+- 可选分析看板：加权 GPU hours、作业排行、异常低利用率占用、非工作时段活动、节点趋势曲线和按时间窗自适应的热力图。
 - 提供标准 API，便于接入自定义前端、看板或自动化系统。
 
 ## 项目结构
@@ -99,7 +100,7 @@ cp docs/nodes.example.yaml nodes.yaml
 
 ## 可选组件
 
-- SQLite 历史库默认关闭，只在需要持久化 GPU/任务历史时启用。配置和维护见 [SQLite 历史库](docs/HISTORY.md)。
+- SQLite 历史库默认关闭，只在需要持久化 GPU/任务历史和分析看板时启用。配置和维护见 [SQLite 历史库](docs/HISTORY.md)。
 - Cloudflare Tunnel 是可选部署方式，用于在不开放服务器入站端口的情况下绑定域名访问。配置见 [Cloudflare Tunnel](docs/CLOUD_TUNNEL.md)。
 
 ## 常用命令
@@ -128,7 +129,11 @@ COUNT=20 ./scripts/dev/bench_probe.sh
 - `GET /api/history/gpu`：可选 GPU 历史指标。
 - `GET /api/history/tasks`：可选任务历史。
 - `GET /api/users`：可选用户任务聚合。
+- `GET /api/analytics/overview`：可选 Overview 历史分析。
+- `GET /api/analytics/node/{node_id}`：可选节点历史曲线和热力图。
 - `GET /api/docs`：FastAPI OpenAPI 文档。
+
+未启用 SQLite 时，历史和分析 API 返回 `enabled:false`；实时集群监控仍然通过 `/api/cluster/snapshot` 和 `/ws/cluster` 工作。
 
 旧单机接口不再作为兼容层维护：`GET /api/snapshot` 返回 `410 Gone`，`WS /ws/gpu` 会立即关闭。本机和远端节点都统一使用 cluster API。
 
