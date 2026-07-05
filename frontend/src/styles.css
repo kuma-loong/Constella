@@ -868,6 +868,29 @@ svg {
   background: var(--panel-2);
 }
 
+.fabric-chip.is-idle {
+  border-color: #d3dce8;
+  background: #f3f6f9;
+}
+
+.fabric-chip.is-active {
+  border-color: rgba(15, 127, 146, 0.42);
+  background: rgba(15, 127, 146, 0.14);
+}
+
+.fabric-chip.is-hot {
+  border-color: rgba(183, 121, 31, 0.5);
+  background: rgba(183, 121, 31, 0.18);
+}
+
+.fabric-chip.is-active strong {
+  color: var(--cyan);
+}
+
+.fabric-chip.is-hot strong {
+  color: var(--amber);
+}
+
 .fabric-node-card:hover,
 .icon-button:hover,
 .refresh-option:hover {
