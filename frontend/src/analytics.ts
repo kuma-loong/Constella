@@ -162,7 +162,7 @@ export function createAnalyticsController({
   let overviewLoading = false;
   let nodeRange = "24h";
   let nodeMetric: NodeMetric = "avg_gpu_utilization";
-  let selectedGpuUuid: string | null = null;
+  const selectedGpuUuids = new Set<string>();
   let nodePayload: NodeAnalytics | null = null;
   let nodeKey = "";
   let nodeLoading = false;
@@ -191,8 +191,8 @@ export function createAnalyticsController({
       return true;
     }
     if (action === "node-gpu") {
-      selectedGpuUuid = target.dataset.gpuUuid || null;
-      renderNode(currentRoute());
+      updateSelectedGpu(target.dataset.gpuUuid || null);
+      updateGpuSelectionDom();
       return true;
     }
     if (action === "overview-refresh") {
@@ -244,6 +244,7 @@ export function createAnalyticsController({
     }
     if (nodeKey !== key) {
       nodePayload = null;
+      selectedGpuUuids.clear();
     }
     nodeLoading = true;
     renderNode(route);
@@ -401,32 +402,29 @@ export function createAnalyticsController({
   function nodeBody(payload: NodeAnalytics | null) {
     const series = payload?.series || [];
     const heatmap = payload?.heatmap || [];
-    const activeLabel = selectedGpuUuid
-      ? `GPU${series.find((item) => item.gpu_uuid === selectedGpuUuid)?.gpu_index ?? "?"}`
-      : "all GPUs";
     return `
       <div class="analytics-grid">
-        <article class="analytics-card span-8">
+        <article class="analytics-card span-12">
           <div class="card-title">
             <span><i data-lucide="line-chart"></i>${metricLabel(nodeMetric)} history</span>
-            <em>${activeLabel} · ${
+            <em><span data-node-selection-summary>${selectionSummary(series)}</span> · ${
               payload?.bucket_seconds ? `${formatBucket(payload.bucket_seconds)} buckets` : "rollup"
             }</em>
           </div>
           ${
             series.some((item) => item.points.length)
               ? lineChart(series, nodeMetric)
-              : emptyInline("no rollup points in this range")
+            : emptyInline("no rollup points in this range")
           }
         </article>
-        <article class="analytics-card span-4">
+        <article class="analytics-card span-12 heatmap-card">
           <div class="card-title">
-            <span><i data-lucide="activity"></i>GPU heatmap</span>
+            <span><i data-lucide="activity"></i>Activity heatmap</span>
             <em>${payload?.heatmap_bucket_seconds ? formatBucket(payload.heatmap_bucket_seconds) : "bucketed"}</em>
           </div>
           ${
             heatmap.some((item) => item.buckets.length)
-              ? heatmapChart(heatmap)
+              ? heatmapChart(heatmap, payload)
               : emptyInline("no heatmap buckets in this range")
           }
         </article>
@@ -436,11 +434,56 @@ export function createAnalyticsController({
 
   function syncSelectedGpu() {
     const series = nodePayload?.series || [];
-    if (!selectedGpuUuid || !series.length) {
+    if (!selectedGpuUuids.size || !series.length) {
       return;
     }
-    if (!series.some((item) => item.gpu_uuid === selectedGpuUuid)) {
-      selectedGpuUuid = null;
+    const available = new Set(series.map((item) => item.gpu_uuid));
+    for (const uuid of Array.from(selectedGpuUuids)) {
+      if (!available.has(uuid)) {
+        selectedGpuUuids.delete(uuid);
+      }
+    }
+  }
+
+  function updateSelectedGpu(gpuUuid: string | null) {
+    if (!gpuUuid) {
+      selectedGpuUuids.clear();
+      return;
+    }
+    if (!selectedGpuUuids.size) {
+      selectedGpuUuids.add(gpuUuid);
+      return;
+    }
+    if (selectedGpuUuids.has(gpuUuid)) {
+      selectedGpuUuids.delete(gpuUuid);
+      return;
+    }
+    selectedGpuUuids.add(gpuUuid);
+  }
+
+  function updateGpuSelectionDom() {
+    const series = nodePayload?.series || [];
+    const allSelected = selectedGpuUuids.size === 0;
+    nodeElement
+      .querySelectorAll<SVGPolylineElement>("[data-chart-gpu-uuid]")
+      .forEach((line) => {
+        const selected = allSelected || selectedGpuUuids.has(line.dataset.chartGpuUuid || "");
+        line.classList.toggle("is-selected", selected);
+        line.classList.toggle("is-muted", !selected);
+      });
+    nodeElement.querySelectorAll<HTMLButtonElement>("[data-legend-gpu-uuid]").forEach((button) => {
+      const selected = allSelected || selectedGpuUuids.has(button.dataset.legendGpuUuid || "");
+      button.classList.toggle("is-selected", selected);
+      button.classList.toggle("is-muted", !selected);
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
+    });
+    nodeElement.querySelectorAll<HTMLButtonElement>("[data-legend-all]").forEach((button) => {
+      button.classList.toggle("is-active", allSelected);
+      button.setAttribute("aria-pressed", allSelected ? "true" : "false");
+    });
+    const summary = nodeElement.querySelector<HTMLElement>("[data-node-selection-summary]");
+    if (summary) {
+      summary.textContent = selectionSummary(series);
     }
   }
 
@@ -464,7 +507,7 @@ export function createAnalyticsController({
 
   function lineChart(series: AnalyticsSeries[], metric: NodeMetric) {
     const width = 760;
-    const height = 260;
+    const height = 300;
     const pad = { left: 42, right: 14, top: 16, bottom: 28 };
     const points = series.flatMap((item) => item.points);
     const minTime = Math.min(...points.map((point) => point.bucket_start));
@@ -495,31 +538,53 @@ export function createAnalyticsController({
               if (!item.points.length) {
                 return "";
               }
-              const muted = selectedGpuUuid !== null && selectedGpuUuid !== item.gpu_uuid;
-              return `<polyline class="${muted ? "is-muted" : "is-selected"}" points="${pathFor(item)}" style="stroke:${CHART_COLORS[index % CHART_COLORS.length]}"><title>GPU${item.gpu_index ?? "?"} ${escapeHtml(item.gpu_name || item.gpu_uuid)}</title></polyline>`;
+              const selected = isGpuSelected(item.gpu_uuid);
+              return `<polyline
+                class="${selected ? "is-selected" : "is-muted"}"
+                data-chart-gpu-uuid="${escapeAttr(item.gpu_uuid)}"
+                points="${pathFor(item)}"
+                style="stroke:${CHART_COLORS[index % CHART_COLORS.length]}"
+              ><title>GPU${item.gpu_index ?? "?"} ${escapeHtml(item.gpu_name || item.gpu_uuid)}</title></polyline>`;
             })
             .join("")}
         </svg>
         <div class="chart-legend">
-          <button class="${selectedGpuUuid === null ? "is-active" : ""}" type="button" data-analytics-action="node-gpu" aria-pressed="${selectedGpuUuid === null ? "true" : "false"}">
+          <button class="${selectedGpuUuids.size === 0 ? "is-active" : ""}" type="button" data-analytics-action="node-gpu" data-legend-all="true" aria-pressed="${selectedGpuUuids.size === 0 ? "true" : "false"}">
             <b style="background:var(--text)"></b>All
           </button>
           ${series
-            .map(
-              (item, index) => `
+            .map((item, index) => {
+              const selected = isGpuSelected(item.gpu_uuid);
+              return `
                 <button
-                  class="${selectedGpuUuid === item.gpu_uuid ? "is-active" : ""}"
+                  class="${selected ? "is-selected" : "is-muted"}"
                   type="button"
                   data-analytics-action="node-gpu"
                   data-gpu-uuid="${escapeAttr(item.gpu_uuid)}"
-                  aria-pressed="${selectedGpuUuid === item.gpu_uuid ? "true" : "false"}"
+                  data-legend-gpu-uuid="${escapeAttr(item.gpu_uuid)}"
+                  aria-pressed="${selected ? "true" : "false"}"
                 ><b style="background:${CHART_COLORS[index % CHART_COLORS.length]}"></b>GPU${item.gpu_index ?? "?"}</button>
-              `,
-            )
+              `;
+            })
             .join("")}
         </div>
       </div>
     `;
+  }
+
+  function isGpuSelected(gpuUuid: string) {
+    return selectedGpuUuids.size === 0 || selectedGpuUuids.has(gpuUuid);
+  }
+
+  function selectionSummary(series: AnalyticsSeries[]) {
+    if (!selectedGpuUuids.size) {
+      return "all GPUs";
+    }
+    const selected = series.filter((item) => selectedGpuUuids.has(item.gpu_uuid));
+    if (!selected.length) {
+      return "all GPUs";
+    }
+    return selected.map((item) => `GPU${item.gpu_index ?? "?"}`).join(", ");
   }
 
   return {
@@ -601,31 +666,49 @@ function offHoursCard(item: OffHours | undefined) {
   `;
 }
 
-function heatmapChart(items: AnalyticsHeatmap[]) {
+function heatmapChart(items: AnalyticsHeatmap[], payload: NodeAnalytics | null) {
   const allStarts = Array.from(
     new Set(items.flatMap((item) => item.buckets.map((bucket) => bucket.bucket_start))),
   ).sort((a, b) => a - b);
   const columns = Math.max(1, allStarts.length);
   const indexByStart = new Map(allStarts.map((value, index) => [value, index]));
+  const bucketSeconds = payload?.heatmap_bucket_seconds || 0;
   return `
-    <div class="heatmap" style="--heat-cols:${columns}">
-      ${items
-        .map((item) => {
-          const buckets = new Map(item.buckets.map((bucket) => [bucket.bucket_start, bucket]));
-          return `
-            <div class="heat-row-label">GPU${item.gpu_index ?? "?"}</div>
-            <div class="heat-row">
-              ${allStarts
-                .map((start) => {
-                  const bucket = buckets.get(start);
-                  const value = bucket?.avg_gpu_utilization || 0;
-                  return `<span class="${heatClass(value)}" title="${escapeAttr(`GPU${item.gpu_index ?? "?"} · ${formatTime(start)} · ${fmtPct(value)} avg · ${fmtGiB(bucket?.avg_memory_used_mb || 0)}`)}" style="grid-column:${(indexByStart.get(start) || 0) + 1}"></span>`;
-                })
-                .join("")}
-            </div>
-          `;
-        })
-        .join("")}
+    <div class="heatmap-scroll">
+      <div class="heatmap" style="--heat-cols:${columns}">
+        ${items
+          .map((item) => {
+            const buckets = new Map(item.buckets.map((bucket) => [bucket.bucket_start, bucket]));
+            return `
+              <div class="heat-row-label" title="${escapeAttr(item.gpu_name || item.gpu_uuid)}">GPU${item.gpu_index ?? "?"}</div>
+              <div class="heat-row">
+                ${allStarts
+                  .map((start) => {
+                    const bucket = buckets.get(start);
+                    const value = bucket?.avg_gpu_utilization || 0;
+                    const title = [
+                      `GPU${item.gpu_index ?? "?"}`,
+                      `${formatTime(start)} - ${formatTime(start + bucketSeconds)}`,
+                      `${fmtPct(value)} avg GPU`,
+                      `${fmtPct(bucket?.max_gpu_utilization || 0)} max GPU`,
+                      `${fmtGiB(bucket?.avg_memory_used_mb || 0)} avg memory`,
+                      `${bucket?.sample_count || 0} samples`,
+                    ].join(" · ");
+                    return `<span class="heat" title="${escapeAttr(title)}" style="grid-column:${(indexByStart.get(start) || 0) + 1};background:${heatColor(value)}"></span>`;
+                  })
+                  .join("")}
+              </div>
+            `;
+          })
+          .join("")}
+        ${heatAxis(allStarts, payload)}
+      </div>
+    </div>
+    <div class="heat-legend" aria-label="Heatmap utilization legend">
+      <span><b style="background:${heatColor(2)}"></b>idle</span>
+      <span><b style="background:${heatColor(16)}"></b>low</span>
+      <span><b style="background:${heatColor(50)}"></b>active</span>
+      <span><b style="background:${heatColor(86)}"></b>hot</span>
     </div>
   `;
 }
@@ -651,11 +734,64 @@ function metricTick(value: number, metric: NodeMetric) {
   return `${value.toFixed(0)} C`;
 }
 
-function heatClass(value: number) {
-  if (value >= 70) return "heat hot";
-  if (value >= 30) return "heat active";
-  if (value >= 5) return "heat low";
-  return "heat idle";
+function heatAxis(starts: number[], payload: NodeAnalytics | null) {
+  if (!starts.length) {
+    return "";
+  }
+  const first = payload?.range_start || starts[0];
+  const last = payload?.range_end || starts[starts.length - 1];
+  const tickCount = Math.min(starts.length < 4 ? starts.length : 5, 6);
+  const ticks = Array.from({ length: tickCount }, (_, index) => {
+    if (tickCount === 1) {
+      return first;
+    }
+    return first + ((last - first) * index) / (tickCount - 1);
+  });
+  return `
+    <div class="heat-axis-spacer"></div>
+    <div class="heat-axis">
+      ${ticks
+        .map((tick) => {
+          const pct = ((tick - first) / Math.max(1, last - first)) * 100;
+          return `<span style="left:${pct.toFixed(2)}%">${escapeHtml(heatTickLabel(tick))}</span>`;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function heatTickLabel(epochSeconds: number) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(epochSeconds * 1000));
+}
+
+function heatColor(value: number) {
+  if (value < 5) return "#eef2f6";
+  if (value < 30) return interpolateColor("#d8f3df", "#6ed3a4", (value - 5) / 25);
+  if (value < 70) return interpolateColor("#6ed3a4", "#1597a6", (value - 30) / 40);
+  return interpolateColor("#f6b45b", "#d94841", (value - 70) / 30);
+}
+
+function interpolateColor(from: string, to: string, amount: number) {
+  const start = parseHexColor(from);
+  const end = parseHexColor(to);
+  const t = Math.max(0, Math.min(1, amount));
+  return `rgb(${Math.round(start[0] + (end[0] - start[0]) * t)}, ${Math.round(
+    start[1] + (end[1] - start[1]) * t,
+  )}, ${Math.round(start[2] + (end[2] - start[2]) * t)})`;
+}
+
+function parseHexColor(value: string): [number, number, number] {
+  return [
+    Number.parseInt(value.slice(1, 3), 16),
+    Number.parseInt(value.slice(3, 5), 16),
+    Number.parseInt(value.slice(5, 7), 16),
+  ];
 }
 
 function metaText(payload: AnalyticsMeta | null) {
