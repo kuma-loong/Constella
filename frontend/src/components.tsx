@@ -456,9 +456,8 @@ export function GpuCard({
   ]
     .filter(Boolean)
     .join(" / ");
-  const clock = [gpu.clock_sm_mhz ? `SM ${gpu.clock_sm_mhz} MHz` : null, gpu.clock_mem_mhz ? `MEM ${gpu.clock_mem_mhz} MHz` : null]
-    .filter(Boolean)
-    .join(" / ");
+  const smClock = gpu.clock_sm_mhz ? `SM ${gpu.clock_sm_mhz} MHz` : "SM clock n/a";
+  const memClock = gpu.clock_mem_mhz ? `MEM ${gpu.clock_mem_mhz} MHz` : "MEM clock n/a";
   return (
     <article class="gpu-card">
       <div class="gpu-head">
@@ -499,7 +498,7 @@ export function GpuCard({
         </span>
         <span>
           <Icon name="clock-3" />
-          {clock || "clock n/a"}
+          {smClock}
         </span>
         <span>
           <Icon name="server" />
@@ -507,7 +506,7 @@ export function GpuCard({
         </span>
         <span>
           <Icon name="cpu" />
-          {gpu.pci_bus_id || `UUID ${gpu.uuid}`}
+          {memClock}
         </span>
       </div>
     </article>
