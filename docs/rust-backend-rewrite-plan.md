@@ -69,7 +69,8 @@ This branch replaces the Python backend with a Rust implementation while keeping
   - `/proc/<pid>/stat` parent PID parsing,
   - `/proc/<pid>/cmdline` detail status parsing,
   - process task-name inference and command-line hashing,
-  - snapshot collector refresh/process interval and history publication.
+  - snapshot collector refresh/process interval and history publication,
+  - hardware inventory included in agent hello.
 - Updated local service scripts:
   - setup builds the Rust release binary and frontend assets,
   - start runs `target/release/constella serve`,
@@ -88,7 +89,6 @@ This branch replaces the Python backend with a Rust implementation while keeping
 
 1. Agent sampling rewrite
    - Add native NVML sampler or document `nvidia-smi` as the Rust fallback path.
-   - Add hardware hello payload generation.
 
 2. High-resolution job curves
    - Add end-to-end WebSocket integration tests against a live ephemeral server.

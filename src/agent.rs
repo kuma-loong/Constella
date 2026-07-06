@@ -12,7 +12,8 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::cluster::SCHEMA_VERSION;
 use crate::collector::SnapshotCollector;
-use crate::schema::{local_hostname, local_node_id, NodeHardware, Snapshot};
+use crate::nvidia_smi;
+use crate::schema::{local_hostname, local_node_id, GpuHardwareInfo, NodeHardware, Snapshot};
 use crate::settings::{validate_refresh_interval, SettingsError};
 
 const RECONNECT_DELAYS: [f64; 5] = [1.0, 2.0, 5.0, 15.0, 30.0];
@@ -148,9 +149,10 @@ pub async fn run_agent(config: AgentConfig) -> Result<(), AgentError> {
     let mut collector =
         SnapshotCollector::new(config.refresh_interval, config.process_interval, 120)?;
     let mut status = AgentStatus::starting(config.node_id.clone());
+    let hardware = sample_hardware_inventory();
     let mut attempt = 0usize;
     loop {
-        match run_connection(&config, &mut collector, &mut status, None).await {
+        match run_connection(&config, &mut collector, &mut status, hardware.clone()).await {
             Ok(()) => attempt = 0,
             Err(error) => {
                 status.status = "offline".to_string();
@@ -266,6 +268,27 @@ pub fn agent_hello(config: &AgentConfig, hardware: Option<NodeHardware>) -> Valu
         message["hardware"] = serde_json::to_value(hardware).expect("hardware serializes");
     }
     message
+}
+
+pub fn sample_hardware_inventory() -> Option<NodeHardware> {
+    nvidia_smi::sample(false)
+        .ok()
+        .map(|snapshot| hardware_from_snapshot(&snapshot))
+}
+
+pub fn hardware_from_snapshot(snapshot: &Snapshot) -> NodeHardware {
+    NodeHardware {
+        gpus: snapshot
+            .gpus
+            .iter()
+            .map(|gpu| GpuHardwareInfo {
+                index: gpu.index,
+                uuid: gpu.uuid.clone(),
+                name: gpu.name.clone(),
+                architecture: None,
+            })
+            .collect(),
+    }
 }
 
 pub fn agent_sample(

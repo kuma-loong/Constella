@@ -1,7 +1,7 @@
 use constella::agent::{
-    agent_heartbeat, agent_hello, agent_sample, apply_manager_message, reconnect_delay,
-    run_connection, snapshot_to_agent_payload, write_state_file, AgentConfig, AgentError,
-    AgentStatus,
+    agent_heartbeat, agent_hello, agent_sample, apply_manager_message, hardware_from_snapshot,
+    reconnect_delay, run_connection, snapshot_to_agent_payload, write_state_file, AgentConfig,
+    AgentError, AgentStatus,
 };
 use constella::collector::SnapshotCollector;
 use constella::schema::{GpuInfo, NodeHardware, Snapshot};
@@ -63,6 +63,16 @@ fn agent_hello_matches_manager_contract() {
     assert_eq!(message["agent_version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(message["capabilities"]["nvidia_smi_fallback"], true);
     assert!(message.get("hardware").is_some());
+}
+
+#[test]
+fn hardware_inventory_uses_snapshot_gpu_identity() {
+    let hardware = hardware_from_snapshot(&snapshot());
+
+    assert_eq!(hardware.gpus.len(), 1);
+    assert_eq!(hardware.gpus[0].index, 0);
+    assert_eq!(hardware.gpus[0].uuid, "GPU-1");
+    assert_eq!(hardware.gpus[0].name, "unknown");
 }
 
 #[test]
