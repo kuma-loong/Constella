@@ -822,10 +822,12 @@ function heatmapChart(items: AnalyticsHeatmap[], payload: NodeAnalytics | null) 
     </div>
     <div class="heat-legend" aria-label="Heatmap utilization legend">
       <b class="heat-legend-ramp"></b>
-      <span>idle</span>
-      <span>low</span>
-      <span>active</span>
-      <span>busy</span>
+      <span class="heat-legend-labels">
+        <span>idle</span>
+        <span>low</span>
+        <span>active</span>
+        <span>busy</span>
+      </span>
     </div>
   `;
 }

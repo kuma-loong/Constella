@@ -1412,8 +1412,8 @@ svg {
 
 .heat-row {
   display: grid;
-  grid-template-columns: repeat(12, minmax(28px, 32px));
-  gap: 3px;
+  grid-template-columns: repeat(12, 42px);
+  gap: 4px;
   justify-content: start;
   min-width: 0;
 }
@@ -1422,7 +1422,7 @@ svg {
   position: relative;
   display: block;
   width: 100%;
-  height: 20px;
+  height: 26px;
   border: 1px solid color-mix(in srgb, var(--surface) 34%, transparent);
   border-radius: 3px;
   outline: none;
@@ -1495,8 +1495,8 @@ svg {
 
 .heat-axis {
   display: grid;
-  grid-template-columns: repeat(12, minmax(28px, 32px));
-  gap: 3px;
+  grid-template-columns: repeat(12, 42px);
+  gap: 4px;
   justify-content: start;
   height: 17px;
   color: var(--muted);
@@ -1511,22 +1511,33 @@ svg {
 }
 
 .heat-legend {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
+  display: grid;
+  gap: 5px;
+  width: 224px;
+  margin-top: 14px;
   color: var(--muted);
   font-size: 12px;
   font-weight: 650;
 }
 
 .heat-legend-ramp {
-  width: 96px;
-  height: 9px;
+  display: block;
+  width: 100%;
+  height: 10px;
   border: 1px solid var(--border);
   border-radius: 3px;
   background: linear-gradient(90deg, var(--surface-sunken), #8bd8ad 35%, #3ebc8c 62%, #168ca0 82%, #0a5365);
+}
+
+.heat-legend-labels {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  line-height: 1;
+}
+
+.heat-legend-labels span {
+  text-align: center;
 }
 
 .empty-inline {
@@ -1727,12 +1738,16 @@ svg {
 
   .heat-row,
   .heat-axis {
-    grid-template-columns: repeat(12, minmax(18px, 1fr));
-    gap: 2px;
+    grid-template-columns: repeat(12, minmax(22px, 1fr));
+    gap: 3px;
   }
 
   .heat-cell {
-    height: 18px;
+    height: 22px;
+  }
+
+  .heat-legend {
+    width: min(224px, 100%);
   }
 
   .heat-cell::after {
