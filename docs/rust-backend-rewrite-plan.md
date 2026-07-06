@@ -79,6 +79,10 @@ This branch replaces the Python backend with a Rust implementation while keeping
   - `LOCAL_AGENT=1` starts the Rust local agent through `/api/agents/ws`,
   - cluster scripts call Rust `constella cluster ...` and sync the release binary,
   - maintenance script calls Rust `constella db maintain`.
+- Removed legacy Python package/test artifacts from the Rust release branch:
+  - `pyproject.toml`, `uv.lock`,
+  - `src/constella/*`,
+  - `tests/test_*.py`.
 - Current Rust verification: `cargo fmt --check` and `cargo test`.
 - Current release smoke test: `target/release/constella serve --host 127.0.0.1 --port 18765`
   with a temporary SQLite DB and `target/release/constella agent` connected to

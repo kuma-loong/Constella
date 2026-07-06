@@ -224,14 +224,22 @@ async fn agent_connection_sends_hello_and_sample() {
             ))
             .await
             .unwrap();
-        let sample = websocket
-            .next()
-            .await
-            .unwrap()
-            .unwrap()
-            .into_text()
-            .unwrap();
-        let sample: Value = serde_json::from_str(&sample).unwrap();
+        let mut sample = None;
+        for _ in 0..4 {
+            let raw = websocket
+                .next()
+                .await
+                .unwrap()
+                .unwrap()
+                .into_text()
+                .unwrap();
+            let value: Value = serde_json::from_str(&raw).unwrap();
+            if value["type"] == "sample" {
+                sample = Some(value);
+                break;
+            }
+        }
+        let sample = sample.expect("agent should send a sample");
         assert_eq!(sample["type"], "sample");
         assert_eq!(sample["node_id"], "node-a");
         assert!(sample["snapshot"].is_object());
