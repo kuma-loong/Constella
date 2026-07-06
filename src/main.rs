@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
+use constella::agent::{run_agent, AgentConfig};
 use constella::api::{app, AppState};
 use constella::cluster::ClusterState;
 use constella::cluster_config::load_manager_hostname;
@@ -20,6 +21,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     Serve(ServeArgs),
+    Agent(AgentArgs),
     Config(ConfigArgs),
 }
 
@@ -55,6 +57,24 @@ struct ServeArgs {
     db_path: Option<PathBuf>,
 }
 
+#[derive(Debug, Parser)]
+struct AgentArgs {
+    #[arg(long)]
+    node_id: Option<String>,
+    #[arg(long, env = "CONSTELLA_MANAGER_URL")]
+    manager_url: Option<String>,
+    #[arg(long, env = "CONSTELLA_AGENT_TOKEN")]
+    token: Option<String>,
+    #[arg(long, env = "CONSTELLA_AGENT_TOKEN_FILE")]
+    token_file: Option<PathBuf>,
+    #[arg(long, env = "CONSTELLA_REFRESH_SECONDS")]
+    refresh: Option<f64>,
+    #[arg(long, env = "CONSTELLA_PROCESS_SECONDS")]
+    process_refresh: Option<f64>,
+    #[arg(long, env = "CONSTELLA_AGENT_STATE_FILE")]
+    state_file: Option<PathBuf>,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -72,8 +92,23 @@ async fn main() -> anyhow::Result<()> {
         db_path: None,
     })) {
         Command::Serve(args) => serve(args).await,
+        Command::Agent(args) => agent(args).await,
         Command::Config(args) => config(args),
     }
+}
+
+async fn agent(args: AgentArgs) -> anyhow::Result<()> {
+    let config = AgentConfig::from_env(
+        args.node_id,
+        args.manager_url,
+        args.token,
+        args.token_file,
+        args.refresh,
+        args.process_refresh,
+        args.state_file,
+    )?;
+    run_agent(config).await?;
+    Ok(())
 }
 
 fn config(args: ConfigArgs) -> anyhow::Result<()> {

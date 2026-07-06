@@ -75,16 +75,17 @@ This branch replaces the Python backend with a Rust implementation while keeping
   - start runs `target/release/constella serve`,
   - manager hostname can be read from `nodes.yaml` through the Rust CLI,
   - highres is served by the Rust manager instead of a separate sidecar,
-  - local agent startup is disabled until the Rust agent loop lands.
+  - `LOCAL_AGENT=1` starts the Rust local agent through `/api/agents/ws`.
 - Current Rust verification: `cargo fmt --check` and `cargo test`.
 - Current release smoke test: `target/release/constella serve --host 127.0.0.1 --port 18765`
-  with a temporary SQLite DB, verified through `GET /api/health`.
+  with a temporary SQLite DB and `target/release/constella agent` connected to
+  `ws://127.0.0.1:18765/api/agents/ws`, verified through `GET /api/health`
+  and `GET /api/cluster/snapshot`.
 
 ## Remaining Work
 
 1. Agent sampling rewrite
    - Add native NVML sampler or document `nvidia-smi` as the Rust fallback path.
-   - Connect collector to an agent WebSocket client loop.
    - Add hardware hello payload generation.
 
 2. High-resolution job curves
@@ -100,7 +101,6 @@ This branch replaces the Python backend with a Rust implementation while keeping
    - Keep token handling through stdin/env files, not command-line arguments.
 
 5. Scripts and packaging
-   - Restore local agent startup once the Rust agent loop lands.
    - Keep safe defaults: bind to `127.0.0.1:8765`, no DB unless `CONSTELLA_DB_PATH`/`DB_PATH` is set.
    - Add release build instructions and artifact layout.
 

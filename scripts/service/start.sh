@@ -24,7 +24,10 @@ HIGHRES_TOKEN_FILE="${HIGHRES_TOKEN_FILE:-}"
 LOG_DIR="$ROOT_DIR/logs"
 RUN_DIR="$ROOT_DIR/run"
 PID_FILE="$RUN_DIR/constella.pid"
+AGENT_PID_FILE="$RUN_DIR/local-agent.pid"
 LOG_FILE="$LOG_DIR/constella.log"
+AGENT_LOG_FILE="$LOG_DIR/local-agent.log"
+AGENT_STATE_FILE="$RUN_DIR/local-agent-state.json"
 
 mkdir -p "$LOG_DIR" "$RUN_DIR"
 
@@ -134,5 +137,34 @@ if [[ "$LOCAL_AGENT" == "0" ]]; then
   exit 0
 fi
 
-echo "local Rust agent loop is not implemented yet; set LOCAL_AGENT=0 or use remote/manual agent during this migration"
+AGENT_CMD=(
+  "$ROOT_DIR/target/release/constella"
+  agent
+  --manager-url "ws://$HOST:$PORT/api/agents/ws"
+  --token-file "$AGENT_TOKEN_FILE"
+  --refresh "$REFRESH"
+  --process-refresh "$PROCESS_REFRESH"
+  --state-file "$AGENT_STATE_FILE"
+)
+
+if [[ -n "$LOCAL_AGENT_NODE_ID" ]]; then
+  AGENT_CMD+=(--node-id "$LOCAL_AGENT_NODE_ID")
+fi
+
+if [[ -f "$AGENT_PID_FILE" ]]; then
+  AGENT_PID="$(cat "$AGENT_PID_FILE")"
+  if kill -0 "$AGENT_PID" >/dev/null 2>&1; then
+    echo "local agent already running: pid=$AGENT_PID state=$AGENT_STATE_FILE"
+    exit 0
+  fi
+  rm -f "$AGENT_PID_FILE"
+fi
+
+if command -v setsid >/dev/null 2>&1; then
+  nohup setsid "${AGENT_CMD[@]}" >"$AGENT_LOG_FILE" 2>&1 &
+else
+  nohup "${AGENT_CMD[@]}" >"$AGENT_LOG_FILE" 2>&1 &
+fi
+echo "$!" > "$AGENT_PID_FILE"
+echo "local agent started: pid=$(cat "$AGENT_PID_FILE") log=$AGENT_LOG_FILE state=$AGENT_STATE_FILE"
 exit 0
