@@ -144,19 +144,27 @@ export default function App() {
 
   useEffect(() => {
     const controller = analyticsRef.current;
-    if (!controller || !snapshot) {
+    if (!controller) {
       return;
     }
-    if (route.kind === "overview") {
+    syncAnalyticsRoute(route);
+  }, [route]);
+
+  function syncAnalyticsRoute(nextRoute: Route) {
+    const controller = analyticsRef.current;
+    if (!controller) {
+      return;
+    }
+    if (nextRoute.kind === "overview") {
       controller.renderOverview();
       createIcons({ icons: iconSet });
       void controller.fetchOverview();
     } else {
-      controller.renderNode(route);
+      controller.renderNode(nextRoute);
       createIcons({ icons: iconSet });
-      void controller.fetchNode(route);
+      void controller.fetchNode(nextRoute);
     }
-  }, [route, snapshot]);
+  }
 
   useEffect(() => {
     let socket: WebSocket | null = null;
