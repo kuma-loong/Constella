@@ -15,6 +15,7 @@ from .agent import AgentConfig, run_agent
 from .cluster_control import ClusterController, format_results, load_cluster_config
 from .collector import validate_refresh_interval
 from .db import RAW_SNAPSHOT_RETENTION_SECONDS, SQLiteStore
+from .highres_sidecar import HighresSidecarConfig
 from .nvml import sample_with_fallback
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -31,6 +32,21 @@ def main(argv: list[str] | None = None) -> None:
     serve.add_argument("--refresh", type=float, default=1.0)
     serve.add_argument("--process-refresh", type=float, default=3.0)
     serve.add_argument("--log-level", default="info")
+
+    highres_sidecar = subparsers.add_parser(
+        "highres-sidecar",
+        help="run the high-resolution job curve sidecar",
+    )
+    highres_sidecar.add_argument("--host", default="127.0.0.1")
+    highres_sidecar.add_argument("--port", type=int, default=8766)
+    highres_sidecar.add_argument("--db-path", type=Path)
+    highres_sidecar.add_argument(
+        "--manager-stream-url",
+        default="ws://127.0.0.1:8765/api/highres/stream",
+    )
+    highres_sidecar.add_argument("--token-file", type=Path)
+    highres_sidecar.add_argument("--retention-seconds", type=float)
+    highres_sidecar.add_argument("--log-level", default="info")
 
     probe = subparsers.add_parser("probe", help="print one JSON GPU snapshot")
     probe.add_argument("--pretty", action="store_true")
@@ -106,6 +122,31 @@ def main(argv: list[str] | None = None) -> None:
         os.environ["CONSTELLA_PROCESS_SECONDS"] = str(args.process_refresh)
         uvicorn.run(
             "constella.app:create_app",
+            host=args.host,
+            port=args.port,
+            factory=True,
+            log_level=args.log_level,
+            lifespan="on",
+        )
+        return
+
+    if args.command == "highres-sidecar":
+        try:
+            config = HighresSidecarConfig.from_env(
+                db_path=args.db_path,
+                manager_stream_url=args.manager_stream_url,
+                token_file=args.token_file,
+                retention_seconds=args.retention_seconds,
+            )
+        except (OSError, ValueError) as exc:
+            parser.error(str(exc))
+        os.environ["CONSTELLA_DB_PATH"] = str(config.db_path)
+        os.environ["CONSTELLA_HIGHRES_MANAGER_STREAM_URL"] = config.manager_stream_url
+        if config.token:
+            os.environ["CONSTELLA_HIGHRES_TOKEN"] = config.token
+        os.environ["CONSTELLA_HIGHRES_RETENTION_SECONDS"] = str(config.retention_seconds)
+        uvicorn.run(
+            "constella.highres_sidecar:create_highres_sidecar_app",
             host=args.host,
             port=args.port,
             factory=True,

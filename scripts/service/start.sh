@@ -20,12 +20,19 @@ NODES_CONFIG="${NODES_CONFIG:-nodes.yaml}"
 DB_PATH="${DB_PATH:-}"
 DB_QUEUE_SIZE="${DB_QUEUE_SIZE:-1024}"
 RAW_SNAPSHOT_SECONDS="${RAW_SNAPSHOT_SECONDS:-0}"
+HIGHRES_SIDECAR="${HIGHRES_SIDECAR:-0}"
+HIGHRES_HOST="${HIGHRES_HOST:-127.0.0.1}"
+HIGHRES_PORT="${HIGHRES_PORT:-8766}"
+HIGHRES_TOKEN_FILE="${HIGHRES_TOKEN_FILE:-}"
+HIGHRES_MANAGER_STREAM_URL="${HIGHRES_MANAGER_STREAM_URL:-ws://127.0.0.1:$PORT/api/highres/stream}"
 LOG_DIR="$ROOT_DIR/logs"
 RUN_DIR="$ROOT_DIR/run"
 PID_FILE="$RUN_DIR/constella.pid"
 AGENT_PID_FILE="$RUN_DIR/local-agent.pid"
+HIGHRES_PID_FILE="$RUN_DIR/highres-sidecar.pid"
 LOG_FILE="$LOG_DIR/constella.log"
 AGENT_LOG_FILE="$LOG_DIR/local-agent.log"
+HIGHRES_LOG_FILE="$LOG_DIR/highres-sidecar.log"
 AGENT_STATE_FILE="$RUN_DIR/local-agent-state.json"
 
 mkdir -p "$LOG_DIR" "$RUN_DIR"
@@ -64,6 +71,10 @@ if [[ -z "$AGENT_TOKEN_FILE" && "$LOCAL_AGENT" != "0" ]]; then
   AGENT_TOKEN_FILE="$RUN_DIR/agent-token"
 fi
 
+if [[ -z "$HIGHRES_TOKEN_FILE" && "$HIGHRES_SIDECAR" == "1" ]]; then
+  HIGHRES_TOKEN_FILE="$RUN_DIR/highres-token"
+fi
+
 if [[ -n "$AGENT_TOKEN_FILE" && ! -s "$AGENT_TOKEN_FILE" ]]; then
   umask 077
   "$ROOT_DIR/.venv/bin/python" - <<'PY' > "$AGENT_TOKEN_FILE"
@@ -74,8 +85,22 @@ PY
   chmod 600 "$AGENT_TOKEN_FILE"
 fi
 
+if [[ -n "$HIGHRES_TOKEN_FILE" && ! -s "$HIGHRES_TOKEN_FILE" ]]; then
+  umask 077
+  "$ROOT_DIR/.venv/bin/python" - <<'PY' > "$HIGHRES_TOKEN_FILE"
+import secrets
+
+print(secrets.token_urlsafe(32))
+PY
+  chmod 600 "$HIGHRES_TOKEN_FILE"
+fi
+
 if [[ -n "$AGENT_TOKEN_FILE" ]]; then
   export CONSTELLA_AGENT_TOKEN_FILE="$AGENT_TOKEN_FILE"
+fi
+
+if [[ -n "$HIGHRES_TOKEN_FILE" ]]; then
+  export CONSTELLA_HIGHRES_TOKEN_FILE="$HIGHRES_TOKEN_FILE"
 fi
 
 if [[ -n "$MANAGER_HOSTNAME" ]]; then
@@ -118,6 +143,41 @@ if [[ ! -f "$PID_FILE" ]]; then
   fi
   echo "$!" > "$PID_FILE"
   echo "manager started: pid=$(cat "$PID_FILE") url=http://$HOST:$PORT log=$LOG_FILE"
+fi
+
+if [[ "$HIGHRES_SIDECAR" == "1" ]]; then
+  if [[ -z "$DB_PATH" ]]; then
+    echo "highres sidecar requires DB_PATH" >&2
+    exit 1
+  fi
+  if [[ -f "$HIGHRES_PID_FILE" ]]; then
+    HIGHRES_PID="$(cat "$HIGHRES_PID_FILE")"
+    if kill -0 "$HIGHRES_PID" >/dev/null 2>&1; then
+      echo "highres sidecar already running: pid=$HIGHRES_PID url=http://$HOST:$HIGHRES_PORT"
+    else
+      rm -f "$HIGHRES_PID_FILE"
+    fi
+  fi
+  if [[ ! -f "$HIGHRES_PID_FILE" ]]; then
+    HIGHRES_CMD=(
+      "$ROOT_DIR/.venv/bin/constella"
+      highres-sidecar
+      --host "$HIGHRES_HOST"
+      --port "$HIGHRES_PORT"
+      --db-path "$DB_PATH"
+      --manager-stream-url "$HIGHRES_MANAGER_STREAM_URL"
+    )
+    if [[ -n "$HIGHRES_TOKEN_FILE" ]]; then
+      HIGHRES_CMD+=(--token-file "$HIGHRES_TOKEN_FILE")
+    fi
+    if command -v setsid >/dev/null 2>&1; then
+      nohup setsid "${HIGHRES_CMD[@]}" >"$HIGHRES_LOG_FILE" 2>&1 &
+    else
+      nohup "${HIGHRES_CMD[@]}" >"$HIGHRES_LOG_FILE" 2>&1 &
+    fi
+    echo "$!" > "$HIGHRES_PID_FILE"
+    echo "highres sidecar started: pid=$(cat "$HIGHRES_PID_FILE") url=http://$HIGHRES_HOST:$HIGHRES_PORT log=$HIGHRES_LOG_FILE"
+  fi
 fi
 
 if [[ "$LOCAL_AGENT" == "0" ]]; then

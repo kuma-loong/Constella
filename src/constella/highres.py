@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import sqlite3
 import time
+import asyncio
 from array import array
 from dataclasses import dataclass, field
 from typing import Any
@@ -13,6 +14,7 @@ from .schema import GpuInfo, NodeSnapshot
 
 HIGHRES_RETENTION_SECONDS = 2 * 60 * 60
 HIGHRES_MAX_JOB_SECONDS = 60 * 60
+HIGHRES_JOB_LOOKBACK_SECONDS = 7 * 24 * 60 * 60
 HIGHRES_MIN_INTERVAL_SECONDS = 0.5
 HIGHRES_DEFAULT_PADDING_SECONDS = 20.0
 
@@ -131,6 +133,34 @@ class HighresGpuCache:
             self.sample_count += 1
         self.last_sample_at = sampled_at
 
+    def add_sample_message(self, message: dict[str, Any]) -> None:
+        node_id = str(message.get("node_id") or "")
+        sampled_at = float(message.get("sampled_at") or 0.0)
+        if not node_id or sampled_at <= 0:
+            self.dropped_samples += 1
+            return
+        for raw_gpu in message.get("gpus") or []:
+            gpu = GpuInfo(
+                index=int(raw_gpu.get("gpu_index") or raw_gpu.get("index") or 0),
+                node_id=node_id,
+                uuid=str(raw_gpu.get("uuid") or "unknown"),
+                name=str(raw_gpu.get("name") or "unknown"),
+                utilization_gpu=int(raw_gpu.get("utilization_gpu") or 0),
+                utilization_mem=int(raw_gpu.get("utilization_mem") or 0),
+                memory_total_mb=int(raw_gpu.get("memory_total_mb") or 0),
+                memory_used_mb=int(raw_gpu.get("memory_used_mb") or 0),
+                power_watts=float(raw_gpu.get("power_watts") or 0.0),
+                temperature_c=int(raw_gpu.get("temperature_c") or 0),
+            )
+            key = (node_id, gpu.uuid)
+            ring = self.rings.get(key)
+            if ring is None:
+                ring = GpuSampleRing(capacity=self.capacity)
+                self.rings[key] = ring
+            ring.append(sampled_at=sampled_at, gpu=gpu)
+            self.sample_count += 1
+        self.last_sample_at = sampled_at
+
     def series_for(
         self,
         *,
@@ -174,8 +204,8 @@ def query_jobs(
     status: str | None = None,
     since: float | None = None,
     until: float | None = None,
-    max_duration_seconds: float | None = HIGHRES_MAX_JOB_SECONDS,
-    recent_seconds: float | None = HIGHRES_RETENTION_SECONDS,
+    max_duration_seconds: float | None = None,
+    recent_seconds: float | None = HIGHRES_JOB_LOOKBACK_SECONDS,
     limit: int = 100,
     now: float | None = None,
 ) -> list[dict[str, Any]]:
@@ -203,8 +233,20 @@ def query_jobs(
     return filtered[: max(1, min(limit, 500))]
 
 
-def get_job(store: SQLiteStore, key: str) -> dict[str, Any] | None:
-    return _group_jobs(_job_rows(store, range_start=None, range_end=None)).get(key)
+def get_job(
+    store: SQLiteStore,
+    key: str,
+    *,
+    now: float | None = None,
+    lookback_seconds: float | None = HIGHRES_JOB_LOOKBACK_SECONDS,
+) -> dict[str, Any] | None:
+    current_time = time.time() if now is None else now
+    range_start = (
+        current_time - max(0.0, lookback_seconds)
+        if lookback_seconds is not None
+        else None
+    )
+    return _group_jobs(_job_rows(store, range_start=range_start, range_end=None)).get(key)
 
 
 def job_curve(
@@ -215,7 +257,7 @@ def job_curve(
     padding_seconds: float = HIGHRES_DEFAULT_PADDING_SECONDS,
     now: float | None = None,
 ) -> dict[str, Any] | None:
-    job = get_job(store, key)
+    job = get_job(store, key, now=now)
     if job is None:
         return None
     padding = max(0.0, min(float(padding_seconds), 300.0))
@@ -406,7 +448,7 @@ def _job_matches(
                 for key in ("task_name", "process_name", "exe", "cmdline_text", "pid")
             ).lower()
             for session in job["sessions"]
-        ):
+        ) and needle not in str(job.get("user") or "").lower():
             return False
     return True
 
@@ -484,3 +526,59 @@ def _gpu_label(gpu: dict[str, Any]) -> str:
     index = gpu.get("gpu_index")
     suffix = f"GPU{index}" if index is not None else gpu["gpu_uuid"]
     return f"{gpu['node_id']} {suffix}"
+
+
+def gpu_sample_message(snapshot: NodeSnapshot) -> dict[str, Any]:
+    return {
+        "type": "gpu_sample",
+        "node_id": snapshot.node_id,
+        "sampled_at": snapshot.sampled_at,
+        "refresh_interval": snapshot.refresh_interval,
+        "gpus": [
+            {
+                "uuid": gpu.uuid,
+                "gpu_index": gpu.index,
+                "name": gpu.name,
+                "utilization_gpu": gpu.utilization_gpu,
+                "utilization_mem": gpu.utilization_mem,
+                "memory_used_mb": gpu.memory_used_mb,
+                "memory_total_mb": gpu.memory_total_mb,
+                "power_watts": gpu.power_watts,
+                "temperature_c": gpu.temperature_c,
+            }
+            for gpu in snapshot.gpus
+        ],
+    }
+
+
+class HighresSampleBroadcaster:
+    def __init__(self, *, queue_size: int = 256):
+        self.queue_size = max(1, int(queue_size))
+        self.queues: set[asyncio.Queue[dict[str, Any]]] = set()
+        self.published_messages = 0
+        self.dropped_messages = 0
+
+    def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=self.queue_size)
+        self.queues.add(queue)
+        return queue
+
+    def unsubscribe(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
+        self.queues.discard(queue)
+
+    def publish_snapshot(self, snapshot: NodeSnapshot) -> None:
+        message = gpu_sample_message(snapshot)
+        self.published_messages += 1
+        for queue in list(self.queues):
+            try:
+                queue.put_nowait(message)
+            except asyncio.QueueFull:
+                self.dropped_messages += 1
+
+    def status(self) -> dict[str, Any]:
+        return {
+            "subscriber_count": len(self.queues),
+            "published_messages": self.published_messages,
+            "dropped_messages": self.dropped_messages,
+            "queue_size": self.queue_size,
+        }

@@ -17,7 +17,14 @@ from .analytics import node_analytics, overview_analytics
 from .cluster import ClusterState, parse_agent_hello
 from .collector import ALLOWED_REFRESH_INTERVALS, validate_refresh_interval
 from .db import AsyncDBSink, SQLiteSinkConfig
-from .highres import HighresGpuCache, get_job, job_curve, query_jobs
+from .highres import (
+    HIGHRES_JOB_LOOKBACK_SECONDS,
+    HighresGpuCache,
+    HighresSampleBroadcaster,
+    get_job,
+    job_curve,
+    query_jobs,
+)
 from .schema import local_node_id
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -97,6 +104,19 @@ def _load_agent_token() -> str | None:
         return None
 
 
+def _load_highres_token() -> str | None:
+    token = os.environ.get("CONSTELLA_HIGHRES_TOKEN")
+    if token:
+        return token
+    token_file = os.environ.get("CONSTELLA_HIGHRES_TOKEN_FILE")
+    if not token_file:
+        return None
+    try:
+        return Path(token_file).read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+
+
 def _agent_authorized(websocket: WebSocket, expected_token: str | None) -> bool:
     if not expected_token:
         return False
@@ -130,6 +150,7 @@ def create_app(
     db_sink: AsyncDBSink | None = None,
     manager_settings: ManagerSettings | None = None,
     highres_cache: HighresGpuCache | None = None,
+    highres_broadcaster: HighresSampleBroadcaster | None = None,
 ) -> FastAPI:
     if manager_settings is None:
         manager_settings = ManagerSettings.from_env(
@@ -139,8 +160,10 @@ def create_app(
     if cluster_state is None:
         cluster_state = ClusterState(local_node_id=local_node_id())
     expected_agent_token = agent_token if agent_token is not None else _load_agent_token()
+    expected_highres_token = _load_highres_token()
     db_sink = db_sink if db_sink is not None else _load_db_sink()
     highres_cache = highres_cache if highres_cache is not None else HighresGpuCache()
+    highres_broadcaster = highres_broadcaster or HighresSampleBroadcaster()
     agent_queues: set[asyncio.Queue[dict[str, object]]] = set()
 
     def broadcast_config() -> None:
@@ -155,6 +178,7 @@ def create_app(
         app.state.settings = manager_settings
         app.state.db_sink = db_sink
         app.state.highres_cache = highres_cache
+        app.state.highres_broadcaster = highres_broadcaster
         yield
         if db_sink is not None:
             await db_sink.stop()
@@ -170,6 +194,7 @@ def create_app(
     app.state.settings = manager_settings
     app.state.db_sink = db_sink
     app.state.highres_cache = highres_cache
+    app.state.highres_broadcaster = highres_broadcaster
 
     @app.get("/api/health")
     async def health() -> dict[str, object]:
@@ -248,8 +273,8 @@ def create_app(
         status: str | None = None,
         since: float | None = None,
         until: float | None = None,
-        max_duration_seconds: float = 3600.0,
-        recent_seconds: float = 7200.0,
+        max_duration_seconds: float | None = None,
+        recent_seconds: float = HIGHRES_JOB_LOOKBACK_SECONDS,
         limit: int = 100,
     ) -> dict[str, object]:
         if db_sink is None:
@@ -265,8 +290,12 @@ def create_app(
                 status=status,
                 since=since,
                 until=until,
-                max_duration_seconds=max(1.0, min(max_duration_seconds, 24 * 60 * 60)),
-                recent_seconds=max(60.0, min(recent_seconds, 30 * 24 * 60 * 60)),
+                max_duration_seconds=(
+                    max(1.0, min(max_duration_seconds, HIGHRES_JOB_LOOKBACK_SECONDS))
+                    if max_duration_seconds is not None
+                    else None
+                ),
+                recent_seconds=max(60.0, min(recent_seconds, HIGHRES_JOB_LOOKBACK_SECONDS)),
                 limit=max(1, min(limit, 500)),
             ),
         }
@@ -382,6 +411,7 @@ def create_app(
                         runtime = cluster_state.latest_by_node.get(str(message.get("node_id") or ""))
                         if runtime is not None:
                             app.state.highres_cache.add_snapshot(runtime.snapshot)
+                            app.state.highres_broadcaster.publish_snapshot(runtime.snapshot)
                             if db_sink is not None:
                                 db_sink.submit_node_snapshot(runtime.snapshot)
                     send_queue.put_nowait(
@@ -409,6 +439,24 @@ def create_app(
             sender_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await sender_task
+
+    @app.websocket("/api/highres/stream")
+    async def highres_stream(websocket: WebSocket) -> None:
+        if expected_highres_token and not _agent_authorized(websocket, expected_highres_token):
+            await websocket.close(code=4401)
+            return
+        await websocket.accept()
+        queue = app.state.highres_broadcaster.subscribe()
+        try:
+            await websocket.send_json(
+                {"type": "hello", **app.state.highres_broadcaster.status()}
+            )
+            while True:
+                await websocket.send_json(await queue.get())
+        except WebSocketDisconnect:
+            return
+        finally:
+            app.state.highres_broadcaster.unsubscribe(queue)
 
     if FRONTEND_DIST.exists():
         assets_path = FRONTEND_DIST / "assets"

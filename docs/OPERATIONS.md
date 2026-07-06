@@ -134,11 +134,22 @@ curl -s http://127.0.0.1:8765/api/analytics/node/<node_id>
 http://127.0.0.1:8765/jobs
 ```
 
+如需使用独立高精度 sidecar，在启动服务时启用：
+
+```bash
+DB_PATH=run/constella.db HIGHRES_SIDECAR=1 ./scripts/service/start.sh
+```
+
+默认 sidecar 监听 `127.0.0.1:8766`，订阅 manager 的
+`ws://127.0.0.1:8765/api/highres/stream`。可用 `HIGHRES_HOST`、`HIGHRES_PORT`、
+`HIGHRES_MANAGER_STREAM_URL` 和 `HIGHRES_TOKEN_FILE` 覆盖。
+
 相关状态与接口验证：
 
 ```bash
 curl -s http://127.0.0.1:8765/api/highres/status
 curl -s 'http://127.0.0.1:8765/api/highres/jobs?limit=20'
+curl -s http://127.0.0.1:8766/api/highres/status
 ```
 
 `/api/highres/status` 即使未启用 SQLite 也可查看内存 ring buffer 状态；作业搜索和曲线详情需要 `DB_PATH`，因为作业元数据来自 SQLite。

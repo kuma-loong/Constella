@@ -5,20 +5,21 @@
 Add a high-resolution GPU curve view for recent short jobs without changing the long-term
 SQLite history design.
 
-The feature should serve only:
+The unified job curve feature should serve jobs whose end time is within the last 7 days.
+Within that scope, the high-resolution memory path should serve only:
 
-- jobs whose end time is within the last 2 hours
 - jobs whose duration is less than 1 hour
 - GPU curve queries that need finer detail than the existing 20s rollup
 
-Everything outside those limits should fall back to the existing rollup history.
+Long jobs inside the 7-day window should fall back to existing rollup history. Jobs older
+than 7 days are outside the job curve search/detail scope.
 
 The user-facing feature should not be limited to high-resolution jobs. It should be a
 unified job GPU curve view:
 
 - recent short jobs use the sidecar's high-resolution memory cache when available
 - long jobs use existing rollup data
-- older jobs use existing rollup data
+- jobs older than 7 days are outside the job curve search/detail scope
 - partial high-resolution coverage can fall back to rollup or return a mixed response with
   explicit coverage metadata
 
@@ -524,8 +525,13 @@ not exist.
 
 Implemented in the first public-ready slice:
 
-- A fixed-capacity per-GPU high-resolution memory cache is attached to the manager ingest
-  path and receives only accepted agent samples.
+- The manager exposes a lightweight `/api/highres/stream` WebSocket that publishes only
+  accepted GPU sample points for local high-resolution consumers.
+- `constella highres-sidecar` runs a separate FastAPI sidecar process, subscribes to the
+  manager stream, maintains its own fixed-capacity per-GPU memory cache, and exposes
+  `/api/highres/*` APIs.
+- The existing manager `/api/highres/*` endpoints remain available for same-process
+  operation, but the sidecar path is implemented and can be launched independently.
 - `GET /api/highres/status` reports ring count, point capacity, valid point count,
   approximate bytes, retention, dropped samples, and sample time bounds.
 - `GET /api/highres/jobs` searches recent SQLite job metadata, groups sessions by the
@@ -537,10 +543,11 @@ Implemented in the first public-ready slice:
   otherwise falls back to existing rollup history.
 - The frontend adds a `/jobs` route with job search, result selection, metric switching,
   multi-GPU uPlot curves, and source or warning metadata.
-- Tests cover ring wraparound, job grouping, and high-resolution curve API behavior.
+- Tests cover ring wraparound, 7-day job lookup, manager stream publication, sidecar API
+  behavior, job grouping, and high-resolution curve API behavior.
 
-Intentional first-slice boundary:
+Current boundaries:
 
-- The cache currently runs in the manager process as a sidecar-style component instead of
-  a separate process. This keeps deployment simple while preserving the main database
-  design and API boundary for a future standalone sidecar.
+- Job search and job detail are limited to the most recent 7 days.
+- High-resolution memory data is retained for 2 hours.
+- Long jobs and cache misses use rollup fallback.

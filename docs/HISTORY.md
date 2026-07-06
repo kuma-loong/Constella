@@ -102,14 +102,15 @@ Supported ranges are `24h`, `7d`, and `30d` for Overview, and `1h`, `24h`, `7d`,
 
 ## Job GPU Curves
 
-Constella exposes a unified job curve view at `/jobs` when SQLite history is enabled. Job discovery reads `process_sessions`, `process_gpu_usages`, and `gpus`; it groups sessions with the same analytics job identity and returns one user-facing job with its PIDs, sessions, and GPU set.
+Constella exposes a unified job curve view at `/jobs` when SQLite history is enabled. Job discovery reads `process_sessions`, `process_gpu_usages`, and `gpus`; it groups sessions with the same analytics job identity and returns one user-facing job with its PIDs, sessions, and GPU set. Job search and job detail are limited to jobs seen within the last 7 days.
 
-Recent short jobs can use the manager's in-memory high-resolution GPU cache. The cache is a fixed-capacity per-GPU ring buffer populated only after an agent sample is accepted by the manager. It does not write raw 1s samples to SQLite. The default retention is 2 hours and the default capacity is sized for 0.5s samples.
+Recent short jobs can use an in-memory high-resolution GPU cache. The cache is a fixed-capacity per-GPU ring buffer populated only after an agent sample is accepted by the manager. It does not write raw 1s samples to SQLite. The default retention is 2 hours and the default capacity is sized for 0.5s samples.
+
+The preferred deployment is a separate high-resolution sidecar process. The manager publishes a lightweight local WebSocket stream at `/api/highres/stream`; `constella highres-sidecar` subscribes to that stream, owns the high-resolution memory cache, and exposes `/api/highres/*` APIs. The manager also keeps same-process `/api/highres/*` endpoints for simple deployments and tests.
 
 Curve source selection:
 
 - jobs shorter than 1 hour use high-resolution memory data only when the cache fully covers the padded job window
-- long jobs, expired jobs, and cache misses fall back to existing rollup history
+- long jobs and cache misses fall back to existing rollup history
+- jobs older than 7 days are not returned by the job curve APIs
 - responses include `source`, coverage timestamps, resolution, expiration state, and warnings so the frontend does not imply precision that is not available
-
-The current implementation keeps the high-resolution cache in the manager process as a small sidecar-style component. This preserves the database design and leaves a clear boundary for splitting it into a separate local service later.
