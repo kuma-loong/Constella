@@ -58,6 +58,11 @@ This branch replaces the Python backend with a Rust implementation while keeping
   - long low-utilization anomaly detection,
   - node rollup series,
   - node heatmap buckets.
+- Added `nodes.yaml` loader:
+  - manager URL and manager hostname,
+  - relative agent token path resolution,
+  - refresh/process interval defaults,
+  - node host/user/port entries.
 - Current Rust verification: `cargo fmt --check` and `cargo test`.
 
 ## Remaining Work
@@ -76,7 +81,6 @@ This branch replaces the Python backend with a Rust implementation while keeping
    - Add broader range edge-case coverage.
 
 4. Cluster control and YAML nodes
-   - Port `nodes.yaml` loading.
    - Port SSH agent deployment/status/stop flow or replace scripts with Rust CLI equivalents.
    - Keep token handling through stdin/env files, not command-line arguments.
 
