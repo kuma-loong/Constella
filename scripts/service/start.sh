@@ -13,34 +13,23 @@ REFRESH="${REFRESH:-1.0}"
 PROCESS_REFRESH="${PROCESS_REFRESH:-3.0}"
 AGENT_TOKEN_FILE="${AGENT_TOKEN_FILE:-}"
 MANAGER_HOSTNAME="${MANAGER_HOSTNAME:-}"
-LOCAL_AGENT="${LOCAL_AGENT:-1}"
+LOCAL_AGENT="${LOCAL_AGENT:-0}"
 LOCAL_AGENT_NODE_ID="${LOCAL_AGENT_NODE_ID:-}"
-LOCAL_AGENT_MANAGER_URL="${LOCAL_AGENT_MANAGER_URL:-ws://127.0.0.1:$PORT/api/agents/ws}"
 NODES_CONFIG="${NODES_CONFIG:-nodes.yaml}"
 DB_PATH="${DB_PATH:-}"
 DB_QUEUE_SIZE="${DB_QUEUE_SIZE:-1024}"
 RAW_SNAPSHOT_SECONDS="${RAW_SNAPSHOT_SECONDS:-0}"
 HIGHRES_SIDECAR="${HIGHRES_SIDECAR:-0}"
-HIGHRES_HOST="${HIGHRES_HOST:-127.0.0.1}"
-HIGHRES_PORT="${HIGHRES_PORT:-8766}"
 HIGHRES_TOKEN_FILE="${HIGHRES_TOKEN_FILE:-}"
-HIGHRES_MANAGER_STREAM_URL="${HIGHRES_MANAGER_STREAM_URL:-ws://127.0.0.1:$PORT/api/highres/stream}"
 LOG_DIR="$ROOT_DIR/logs"
 RUN_DIR="$ROOT_DIR/run"
 PID_FILE="$RUN_DIR/constella.pid"
-AGENT_PID_FILE="$RUN_DIR/local-agent.pid"
-HIGHRES_PID_FILE="$RUN_DIR/highres-sidecar.pid"
 LOG_FILE="$LOG_DIR/constella.log"
-AGENT_LOG_FILE="$LOG_DIR/local-agent.log"
-HIGHRES_LOG_FILE="$LOG_DIR/highres-sidecar.log"
-AGENT_STATE_FILE="$RUN_DIR/local-agent-state.json"
 
 mkdir -p "$LOG_DIR" "$RUN_DIR"
 
-if [[ -f uv.lock ]]; then
-  uv sync --frozen
-else
-  uv sync
+if [[ ! -x target/release/constella ]]; then
+  cargo build --release
 fi
 
 if [[ ! -d frontend/dist ]]; then
@@ -55,16 +44,7 @@ if [[ ! -d frontend/dist ]]; then
 fi
 
 if [[ -z "$MANAGER_HOSTNAME" && -f "$NODES_CONFIG" ]]; then
-  MANAGER_HOSTNAME="$(
-    PYTHONPATH="$ROOT_DIR/src" "$ROOT_DIR/.venv/bin/python" - "$NODES_CONFIG" <<'PY'
-from pathlib import Path
-import sys
-
-from constella.cluster_control import load_manager_hostname
-
-print(load_manager_hostname(Path(sys.argv[1])) or "")
-PY
-  )"
+  MANAGER_HOSTNAME="$(target/release/constella config manager-hostname --nodes "$NODES_CONFIG")"
 fi
 
 if [[ -z "$AGENT_TOKEN_FILE" && "$LOCAL_AGENT" != "0" ]]; then
@@ -77,21 +57,21 @@ fi
 
 if [[ -n "$AGENT_TOKEN_FILE" && ! -s "$AGENT_TOKEN_FILE" ]]; then
   umask 077
-  "$ROOT_DIR/.venv/bin/python" - <<'PY' > "$AGENT_TOKEN_FILE"
-import secrets
-
-print(secrets.token_urlsafe(32))
-PY
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -base64 32 > "$AGENT_TOKEN_FILE"
+  else
+    date +%s%N | sha256sum | awk '{print $1}' > "$AGENT_TOKEN_FILE"
+  fi
   chmod 600 "$AGENT_TOKEN_FILE"
 fi
 
 if [[ -n "$HIGHRES_TOKEN_FILE" && ! -s "$HIGHRES_TOKEN_FILE" ]]; then
   umask 077
-  "$ROOT_DIR/.venv/bin/python" - <<'PY' > "$HIGHRES_TOKEN_FILE"
-import secrets
-
-print(secrets.token_urlsafe(32))
-PY
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -base64 32 > "$HIGHRES_TOKEN_FILE"
+  else
+    date +%s%N | sha256sum | awk '{print $1}' > "$HIGHRES_TOKEN_FILE"
+  fi
   chmod 600 "$HIGHRES_TOKEN_FILE"
 fi
 
@@ -118,7 +98,7 @@ if [[ -n "$DB_PATH" ]]; then
 fi
 
 CMD=(
-  "$ROOT_DIR/.venv/bin/constella"
+  "$ROOT_DIR/target/release/constella"
   serve
   --host "$HOST"
   --port "$PORT"
@@ -146,38 +126,7 @@ if [[ ! -f "$PID_FILE" ]]; then
 fi
 
 if [[ "$HIGHRES_SIDECAR" == "1" ]]; then
-  if [[ -z "$DB_PATH" ]]; then
-    echo "highres sidecar requires DB_PATH" >&2
-    exit 1
-  fi
-  if [[ -f "$HIGHRES_PID_FILE" ]]; then
-    HIGHRES_PID="$(cat "$HIGHRES_PID_FILE")"
-    if kill -0 "$HIGHRES_PID" >/dev/null 2>&1; then
-      echo "highres sidecar already running: pid=$HIGHRES_PID url=http://$HOST:$HIGHRES_PORT"
-    else
-      rm -f "$HIGHRES_PID_FILE"
-    fi
-  fi
-  if [[ ! -f "$HIGHRES_PID_FILE" ]]; then
-    HIGHRES_CMD=(
-      "$ROOT_DIR/.venv/bin/constella"
-      highres-sidecar
-      --host "$HIGHRES_HOST"
-      --port "$HIGHRES_PORT"
-      --db-path "$DB_PATH"
-      --manager-stream-url "$HIGHRES_MANAGER_STREAM_URL"
-    )
-    if [[ -n "$HIGHRES_TOKEN_FILE" ]]; then
-      HIGHRES_CMD+=(--token-file "$HIGHRES_TOKEN_FILE")
-    fi
-    if command -v setsid >/dev/null 2>&1; then
-      nohup setsid "${HIGHRES_CMD[@]}" >"$HIGHRES_LOG_FILE" 2>&1 &
-    else
-      nohup "${HIGHRES_CMD[@]}" >"$HIGHRES_LOG_FILE" 2>&1 &
-    fi
-    echo "$!" > "$HIGHRES_PID_FILE"
-    echo "highres sidecar started: pid=$(cat "$HIGHRES_PID_FILE") url=http://$HIGHRES_HOST:$HIGHRES_PORT log=$HIGHRES_LOG_FILE"
-  fi
+  echo "highres sidecar is no longer started separately; Rust manager serves highres APIs and stream"
 fi
 
 if [[ "$LOCAL_AGENT" == "0" ]]; then
@@ -185,39 +134,5 @@ if [[ "$LOCAL_AGENT" == "0" ]]; then
   exit 0
 fi
 
-if [[ -z "$AGENT_TOKEN_FILE" ]]; then
-  echo "local agent requires AGENT_TOKEN_FILE" >&2
-  exit 1
-fi
-
-if [[ -f "$AGENT_PID_FILE" ]]; then
-  AGENT_PID="$(cat "$AGENT_PID_FILE")"
-  if kill -0 "$AGENT_PID" >/dev/null 2>&1; then
-    echo "local agent already running: pid=$AGENT_PID node_id=${LOCAL_AGENT_NODE_ID:-$(hostname)}"
-    exit 0
-  fi
-  rm -f "$AGENT_PID_FILE"
-fi
-
-AGENT_CMD=(
-  "$ROOT_DIR/.venv/bin/constella"
-  agent
-  --manager-url "$LOCAL_AGENT_MANAGER_URL"
-  --token-file "$AGENT_TOKEN_FILE"
-  --refresh "$REFRESH"
-  --process-refresh "$PROCESS_REFRESH"
-  --state-file "$AGENT_STATE_FILE"
-)
-
-if [[ -n "$LOCAL_AGENT_NODE_ID" ]]; then
-  AGENT_CMD+=(--node-id "$LOCAL_AGENT_NODE_ID")
-fi
-
-if command -v setsid >/dev/null 2>&1; then
-  nohup setsid "${AGENT_CMD[@]}" >"$AGENT_LOG_FILE" 2>&1 &
-else
-  nohup "${AGENT_CMD[@]}" >"$AGENT_LOG_FILE" 2>&1 &
-fi
-
-echo "$!" > "$AGENT_PID_FILE"
-echo "local agent started: pid=$(cat "$AGENT_PID_FILE") manager=$LOCAL_AGENT_MANAGER_URL log=$AGENT_LOG_FILE"
+echo "local Rust agent loop is not implemented yet; set LOCAL_AGENT=0 or use remote/manual agent during this migration"
+exit 0

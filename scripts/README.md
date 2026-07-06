@@ -21,6 +21,6 @@ LOCAL_AGENT=0 ./scripts/service/start.sh
 ./scripts/maintenance/db.sh
 ```
 
-`scripts/service/start.sh` 默认启动 manager 和本机 GPU agent，并在需要时自动生成 `run/agent-token`。manager pid/log 使用 `run/constella.pid` 和 `logs/constella.log`；本机 agent 使用 `run/local-agent.pid`、`logs/local-agent.log` 和 `run/local-agent-state.json`。
+`scripts/service/setup.sh` 构建 Rust release binary，并构建前端静态资源。`scripts/service/start.sh` 启动 Rust manager，默认监听 `127.0.0.1:8765`，pid/log 使用 `run/constella.pid` 和 `logs/constella.log`。当前 Rust local agent loop 仍在迁移中，`LOCAL_AGENT` 默认关闭；manager 仍保留 `/api/agents/ws` 接入通道。
 
-SQLite 历史库默认关闭。启用后，`scripts/maintenance/db.sh` 运行 `uv run constella db maintain`，负责关闭 stale session、聚合 rollup、清理过期 rollup 和低频 raw snapshot。
+SQLite 历史库默认关闭。设置 `DB_PATH=run/constella.db` 后，Rust manager 会写入节点、GPU、任务和历史查询所需数据。维护脚本仍待迁移到 Rust CLI。

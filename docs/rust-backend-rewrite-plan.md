@@ -70,6 +70,12 @@ This branch replaces the Python backend with a Rust implementation while keeping
   - `/proc/<pid>/cmdline` detail status parsing,
   - process task-name inference and command-line hashing,
   - snapshot collector refresh/process interval and history publication.
+- Updated local service scripts:
+  - setup builds the Rust release binary and frontend assets,
+  - start runs `target/release/constella serve`,
+  - manager hostname can be read from `nodes.yaml` through the Rust CLI,
+  - highres is served by the Rust manager instead of a separate sidecar,
+  - local agent startup is disabled until the Rust agent loop lands.
 - Current Rust verification: `cargo fmt --check` and `cargo test`.
 
 ## Remaining Work
@@ -92,8 +98,8 @@ This branch replaces the Python backend with a Rust implementation while keeping
    - Keep token handling through stdin/env files, not command-line arguments.
 
 5. Scripts and packaging
-   - Update service scripts to run the Rust binary.
-   - Keep safe defaults: bind to `127.0.0.1:8765`, no DB unless `CONSTELLA_DB_PATH` is set.
+   - Restore local agent startup once the Rust agent loop lands.
+   - Keep safe defaults: bind to `127.0.0.1:8765`, no DB unless `CONSTELLA_DB_PATH`/`DB_PATH` is set.
    - Add release build instructions and artifact layout.
 
 6. Documentation

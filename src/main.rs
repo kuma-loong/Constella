@@ -5,6 +5,7 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use constella::api::{app, AppState};
 use constella::cluster::ClusterState;
+use constella::cluster_config::load_manager_hostname;
 use constella::schema::local_node_id;
 use constella::settings::ManagerSettings;
 
@@ -19,6 +20,21 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     Serve(ServeArgs),
+    Config(ConfigArgs),
+}
+
+#[derive(Debug, Parser)]
+struct ConfigArgs {
+    #[command(subcommand)]
+    command: ConfigCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum ConfigCommand {
+    ManagerHostname {
+        #[arg(long, default_value = "nodes.yaml")]
+        nodes: PathBuf,
+    },
 }
 
 #[derive(Debug, Parser)]
@@ -56,6 +72,18 @@ async fn main() -> anyhow::Result<()> {
         db_path: None,
     })) {
         Command::Serve(args) => serve(args).await,
+        Command::Config(args) => config(args),
+    }
+}
+
+fn config(args: ConfigArgs) -> anyhow::Result<()> {
+    match args.command {
+        ConfigCommand::ManagerHostname { nodes } => {
+            if let Some(hostname) = load_manager_hostname(nodes)? {
+                println!("{hostname}");
+            }
+            Ok(())
+        }
     }
 }
 

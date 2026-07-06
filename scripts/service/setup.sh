@@ -7,7 +7,7 @@ cd "$ROOT_DIR"
 export NO_PROXY="${NO_PROXY:-127.0.0.1,localhost}"
 export no_proxy="${no_proxy:-127.0.0.1,localhost}"
 
-uv sync
+cargo build --release
 
 pushd frontend >/dev/null
 if [[ -f package-lock.json ]]; then
