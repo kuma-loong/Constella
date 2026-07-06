@@ -880,11 +880,11 @@ function heatmapCell(row: HourlyHeatRow, cell: HourlyHeatCell) {
   const tooltip = cell.hasData
     ? [
         gpuLabel,
-        `${heatFullTime(cell.start)}-${heatHour(cell.end)}`,
+        `${heatFullTime(cell.start)}-${heatClock(cell.end)}`,
         `GPU avg ${fmtPct(cell.avg)} · peak ${fmtPct(cell.peak)}`,
         `Mem avg ${fmtGiB(cell.memoryAvg)}`,
       ].join("\n")
-    : [gpuLabel, `${heatFullTime(cell.start)}-${heatHour(cell.end)}`, "No data"].join("\n");
+    : [gpuLabel, `${heatFullTime(cell.start)}-${heatClock(cell.end)}`, "No data"].join("\n");
   return `
     <span
       class="heat-cell ${cell.hasData ? "" : "is-missing"}"
@@ -992,11 +992,7 @@ function heatAxis(starts: number[]) {
 }
 
 function heatHour(epochSeconds: number) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    hour: "2-digit",
-    hourCycle: "h23",
-  }).format(new Date(epochSeconds * 1000));
+  return heatParts(epochSeconds).hour;
 }
 
 function heatColor(value: number) {
@@ -1008,14 +1004,31 @@ function heatColor(value: number) {
 }
 
 function heatFullTime(epochSeconds: number) {
-  return new Intl.DateTimeFormat("zh-CN", {
+  const parts = heatParts(epochSeconds);
+  return `${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+function heatClock(epochSeconds: number) {
+  const parts = heatParts(epochSeconds);
+  return `${parts.hour}:${parts.minute}`;
+}
+
+function heatParts(epochSeconds: number) {
+  const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Shanghai",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
-  }).format(new Date(epochSeconds * 1000));
+  }).formatToParts(new Date(epochSeconds * 1000));
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || "00";
+  return {
+    month: value("month"),
+    day: value("day"),
+    hour: value("hour"),
+    minute: value("minute"),
+  };
 }
 
 function escapeMultilineAttr(value: string) {
