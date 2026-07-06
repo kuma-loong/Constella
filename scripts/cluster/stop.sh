@@ -6,4 +6,8 @@ cd "$ROOT_DIR"
 
 NODES="${NODES:-nodes.yaml}"
 
-uv run constella cluster stop --nodes "$NODES"
+if [[ ! -x target/release/constella ]]; then
+  cargo build --release
+fi
+
+target/release/constella cluster stop --nodes "$NODES"

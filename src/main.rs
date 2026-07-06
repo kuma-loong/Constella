@@ -7,7 +7,8 @@ use clap::{Parser, Subcommand};
 use constella::agent::{run_agent, AgentConfig};
 use constella::api::{app, AppState};
 use constella::cluster::ClusterState;
-use constella::cluster_config::load_manager_hostname;
+use constella::cluster_config::{load_cluster_config, load_manager_hostname};
+use constella::cluster_control::{format_results, ClusterController};
 use constella::db::{SQLiteStore, RAW_SNAPSHOT_RETENTION_SECONDS};
 use constella::schema::local_node_id;
 use constella::settings::ManagerSettings;
@@ -25,6 +26,7 @@ enum Command {
     Serve(ServeArgs),
     Agent(AgentArgs),
     Db(DbArgs),
+    Cluster(ClusterArgs),
     Config(ConfigArgs),
 }
 
@@ -84,6 +86,30 @@ struct DbArgs {
     command: Option<DbCommand>,
 }
 
+#[derive(Debug, Parser)]
+struct ClusterArgs {
+    #[command(subcommand)]
+    command: Option<ClusterCommand>,
+}
+
+#[derive(Debug, Subcommand)]
+enum ClusterCommand {
+    Start {
+        #[arg(long, default_value = "nodes.yaml")]
+        nodes: PathBuf,
+        #[arg(long)]
+        no_sync: bool,
+    },
+    Status {
+        #[arg(long, default_value = "nodes.yaml")]
+        nodes: PathBuf,
+    },
+    Stop {
+        #[arg(long, default_value = "nodes.yaml")]
+        nodes: PathBuf,
+    },
+}
+
 #[derive(Debug, Subcommand)]
 enum DbCommand {
     Maintain {
@@ -141,6 +167,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Serve(args) => serve(args).await,
         Command::Agent(args) => agent(args).await,
         Command::Db(args) => db(args),
+        Command::Cluster(args) => cluster(args),
         Command::Config(args) => config(args),
     }
 }
@@ -220,6 +247,31 @@ fn db(args: DbArgs) -> anyhow::Result<()> {
             println!("closed {count} process sessions");
             store.close();
         }
+    }
+    Ok(())
+}
+
+fn cluster(args: ClusterArgs) -> anyhow::Result<()> {
+    let Some(command) = args.command else {
+        return Ok(());
+    };
+    let (nodes, action, no_sync) = match command {
+        ClusterCommand::Start { nodes, no_sync } => (nodes, "start", no_sync),
+        ClusterCommand::Status { nodes } => (nodes, "status", false),
+        ClusterCommand::Stop { nodes } => (nodes, "stop", false),
+    };
+    let config = load_cluster_config(nodes)?;
+    let controller =
+        ClusterController::new(config, std::env::current_dir()?).with_sync_binary(!no_sync);
+    let results = match action {
+        "start" => controller.start_all(),
+        "status" => controller.status_all(),
+        "stop" => controller.stop_all(),
+        _ => unreachable!(),
+    };
+    println!("{}", format_results(&results));
+    if results.iter().any(|result| !result.ok) {
+        anyhow::bail!("one or more cluster {action} commands failed");
     }
     Ok(())
 }

@@ -76,6 +76,7 @@ This branch replaces the Python backend with a Rust implementation while keeping
   - manager hostname can be read from `nodes.yaml` through the Rust CLI,
   - highres is served by the Rust manager instead of a separate sidecar,
   - `LOCAL_AGENT=1` starts the Rust local agent through `/api/agents/ws`,
+  - cluster scripts call Rust `constella cluster ...` and sync the release binary,
   - maintenance script calls Rust `constella db maintain`.
 - Current Rust verification: `cargo fmt --check` and `cargo test`.
 - Current release smoke test: `target/release/constella serve --host 127.0.0.1 --port 18765`
@@ -98,7 +99,6 @@ This branch replaces the Python backend with a Rust implementation while keeping
    - Add broader range edge-case coverage.
 
 4. Cluster control and YAML nodes
-   - Port SSH agent deployment/status/stop flow or replace scripts with Rust CLI equivalents.
    - Keep token handling through stdin/env files, not command-line arguments.
 
 5. Scripts and packaging
