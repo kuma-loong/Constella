@@ -512,9 +512,14 @@ class SQLiteStore:
         gpu_uuid: str | None = None,
         since: float | None = None,
         until: float | None = None,
+        bucket_seconds: int | None = None,
         limit: int = 1000,
     ) -> list[dict[str, Any]]:
-        bucket_seconds = _select_history_bucket(since=since, until=until)
+        bucket_seconds = (
+            _select_history_bucket(since=since, until=until)
+            if bucket_seconds is None
+            else _normalize_history_bucket(bucket_seconds)
+        )
         where, params = _rollup_filters(
             node_id=node_id,
             gpu_uuid=gpu_uuid,
@@ -816,6 +821,13 @@ def _select_history_bucket(*, since: float | None, until: float | None) -> int:
     if span <= ROLLUP_RETENTION_SECONDS[ROLLUP_2M]:
         return ROLLUP_2M
     return ROLLUP_1H
+
+
+def _normalize_history_bucket(bucket_seconds: int) -> int:
+    bucket = int(bucket_seconds)
+    if bucket not in ROLLUP_RETENTION_SECONDS:
+        raise ValueError(f"unsupported history bucket: {bucket_seconds}")
+    return bucket
 
 
 def _history_row_from_rollup(row: sqlite3.Row) -> dict[str, Any]:

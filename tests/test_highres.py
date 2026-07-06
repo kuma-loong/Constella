@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from constella.app import create_app
 from constella.cluster import ClusterState
-from constella.db import AsyncDBSink, SQLiteSinkConfig
+from constella.db import AsyncDBSink, ROLLUP_1H, ROLLUP_2M, SQLiteSinkConfig
 from constella.highres import (
     HIGHRES_JOB_LOOKBACK_SECONDS,
     GpuSampleRing,
@@ -213,6 +213,57 @@ def test_highres_job_curve_padding_gap_does_not_force_rollup(tmp_path) -> None:
         assert payload["warnings"] == []
         assert payload["series"][0]["points"][0]["sampled_at"] == base
         assert payload["series"][0]["points"][-1]["sampled_at"] == base + 10.0
+    finally:
+        sink.store.close()
+
+
+def test_job_curve_auto_uses_2m_rollup_for_multiday_jobs(tmp_path) -> None:
+    sink = AsyncDBSink(SQLiteSinkConfig(path=tmp_path / "constella.db"))
+    sink.store.open()
+    cache = HighresGpuCache(retention_seconds=120.0, min_interval_seconds=1.0)
+    try:
+        base = time.time() - 4 * 24 * 60 * 60
+        sink.store.write_node_snapshot(make_node_snapshot(base, gpu_util=50))
+        sink.store.write_node_snapshot(make_node_snapshot(base + 3 * 24 * 60 * 60, gpu_util=60))
+        job = query_jobs(sink.store, now=base + 3 * 24 * 60 * 60 + 10.0)[0]
+
+        payload = create_app(
+            cluster_state=ClusterState(local_node_id="local"),
+            db_sink=sink,
+            highres_cache=cache,
+        )
+        client = TestClient(payload)
+        response = client.get(f"/api/highres/jobs/{job['job_key']}/gpu")
+
+        assert response.status_code == 200
+        assert response.json()["source"] == "rollup"
+        assert response.json()["resolution_seconds"] == ROLLUP_2M
+    finally:
+        sink.store.close()
+
+
+def test_job_curve_manual_resolution_can_use_1h_rollup(tmp_path) -> None:
+    sink = AsyncDBSink(SQLiteSinkConfig(path=tmp_path / "constella.db"))
+    sink.store.open()
+    cache = HighresGpuCache(retention_seconds=120.0, min_interval_seconds=1.0)
+    try:
+        base = time.time() - 4 * 24 * 60 * 60
+        sink.store.write_node_snapshot(make_node_snapshot(base, gpu_util=50))
+        sink.store.write_node_snapshot(make_node_snapshot(base + 3 * 24 * 60 * 60, gpu_util=60))
+        job = query_jobs(sink.store, now=base + 3 * 24 * 60 * 60 + 10.0)[0]
+        client = TestClient(
+            create_app(
+                cluster_state=ClusterState(local_node_id="local"),
+                db_sink=sink,
+                highres_cache=cache,
+            )
+        )
+
+        response = client.get(f"/api/highres/jobs/{job['job_key']}/gpu?resolution=1h")
+
+        assert response.status_code == 200
+        assert response.json()["source"] == "rollup"
+        assert response.json()["resolution_seconds"] == ROLLUP_1H
     finally:
         sink.store.close()
 

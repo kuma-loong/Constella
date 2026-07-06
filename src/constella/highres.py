@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .analytics import job_key
-from .db import ROLLUP_20S, SQLiteStore
+from .db import ROLLUP_1H, ROLLUP_2M, ROLLUP_20S, SQLiteStore
 from .schema import GpuInfo, NodeSnapshot
 
 HIGHRES_RETENTION_SECONDS = 2 * 60 * 60
@@ -17,6 +17,12 @@ HIGHRES_MAX_JOB_SECONDS = 60 * 60
 HIGHRES_JOB_LOOKBACK_SECONDS = 7 * 24 * 60 * 60
 HIGHRES_MIN_INTERVAL_SECONDS = 0.5
 HIGHRES_DEFAULT_PADDING_SECONDS = 20.0
+ROLLUP_RESOLUTION_LABELS = {
+    "20s": ROLLUP_20S,
+    "2m": ROLLUP_2M,
+    "1h": ROLLUP_1H,
+}
+JOB_AUTO_2M_THRESHOLD_SECONDS = 24 * 60 * 60
 
 
 @dataclass(slots=True)
@@ -255,6 +261,7 @@ def job_curve(
     *,
     key: str,
     padding_seconds: float = HIGHRES_DEFAULT_PADDING_SECONDS,
+    resolution: str = "auto",
     now: float | None = None,
 ) -> dict[str, Any] | None:
     job = get_job(store, key, now=now)
@@ -266,8 +273,9 @@ def job_curve(
     required_start = float(job["started_at"])
     required_end = float(job["last_seen_at"])
     duration = max(0.0, float(job["duration_seconds"]))
+    resolution_mode, requested_bucket = _normalize_resolution(resolution)
     warnings: list[str] = []
-    if duration < HIGHRES_MAX_JOB_SECONDS:
+    if resolution_mode == "auto" and duration < HIGHRES_MAX_JOB_SECONDS:
         highres = _highres_curve(
             cache,
             job=job,
@@ -286,12 +294,24 @@ def job_curve(
                 "range_end": range_end,
                 "cache_retention_seconds": cache.retention_seconds,
                 "expired": False,
+                "resolution_mode": resolution_mode,
                 "warnings": warnings,
             }
         warnings.append("high-resolution cache does not cover the full job window")
-    else:
+    elif resolution_mode == "auto":
         warnings.append("job duration is 1 hour or longer, using rollup history")
-    rollup = _rollup_curve(store, job=job, range_start=range_start, range_end=range_end)
+    bucket_seconds = (
+        requested_bucket
+        if requested_bucket is not None
+        else _auto_rollup_bucket(range_start=range_start, range_end=range_end)
+    )
+    rollup = _rollup_curve(
+        store,
+        job=job,
+        range_start=range_start,
+        range_end=range_end,
+        bucket_seconds=bucket_seconds,
+    )
     return {
         "enabled": True,
         "source": "rollup",
@@ -302,7 +322,8 @@ def job_curve(
         "coverage_start": _series_min_time(rollup),
         "coverage_end": _series_max_time(rollup),
         "cache_retention_seconds": cache.retention_seconds,
-        "resolution_seconds": ROLLUP_20S,
+        "resolution_seconds": bucket_seconds,
+        "resolution_mode": resolution_mode,
         "expired": True,
         "warnings": warnings,
         "series": rollup,
@@ -509,18 +530,46 @@ def _rollup_curve(
     job: dict[str, Any],
     range_start: float,
     range_end: float,
+    bucket_seconds: int,
 ) -> list[dict[str, Any]]:
     series: list[dict[str, Any]] = []
+    limit = _rollup_point_limit(range_start=range_start, range_end=range_end, bucket_seconds=bucket_seconds)
     for gpu in job["gpus"]:
         points = store.query_gpu_history(
             node_id=gpu["node_id"],
             gpu_uuid=gpu["gpu_uuid"],
             since=range_start,
             until=range_end,
-            limit=5000,
+            bucket_seconds=bucket_seconds,
+            limit=limit,
         )
         series.append({**gpu, "label": _gpu_label(gpu), "points": points})
     return series
+
+
+def _normalize_resolution(value: str | None) -> tuple[str, int | None]:
+    resolution = (value or "auto").strip().lower()
+    if resolution == "auto":
+        return "auto", None
+    if resolution in ROLLUP_RESOLUTION_LABELS:
+        return resolution, ROLLUP_RESOLUTION_LABELS[resolution]
+    if resolution.isdigit():
+        bucket = int(resolution)
+        for label, seconds in ROLLUP_RESOLUTION_LABELS.items():
+            if bucket == seconds:
+                return label, seconds
+    return "auto", None
+
+
+def _auto_rollup_bucket(*, range_start: float, range_end: float) -> int:
+    span = max(0.0, range_end - range_start)
+    return ROLLUP_20S if span <= JOB_AUTO_2M_THRESHOLD_SECONDS else ROLLUP_2M
+
+
+def _rollup_point_limit(*, range_start: float, range_end: float, bucket_seconds: int) -> int:
+    span = max(0.0, range_end - range_start)
+    expected = int(math.ceil(span / max(1, bucket_seconds))) + 4
+    return max(1000, min(expected, 20000))
 
 
 def _series_min_time(series: list[dict[str, Any]]) -> float | None:

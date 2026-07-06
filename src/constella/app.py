@@ -304,6 +304,7 @@ def create_app(
     async def highres_job_gpu(
         job_key: str,
         padding_seconds: float = 20.0,
+        resolution: str = "auto",
     ) -> dict[str, object]:
         if db_sink is None:
             return {"enabled": False, "series": []}
@@ -312,6 +313,7 @@ def create_app(
             app.state.highres_cache,
             key=job_key,
             padding_seconds=padding_seconds,
+            resolution=resolution,
         )
         if payload is None:
             raise HTTPException(status_code=404, detail="job not found")

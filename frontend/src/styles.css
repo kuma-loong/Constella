@@ -1332,12 +1332,26 @@ svg {
   position: relative;
 }
 
+.chart-scroll {
+  overflow-x: auto;
+  overflow-y: auto;
+  padding-bottom: 14px;
+  overscroll-behavior-x: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  cursor: grab;
+}
+
+.chart-scroll:active {
+  cursor: grabbing;
+}
+
 .line-chart {
   display: block;
   width: 100%;
   min-height: 320px;
-  overflow: hidden;
-  padding: 8px 8px 0;
+  overflow: visible;
+  padding: 8px 8px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-sunken);
@@ -1557,6 +1571,26 @@ svg {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.job-resolution-tabs button {
+  min-height: 30px;
+  padding-inline: 10px;
+  font-size: 12px;
+}
+
+.job-title-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.job-title-controls em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 760;
 }
 
 .job-detail-strip span {

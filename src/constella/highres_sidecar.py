@@ -201,12 +201,17 @@ def create_highres_sidecar_app(
         }
 
     @app.get("/api/highres/jobs/{job_key:path}/gpu")
-    async def highres_job_gpu(job_key: str, padding_seconds: float = 20.0) -> dict[str, object]:
+    async def highres_job_gpu(
+        job_key: str,
+        padding_seconds: float = 20.0,
+        resolution: str = "auto",
+    ) -> dict[str, object]:
         payload = job_curve(
             app.state.store,
             app.state.highres_cache,
             key=job_key,
             padding_seconds=padding_seconds,
+            resolution=resolution,
         )
         if payload is None:
             raise HTTPException(status_code=404, detail="job not found")

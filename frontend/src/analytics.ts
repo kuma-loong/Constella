@@ -14,6 +14,16 @@ import "uplot/dist/uPlot.min.css";
 
 export type Route = { kind: "overview" } | { kind: "jobs" } | { kind: "node"; nodeId: string };
 
+type JobResolution = "auto" | "20s" | "2m" | "1h";
+
+const JOB_RESOLUTIONS: { key: JobResolution; label: string }[] = [
+  { key: "auto", label: "Auto" },
+  { key: "20s", label: "20s" },
+  { key: "2m", label: "2m" },
+  { key: "1h", label: "1h" },
+];
+const JOB_CHART_PX_PER_POINT = 1.8;
+
 type AnalyticsMeta = {
   enabled: boolean;
   generated_at?: number;
@@ -161,6 +171,7 @@ type JobCurve = AnalyticsMeta & {
   coverage_end?: number | null;
   cache_retention_seconds?: number;
   resolution_seconds?: number | null;
+  resolution_mode?: string;
   expired?: boolean;
   warnings?: string[];
   series?: JobCurveSeries[];
@@ -243,6 +254,7 @@ export function createAnalyticsController({
   let jobCurveKey = "";
   let jobCurveLoading = false;
   let jobMetric: NodeMetric = "avg_gpu_utilization";
+  let jobResolution: JobResolution = "auto";
   const selectedJobGpuUuids = new Set<string>();
   let jobChartExpanded = false;
   let jobChart: uPlot | null = null;
@@ -304,6 +316,17 @@ export function createAnalyticsController({
     if (action === "job-metric" && target.dataset.metric) {
       jobMetric = target.dataset.metric as NodeMetric;
       renderJobs();
+      return true;
+    }
+    if (action === "job-resolution" && target.dataset.resolution) {
+      jobResolution = normalizeJobResolution(target.dataset.resolution);
+      jobCurvePayload = null;
+      jobCurveKey = "";
+      jobChartExpanded = false;
+      renderJobs();
+      if (selectedJobKey) {
+        void fetchJobCurve(selectedJobKey);
+      }
       return true;
     }
     if (action === "job-gpu") {
@@ -491,23 +514,25 @@ export function createAnalyticsController({
   }
 
   async function fetchJobCurve(key: string) {
-    if (!key || jobCurveLoading || jobCurveKey === key) {
+    const curveKey = `${key}:${jobResolution}`;
+    if (!key || jobCurveLoading || jobCurveKey === curveKey) {
       return;
     }
     jobCurveLoading = true;
     renderJobs();
     try {
-      const response = await fetch(`/api/highres/jobs/${encodeURIComponent(key)}/gpu`, {
+      const params = new URLSearchParams({ resolution: jobResolution });
+      const response = await fetch(`/api/highres/jobs/${encodeURIComponent(key)}/gpu?${params.toString()}`, {
         cache: "no-store",
       });
       if (!response.ok) {
         throw new Error(`job curve failed: ${response.status}`);
       }
       jobCurvePayload = (await response.json()) as JobCurve;
-      jobCurveKey = key;
+      jobCurveKey = curveKey;
     } catch {
       jobCurvePayload = { enabled: false, series: [] };
-      jobCurveKey = key;
+      jobCurveKey = curveKey;
     } finally {
       jobCurveLoading = false;
       renderJobs();
@@ -610,7 +635,7 @@ export function createAnalyticsController({
       </div>
       <div class="job-feature-note">
         <strong>Supports job search within 7 days.</strong>
-        <span>Jobs that ended within 2 hours and ran under 1 hour use high-resolution memory data when available; other jobs use persisted 20s-or-coarser rollups.</span>
+        <span>Jobs within 2h and shorter than 1h use high-resolution data; others automatically use compressed rollup precision.</span>
       </div>
       ${
         disabled
@@ -758,7 +783,10 @@ export function createAnalyticsController({
         <article class="analytics-card span-8">
           <div class="card-title">
             <span><i data-lucide="line-chart"></i>${selected ? escapeHtml(selected.task_name) : "GPU curve"}</span>
-            <em>${jobCurvePayload?.source ? sourceLabel(jobCurvePayload.source) : "select a job"}</em>
+            <div class="job-title-controls">
+              <em>Resolution</em>
+              ${jobResolutionButtons(jobResolution)}
+            </div>
           </div>
           ${selected ? jobDetail(selected) : emptyInline("select a job to render its GPU curve")}
           ${
@@ -814,7 +842,7 @@ export function createAnalyticsController({
             <i data-lucide="maximize-2"></i>
           </button>
         </div>
-        <div class="chart-plot uplot-theme">
+        <div class="chart-plot chart-scroll uplot-theme">
           <div class="line-chart" data-job-chart aria-label="${escapeAttr(metricLabel(metric))} job curve"></div>
         </div>
         ${jobLegend(series)}
@@ -831,6 +859,7 @@ export function createAnalyticsController({
       valueAt: jobMetricValue,
       labels: (item) => item.label,
       height: chartHeight(),
+      minPointWidth: JOB_CHART_PX_PER_POINT,
     });
     if (inline) {
       jobChart = inline.chart;
@@ -844,6 +873,7 @@ export function createAnalyticsController({
       valueAt: jobMetricValue,
       labels: (item) => item.label,
       height: expandedChartHeight(),
+      minPointWidth: 2.2,
     });
     if (modal) {
       jobModalChart = modal.chart;
@@ -899,7 +929,7 @@ export function createAnalyticsController({
               <i data-lucide="x"></i>
             </button>
           </div>
-          <div class="chart-plot uplot-theme">
+          <div class="chart-plot chart-scroll uplot-theme">
             <div class="line-chart line-chart-expanded" data-job-chart-modal aria-label="${escapeAttr(metricLabel(metric))} expanded job curve"></div>
           </div>
           ${jobLegend(series)}
@@ -1064,6 +1094,24 @@ function metricButtonsForAction(selected: NodeMetric, action: string) {
   `;
 }
 
+function jobResolutionButtons(selected: JobResolution) {
+  return `
+    <div class="segmented job-resolution-tabs" role="group" aria-label="Job curve resolution">
+      ${JOB_RESOLUTIONS.map(
+        (item) => `
+          <button
+            class="${item.key === selected ? "is-active" : ""}"
+            type="button"
+            data-analytics-action="job-resolution"
+            data-resolution="${item.key}"
+            aria-pressed="${item.key === selected ? "true" : "false"}"
+          >${item.label}</button>
+        `,
+      ).join("")}
+    </div>
+  `;
+}
+
 function mountMetricChart<T extends { points: P[] }, P>({
   target,
   series,
@@ -1073,6 +1121,7 @@ function mountMetricChart<T extends { points: P[] }, P>({
   labels,
   show,
   height,
+  minPointWidth,
 }: {
   target: HTMLElement | null;
   series: T[];
@@ -1082,6 +1131,7 @@ function mountMetricChart<T extends { points: P[] }, P>({
   labels: (item: T, index: number) => string;
   show?: (item: T) => boolean;
   height: number;
+  minPointWidth?: number;
 }) {
   if (!target) {
     return null;
@@ -1097,7 +1147,12 @@ function mountMetricChart<T extends { points: P[] }, P>({
     .flatMap((item) => item.points.map((point) => valueAt(point, metric)));
   const maxValue = metricDef.max || Math.max(1, ...visibleValues) * 1.08;
   const colors = chartColors();
-  const width = chartTargetWidth(target);
+  const resizeTarget = minPointWidth ? target.parentElement || target : target;
+  const targetWidth = chartTargetWidth(resizeTarget);
+  const width = chartPlotWidth(targetWidth, chartData.starts.length, minPointWidth);
+  if (minPointWidth) {
+    target.style.width = `${width}px`;
+  }
   const css = chartCss();
   const opts: uPlot.Options = {
     width,
@@ -1142,14 +1197,54 @@ function mountMetricChart<T extends { points: P[] }, P>({
     ],
   };
   const chart = new uPlot(opts, chartData.data, target);
+  if (minPointWidth && resizeTarget !== target) {
+    enableHorizontalChartDrag(resizeTarget);
+  }
   const resize = new ResizeObserver(([entry]) => {
-    const nextWidth = Math.max(320, Math.floor(entry.contentRect.width));
+    const nextTargetWidth = Math.max(320, Math.floor(entry.contentRect.width));
+    const nextWidth = chartPlotWidth(nextTargetWidth, chartData.starts.length, minPointWidth);
     if (nextWidth !== chart.width) {
+      if (minPointWidth) {
+        target.style.width = `${nextWidth}px`;
+      }
       chart.setSize({ width: nextWidth, height });
     }
   });
-  resize.observe(target);
+  resize.observe(resizeTarget);
   return { chart, resize };
+}
+
+function enableHorizontalChartDrag(target: HTMLElement) {
+  let dragging = false;
+  let startX = 0;
+  let startScrollLeft = 0;
+  target.addEventListener("pointerdown", (event) => {
+    if (target.scrollWidth <= target.clientWidth) {
+      return;
+    }
+    dragging = true;
+    startX = event.clientX;
+    startScrollLeft = target.scrollLeft;
+    target.setPointerCapture(event.pointerId);
+  });
+  target.addEventListener("pointermove", (event) => {
+    if (!dragging) {
+      return;
+    }
+    target.scrollLeft = startScrollLeft - (event.clientX - startX);
+    event.preventDefault();
+  });
+  const stopDragging = (event: PointerEvent) => {
+    if (!dragging) {
+      return;
+    }
+    dragging = false;
+    if (target.hasPointerCapture(event.pointerId)) {
+      target.releasePointerCapture(event.pointerId);
+    }
+  };
+  target.addEventListener("pointerup", stopDragging);
+  target.addEventListener("pointercancel", stopDragging);
 }
 
 function jobMetaText(payload: JobCurve | null, jobCount: number) {
@@ -1475,11 +1570,22 @@ function expandedChartHeight() {
   return window.matchMedia("(max-width: 760px)").matches ? Math.floor(window.innerHeight * 0.58) : Math.min(560, Math.floor(window.innerHeight * 0.58));
 }
 
+function normalizeJobResolution(value: string): JobResolution {
+  return JOB_RESOLUTIONS.some((item) => item.key === value) ? (value as JobResolution) : "auto";
+}
+
 function chartTargetWidth(target: HTMLElement) {
   const styles = getComputedStyle(target);
   const padding = Number.parseFloat(styles.paddingLeft) + Number.parseFloat(styles.paddingRight);
   const measuredWidth = target.clientWidth || target.parentElement?.clientWidth || 760;
   return Math.max(320, Math.floor(measuredWidth - padding));
+}
+
+function chartPlotWidth(targetWidth: number, pointCount: number, minPointWidth?: number) {
+  if (!minPointWidth || pointCount <= 1) {
+    return targetWidth;
+  }
+  return Math.max(targetWidth, Math.ceil(pointCount * minPointWidth));
 }
 
 function chartAxisSpace() {
