@@ -77,6 +77,8 @@ This branch replaces the Python backend with a Rust implementation while keeping
   - highres is served by the Rust manager instead of a separate sidecar,
   - local agent startup is disabled until the Rust agent loop lands.
 - Current Rust verification: `cargo fmt --check` and `cargo test`.
+- Current release smoke test: `target/release/constella serve --host 127.0.0.1 --port 18765`
+  with a temporary SQLite DB, verified through `GET /api/health`.
 
 ## Remaining Work
 
