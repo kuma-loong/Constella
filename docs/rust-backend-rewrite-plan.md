@@ -44,6 +44,14 @@ This branch replaces the Python backend with a Rust implementation while keeping
   - `GET /api/history/tasks`,
   - `GET /api/users`.
 - Added `CONSTELLA_DB_PATH` / `--db-path` runtime integration and sample persistence.
+- Added high-resolution job support:
+  - in-memory per-GPU sample rings,
+  - cache status API,
+  - job grouping and search,
+  - job detail API,
+  - high-res memory curve API,
+  - adaptive rollup fallback for long jobs,
+  - lightweight `gpu_sample` stream publishing.
 - Current Rust verification: `cargo fmt --check` and `cargo test`.
 
 ## Remaining Work
@@ -54,10 +62,8 @@ This branch replaces the Python backend with a Rust implementation while keeping
    - Add hardware hello payload generation.
 
 2. High-resolution job curves
-   - Port high-res in-memory GPU sample cache.
-   - Port job grouping and job detail APIs.
-   - Port adaptive rollup fallback for long jobs.
-   - Implement `WS /api/highres/stream` publishing beyond the current hello stub.
+   - Add end-to-end WebSocket integration tests against a live ephemeral server.
+   - Add sidecar-compatible mode if the standalone highres sidecar remains required.
 
 3. Analytics
    - Port overview analytics.
@@ -83,4 +89,3 @@ This branch replaces the Python backend with a Rust implementation while keeping
    - Run frontend build without API source changes unless required.
    - Start Rust server on a non-8765 port for smoke tests.
    - Verify no access to the existing `run/constella.db` unless explicitly configured.
-

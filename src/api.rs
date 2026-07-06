@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Query, State};
+use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -17,6 +17,7 @@ use tokio::sync::broadcast;
 
 use crate::cluster::{parse_agent_hello, ClusterState};
 use crate::db::{DbError, SQLiteStore};
+use crate::highres::{self, HighresGpuCache, JobFilter};
 use crate::settings::{ManagerSettings, SettingsUpdate};
 
 #[derive(Debug, Clone)]
@@ -25,7 +26,10 @@ pub struct AppState {
     pub settings: Arc<RwLock<ManagerSettings>>,
     pub agent_token: Option<String>,
     pub db_path: Option<Arc<PathBuf>>,
+    pub highres_cache: Arc<RwLock<HighresGpuCache>>,
     pub config_tx: broadcast::Sender<Value>,
+    pub highres_tx: broadcast::Sender<Value>,
+    pub highres_published: Arc<AtomicU64>,
     pub connection_ids: Arc<AtomicU64>,
 }
 
@@ -36,12 +40,16 @@ impl AppState {
         agent_token: Option<String>,
     ) -> Self {
         let (config_tx, _) = broadcast::channel(128);
+        let (highres_tx, _) = broadcast::channel(256);
         Self {
             cluster_state,
             settings: Arc::new(RwLock::new(settings)),
             agent_token,
             db_path: None,
+            highres_cache: Arc::new(RwLock::new(HighresGpuCache::default())),
             config_tx,
+            highres_tx,
+            highres_published: Arc::new(AtomicU64::new(0)),
             connection_ids: Arc::new(AtomicU64::new(1)),
         }
     }
@@ -70,8 +78,9 @@ pub fn app(state: AppState) -> Router {
         .route("/api/analytics/overview", get(disabled_object))
         .route("/api/analytics/node/:node_id", get(disabled_object))
         .route("/api/highres/status", get(highres_status))
-        .route("/api/highres/jobs", get(disabled_items))
-        .route("/api/highres/jobs/*job_key", get(disabled_highres_job))
+        .route("/api/highres/jobs", get(highres_jobs))
+        .route("/api/highres/jobs/:job_key/gpu", get(highres_job_gpu))
+        .route("/api/highres/jobs/:job_key", get(highres_job))
         .route("/ws/gpu", get(deprecated_gpu_ws))
         .route("/ws/cluster", get(cluster_ws))
         .route("/api/agents/ws", get(agent_ws))
@@ -140,13 +149,8 @@ async fn disabled_object() -> Json<Value> {
     Json(json!({"enabled": false}))
 }
 
-async fn highres_status() -> Json<Value> {
-    Json(json!({
-        "retention_seconds": 0.0,
-        "gpu_count": 0,
-        "oldest_at": null,
-        "newest_at": null,
-    }))
+async fn highres_status(State(state): State<AppState>) -> Json<Value> {
+    Json(state.highres_cache.read().status())
 }
 
 #[derive(Debug, Deserialize)]
@@ -214,15 +218,107 @@ async fn users(State(state): State<AppState>) -> Result<Json<Value>, Response> {
 }
 
 #[derive(Debug, Deserialize)]
+struct HighresJobsQuery {
+    q: Option<String>,
+    user: Option<String>,
+    pid: Option<i64>,
+    node_id: Option<String>,
+    status: Option<String>,
+    since: Option<f64>,
+    until: Option<f64>,
+    max_duration_seconds: Option<f64>,
+    recent_seconds: Option<f64>,
+    limit: Option<i64>,
+}
+
+async fn highres_jobs(
+    State(state): State<AppState>,
+    Query(query): Query<HighresJobsQuery>,
+) -> Result<Json<Value>, Response> {
+    let Some(db_path) = state.db_path else {
+        return Ok(disabled_items().await);
+    };
+    let store = open_store(&db_path).map_err(internal_error)?;
+    let items = highres::query_jobs(
+        &store,
+        JobFilter {
+            q: query.q,
+            user: query.user,
+            pid: query.pid,
+            node_id: query.node_id,
+            status: query.status,
+            since: query.since,
+            until: query.until,
+            max_duration_seconds: query
+                .max_duration_seconds
+                .map(|value| value.clamp(1.0, highres::HIGHRES_JOB_LOOKBACK_SECONDS)),
+            recent_seconds: Some(
+                query
+                    .recent_seconds
+                    .unwrap_or(highres::HIGHRES_JOB_LOOKBACK_SECONDS)
+                    .clamp(60.0, highres::HIGHRES_JOB_LOOKBACK_SECONDS),
+            ),
+            limit: query.limit.unwrap_or(100).clamp(1, 500),
+        },
+        None,
+    )
+    .map_err(internal_error)?;
+    Ok(Json(json!({"enabled": true, "items": items})))
+}
+
+#[derive(Debug, Deserialize)]
 struct JobCurveQuery {
-    #[allow(dead_code)]
     padding_seconds: Option<f64>,
-    #[allow(dead_code)]
     resolution: Option<String>,
 }
 
-async fn disabled_highres_job(Query(_query): Query<JobCurveQuery>) -> Json<Value> {
-    Json(json!({"enabled": false, "series": []}))
+async fn highres_job_gpu(
+    State(state): State<AppState>,
+    AxumPath(job_key): AxumPath<String>,
+    Query(query): Query<JobCurveQuery>,
+) -> Result<Response, Response> {
+    let Some(db_path) = state.db_path else {
+        return Ok(Json(json!({"enabled": false, "series": []})).into_response());
+    };
+    let store = open_store(&db_path).map_err(internal_error)?;
+    let cache = state.highres_cache.read().clone();
+    match highres::job_curve(
+        &store,
+        &cache,
+        &job_key,
+        query
+            .padding_seconds
+            .unwrap_or(highres::HIGHRES_DEFAULT_PADDING_SECONDS),
+        query.resolution.as_deref().unwrap_or("auto"),
+        None,
+    )
+    .map_err(internal_error)?
+    {
+        Some(payload) => Ok(Json(payload).into_response()),
+        None => Ok((
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "job not found"})),
+        )
+            .into_response()),
+    }
+}
+
+async fn highres_job(
+    State(state): State<AppState>,
+    AxumPath(job_key): AxumPath<String>,
+) -> Result<Response, Response> {
+    let Some(db_path) = state.db_path else {
+        return Ok(Json(json!({"enabled": false})).into_response());
+    };
+    let store = open_store(&db_path).map_err(internal_error)?;
+    match highres::get_job(&store, &job_key, None).map_err(internal_error)? {
+        Some(item) => Ok(Json(json!({"enabled": true, "item": item})).into_response()),
+        None => Ok((
+            StatusCode::NOT_FOUND,
+            Json(json!({"detail": "job not found"})),
+        )
+            .into_response()),
+    }
 }
 
 async fn deprecated_gpu_ws(ws: WebSocketUpgrade) -> impl IntoResponse {
@@ -364,14 +460,38 @@ async fn agent_socket(state: AppState, mut socket: WebSocket) {
     }
 }
 
-async fn highres_stream(ws: WebSocketUpgrade) -> impl IntoResponse {
+async fn highres_stream(State(state): State<AppState>, ws: WebSocketUpgrade) -> impl IntoResponse {
     ws.on_upgrade(|mut socket| async move {
+        let mut rx = state.highres_tx.subscribe();
         let _ = send_json(
             &mut socket,
-            &json!({"type": "hello", "subscriber_count": 1, "published_count": 0}),
+            &json!({
+                "type": "hello",
+                "subscriber_count": state.highres_tx.receiver_count(),
+                "published_count": state.highres_published.load(Ordering::Relaxed),
+            }),
         )
         .await;
-        while socket.recv().await.is_some() {}
+        loop {
+            tokio::select! {
+                message = rx.recv() => {
+                    match message {
+                        Ok(message) => {
+                            if send_json(&mut socket, &message).await.is_err() {
+                                return;
+                            }
+                        }
+                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(broadcast::error::RecvError::Closed) => return,
+                    }
+                }
+                incoming = socket.recv() => {
+                    if incoming.is_none() {
+                        return;
+                    }
+                }
+            }
+        }
     })
 }
 
@@ -401,10 +521,15 @@ fn open_store(path: &PathBuf) -> Result<SQLiteStore, DbError> {
 }
 
 fn persist_latest_snapshot(state: &AppState, node_id: &str) {
-    let Some(db_path) = &state.db_path else {
+    let Some(snapshot) = state.cluster_state.latest_node_snapshot(node_id) else {
         return;
     };
-    let Some(snapshot) = state.cluster_state.latest_node_snapshot(node_id) else {
+    state.highres_cache.write().add_snapshot(&snapshot);
+    let message = highres::gpu_sample_message(&snapshot);
+    if state.highres_tx.send(message).is_ok() {
+        state.highres_published.fetch_add(1, Ordering::Relaxed);
+    }
+    let Some(db_path) = &state.db_path else {
         return;
     };
     match open_store(db_path) {
