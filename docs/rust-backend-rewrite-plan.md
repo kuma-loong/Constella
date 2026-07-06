@@ -63,13 +63,20 @@ This branch replaces the Python backend with a Rust implementation while keeping
   - relative agent token path resolution,
   - refresh/process interval defaults,
   - node host/user/port entries.
+- Added agent sampling foundation:
+  - `nvidia-smi` GPU CSV parsing,
+  - `nvidia-smi` process CSV parsing,
+  - `/proc/<pid>/stat` parent PID parsing,
+  - `/proc/<pid>/cmdline` detail status parsing,
+  - process task-name inference and command-line hashing,
+  - snapshot collector refresh/process interval and history publication.
 - Current Rust verification: `cargo fmt --check` and `cargo test`.
 
 ## Remaining Work
 
 1. Agent sampling rewrite
-   - Replace Python NVML / `nvidia-smi` / procfs sampling with Rust.
-   - Preserve process attribution fields and task inference behavior.
+   - Add native NVML sampler or document `nvidia-smi` as the Rust fallback path.
+   - Connect collector to an agent WebSocket client loop.
    - Add hardware hello payload generation.
 
 2. High-resolution job curves

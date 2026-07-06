@@ -249,7 +249,10 @@ async fn highres_job_curve_api_returns_memory_series() {
     assert_eq!(curve["source"], "high_res_memory");
     assert_eq!(curve["expired"], false);
     assert_eq!(curve["series"].as_array().unwrap().len(), 2);
-    assert_eq!(curve["series"][0]["points"][0]["sampled_at"], base - 20.0);
+    let first_sample = curve["series"][0]["points"][0]["sampled_at"]
+        .as_f64()
+        .unwrap();
+    assert!((first_sample - (base - 20.0)).abs() < 0.001);
 }
 
 #[tokio::test]

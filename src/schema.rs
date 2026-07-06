@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -280,6 +281,14 @@ pub fn process_session_id(node_id: &str, process: &GpuProcess) -> String {
         .map(|value| format!("{value:.6}"))
         .unwrap_or_else(|| "unknown".to_string());
     format!("{}:{}:{}", node_id, process.pid, started)
+}
+
+pub fn cmdline_fingerprint(cmdline: Option<&str>) -> Option<String> {
+    let cmdline = cmdline.filter(|value| !value.is_empty())?;
+    let mut hasher = Sha256::new();
+    hasher.update(cmdline.as_bytes());
+    let digest = hasher.finalize();
+    Some(format!("{digest:x}")[..16].to_string())
 }
 
 pub fn gpu_global_id(node_id: &str, gpu: &GpuInfo) -> String {
