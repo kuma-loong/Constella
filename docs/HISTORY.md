@@ -87,6 +87,10 @@ Relevant APIs:
 - `GET /api/users`
 - `GET /api/analytics/overview?range=7d`
 - `GET /api/analytics/node/{node_id}?range=24h`
+- `GET /api/highres/status`
+- `GET /api/highres/jobs`
+- `GET /api/highres/jobs/{job_key}`
+- `GET /api/highres/jobs/{job_key}/gpu`
 
 Analytics APIs read only from SQLite rollups and task session tables. They return `enabled:false` when SQLite is disabled and do not participate in the realtime WebSocket path.
 
@@ -95,3 +99,17 @@ Overview analytics includes weighted user GPU hours, job rankings, low-utilizati
 Node analytics includes downsampled per-GPU time series and utilization heatmaps. The frontend supports local multi-select GPU highlighting for the trend chart without refetching or rebuilding the heatmap. Heatmap resolution is range-aware: `1h` uses 5 minute buckets, `24h` uses 1 hour buckets, `7d` uses 6 hour buckets, and `30d` uses 1 day buckets.
 
 Supported ranges are `24h`, `7d`, and `30d` for Overview, and `1h`, `24h`, `7d`, and `30d` for Node history.
+
+## Job GPU Curves
+
+Constella exposes a unified job curve view at `/jobs` when SQLite history is enabled. Job discovery reads `process_sessions`, `process_gpu_usages`, and `gpus`; it groups sessions with the same analytics job identity and returns one user-facing job with its PIDs, sessions, and GPU set.
+
+Recent short jobs can use the manager's in-memory high-resolution GPU cache. The cache is a fixed-capacity per-GPU ring buffer populated only after an agent sample is accepted by the manager. It does not write raw 1s samples to SQLite. The default retention is 2 hours and the default capacity is sized for 0.5s samples.
+
+Curve source selection:
+
+- jobs shorter than 1 hour use high-resolution memory data only when the cache fully covers the padded job window
+- long jobs, expired jobs, and cache misses fall back to existing rollup history
+- responses include `source`, coverage timestamps, resolution, expiration state, and warnings so the frontend does not imply precision that is not available
+
+The current implementation keeps the high-resolution cache in the manager process as a small sidecar-style component. This preserves the database design and leaves a clear boundary for splitting it into a separate local service later.

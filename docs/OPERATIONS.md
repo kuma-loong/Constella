@@ -128,6 +128,21 @@ curl -s http://127.0.0.1:8765/api/analytics/overview
 curl -s http://127.0.0.1:8765/api/analytics/node/<node_id>
 ```
 
+作业曲线页面位于：
+
+```text
+http://127.0.0.1:8765/jobs
+```
+
+相关状态与接口验证：
+
+```bash
+curl -s http://127.0.0.1:8765/api/highres/status
+curl -s 'http://127.0.0.1:8765/api/highres/jobs?limit=20'
+```
+
+`/api/highres/status` 即使未启用 SQLite 也可查看内存 ring buffer 状态；作业搜索和曲线详情需要 `DB_PATH`，因为作业元数据来自 SQLite。
+
 ## 状态、停止、重启
 
 ```bash

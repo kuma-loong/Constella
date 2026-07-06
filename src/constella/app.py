@@ -17,6 +17,7 @@ from .analytics import node_analytics, overview_analytics
 from .cluster import ClusterState, parse_agent_hello
 from .collector import ALLOWED_REFRESH_INTERVALS, validate_refresh_interval
 from .db import AsyncDBSink, SQLiteSinkConfig
+from .highres import HighresGpuCache, get_job, job_curve, query_jobs
 from .schema import local_node_id
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -128,6 +129,7 @@ def create_app(
     agent_token: str | None = None,
     db_sink: AsyncDBSink | None = None,
     manager_settings: ManagerSettings | None = None,
+    highres_cache: HighresGpuCache | None = None,
 ) -> FastAPI:
     if manager_settings is None:
         manager_settings = ManagerSettings.from_env(
@@ -138,6 +140,7 @@ def create_app(
         cluster_state = ClusterState(local_node_id=local_node_id())
     expected_agent_token = agent_token if agent_token is not None else _load_agent_token()
     db_sink = db_sink if db_sink is not None else _load_db_sink()
+    highres_cache = highres_cache if highres_cache is not None else HighresGpuCache()
     agent_queues: set[asyncio.Queue[dict[str, object]]] = set()
 
     def broadcast_config() -> None:
@@ -151,6 +154,7 @@ def create_app(
         app.state.cluster_state = cluster_state
         app.state.settings = manager_settings
         app.state.db_sink = db_sink
+        app.state.highres_cache = highres_cache
         yield
         if db_sink is not None:
             await db_sink.stop()
@@ -165,6 +169,7 @@ def create_app(
     app.state.cluster_state = cluster_state
     app.state.settings = manager_settings
     app.state.db_sink = db_sink
+    app.state.highres_cache = highres_cache
 
     @app.get("/api/health")
     async def health() -> dict[str, object]:
@@ -229,6 +234,68 @@ def create_app(
         if db_sink is None:
             return {"enabled": False, "items": []}
         return {"enabled": True, "items": db_sink.store.query_users()}
+
+    @app.get("/api/highres/status")
+    async def highres_status() -> dict[str, object]:
+        return app.state.highres_cache.status()
+
+    @app.get("/api/highres/jobs")
+    async def highres_jobs(
+        q: str | None = None,
+        user: str | None = None,
+        pid: int | None = None,
+        node_id: str | None = None,
+        status: str | None = None,
+        since: float | None = None,
+        until: float | None = None,
+        max_duration_seconds: float = 3600.0,
+        recent_seconds: float = 7200.0,
+        limit: int = 100,
+    ) -> dict[str, object]:
+        if db_sink is None:
+            return {"enabled": False, "items": []}
+        return {
+            "enabled": True,
+            "items": query_jobs(
+                db_sink.store,
+                q=q,
+                user=user,
+                pid=pid,
+                node_id=node_id,
+                status=status,
+                since=since,
+                until=until,
+                max_duration_seconds=max(1.0, min(max_duration_seconds, 24 * 60 * 60)),
+                recent_seconds=max(60.0, min(recent_seconds, 30 * 24 * 60 * 60)),
+                limit=max(1, min(limit, 500)),
+            ),
+        }
+
+    @app.get("/api/highres/jobs/{job_key:path}/gpu")
+    async def highres_job_gpu(
+        job_key: str,
+        padding_seconds: float = 20.0,
+    ) -> dict[str, object]:
+        if db_sink is None:
+            return {"enabled": False, "series": []}
+        payload = job_curve(
+            db_sink.store,
+            app.state.highres_cache,
+            key=job_key,
+            padding_seconds=padding_seconds,
+        )
+        if payload is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        return payload
+
+    @app.get("/api/highres/jobs/{job_key:path}")
+    async def highres_job(job_key: str) -> dict[str, object]:
+        if db_sink is None:
+            return {"enabled": False}
+        job = get_job(db_sink.store, job_key)
+        if job is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        return {"enabled": True, "item": job}
 
     @app.get("/api/analytics/overview")
     async def analytics_overview(range: str = "7d") -> dict[str, object]:
@@ -311,10 +378,12 @@ def create_app(
                 message_type = message.get("type")
                 if message_type == "sample":
                     accepted = cluster_state.ingest_sample(message, connection_id=connection_id)
-                    if accepted and db_sink is not None:
+                    if accepted:
                         runtime = cluster_state.latest_by_node.get(str(message.get("node_id") or ""))
                         if runtime is not None:
-                            db_sink.submit_node_snapshot(runtime.snapshot)
+                            app.state.highres_cache.add_snapshot(runtime.snapshot)
+                            if db_sink is not None:
+                                db_sink.submit_node_snapshot(runtime.snapshot)
                     send_queue.put_nowait(
                         {"type": "ack", "seq": message.get("seq"), "accepted": accepted}
                     )

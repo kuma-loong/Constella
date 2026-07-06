@@ -11,7 +11,7 @@ import {
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
-export type Route = { kind: "overview" } | { kind: "node"; nodeId: string };
+export type Route = { kind: "overview" } | { kind: "jobs" } | { kind: "node"; nodeId: string };
 
 type AnalyticsMeta = {
   enabled: boolean;
@@ -112,6 +112,59 @@ type AnalyticsSeries = {
   points: AnalyticsPoint[];
 };
 
+type JobItem = {
+  job_key: string;
+  user: string;
+  node_id: string;
+  task_name: string;
+  started_at: number;
+  last_seen_at: number;
+  duration_seconds: number;
+  status: string;
+  session_count: number;
+  gpu_count: number;
+  pids: number[];
+  gpus: {
+    node_id: string;
+    gpu_uuid: string;
+    gpu_index: number | null;
+    gpu_name: string | null;
+  }[];
+};
+
+type JobPoint = Partial<AnalyticsPoint> & {
+  bucket_start: number;
+  sampled_at?: number;
+  utilization_gpu?: number;
+  memory_used_mb?: number;
+  power_watts?: number;
+  temperature_c?: number;
+};
+
+type JobCurveSeries = {
+  node_id: string;
+  gpu_uuid: string;
+  gpu_index: number | null;
+  gpu_name: string | null;
+  label: string;
+  points: JobPoint[];
+};
+
+type JobCurve = AnalyticsMeta & {
+  source?: "high_res_memory" | "rollup" | "mixed";
+  job_key?: string;
+  job?: JobItem;
+  range_start?: number;
+  range_end?: number;
+  coverage_start?: number | null;
+  coverage_end?: number | null;
+  cache_retention_seconds?: number;
+  resolution_seconds?: number | null;
+  expired?: boolean;
+  warnings?: string[];
+  series?: JobCurveSeries[];
+};
+
 type AnalyticsHeatmap = {
   gpu_uuid: string;
   gpu_index: number | null;
@@ -131,6 +184,7 @@ type NodeMetric =
 type AnalyticsControllerOptions = {
   overviewElement: HTMLElement;
   nodeElement: HTMLElement;
+  jobElement: HTMLElement;
   currentRoute: () => Route;
   renderIcons: () => void;
 };
@@ -160,6 +214,7 @@ const CHART_COLORS = [
 export function createAnalyticsController({
   overviewElement,
   nodeElement,
+  jobElement,
   currentRoute,
   renderIcons,
 }: AnalyticsControllerOptions) {
@@ -178,6 +233,17 @@ export function createAnalyticsController({
   let nodeHeatmapLoading = false;
   let nodeChart: uPlot | null = null;
   let nodeChartResize: ResizeObserver | null = null;
+  let jobQuery = "";
+  let jobPayload: { enabled: boolean; items?: JobItem[] } | null = null;
+  let jobKey = "";
+  let jobsLoading = false;
+  let selectedJobKey = "";
+  let jobCurvePayload: JobCurve | null = null;
+  let jobCurveKey = "";
+  let jobCurveLoading = false;
+  let jobMetric: NodeMetric = "avg_gpu_utilization";
+  let jobChart: uPlot | null = null;
+  let jobChartResize: ResizeObserver | null = null;
 
   function handleClick(target: HTMLButtonElement) {
     const action = target.dataset.analyticsAction;
@@ -205,6 +271,39 @@ export function createAnalyticsController({
     if (action === "node-gpu") {
       updateSelectedGpu(target.dataset.gpuUuid || null);
       renderNode(currentRoute());
+      return true;
+    }
+    if (action === "job-search") {
+      const input = jobElement.querySelector<HTMLInputElement>("[data-job-query]");
+      jobQuery = input?.value.trim() || "";
+      jobKey = "";
+      selectedJobKey = "";
+      jobCurvePayload = null;
+      jobCurveKey = "";
+      renderJobs();
+      void fetchJobs();
+      return true;
+    }
+    if (action === "job-refresh") {
+      jobKey = "";
+      jobCurveKey = "";
+      void fetchJobs();
+      if (selectedJobKey) {
+        void fetchJobCurve(selectedJobKey);
+      }
+      return true;
+    }
+    if (action === "job-select" && target.dataset.jobKey) {
+      selectedJobKey = target.dataset.jobKey;
+      jobCurvePayload = null;
+      jobCurveKey = "";
+      renderJobs();
+      void fetchJobCurve(selectedJobKey);
+      return true;
+    }
+    if (action === "job-metric" && target.dataset.metric) {
+      jobMetric = target.dataset.metric as NodeMetric;
+      renderJobs();
       return true;
     }
     if (action === "overview-refresh") {
@@ -315,6 +414,63 @@ export function createAnalyticsController({
     }
   }
 
+  async function fetchJobs() {
+    const key = jobQuery;
+    if (jobsLoading || jobKey === key) {
+      return;
+    }
+    jobsLoading = true;
+    renderJobs();
+    const params = new URLSearchParams({ limit: "80" });
+    if (jobQuery) {
+      params.set("q", jobQuery);
+    }
+    try {
+      const response = await fetch(`/api/highres/jobs?${params.toString()}`, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`job search failed: ${response.status}`);
+      }
+      jobPayload = (await response.json()) as { enabled: boolean; items?: JobItem[] };
+      jobKey = key;
+      if (!selectedJobKey && jobPayload.items?.length) {
+        selectedJobKey = jobPayload.items[0].job_key;
+        void fetchJobCurve(selectedJobKey);
+      }
+    } catch {
+      jobPayload = { enabled: false };
+      jobKey = key;
+    } finally {
+      jobsLoading = false;
+      renderJobs();
+      renderIcons();
+    }
+  }
+
+  async function fetchJobCurve(key: string) {
+    if (!key || jobCurveLoading || jobCurveKey === key) {
+      return;
+    }
+    jobCurveLoading = true;
+    renderJobs();
+    try {
+      const response = await fetch(`/api/highres/jobs/${encodeURIComponent(key)}/gpu`, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`job curve failed: ${response.status}`);
+      }
+      jobCurvePayload = (await response.json()) as JobCurve;
+      jobCurveKey = key;
+    } catch {
+      jobCurvePayload = { enabled: false, series: [] };
+      jobCurveKey = key;
+    } finally {
+      jobCurveLoading = false;
+      renderJobs();
+      renderIcons();
+    }
+  }
+
   function renderOverview() {
     const payload = overviewPayload;
     const disabled = payload && payload.enabled === false;
@@ -376,6 +532,45 @@ export function createAnalyticsController({
     `;
     if (!disabled && !nodeLoading && payload?.series?.some((item) => item.points.length)) {
       mountNodeChart(payload.series, nodeMetric);
+    }
+  }
+
+  function renderJobs() {
+    destroyJobChart();
+    const disabled = jobPayload && jobPayload.enabled === false;
+    const jobs = jobPayload?.items || [];
+    const selected = jobs.find((item) => item.job_key === selectedJobKey) || jobCurvePayload?.job || null;
+    jobElement.innerHTML = `
+      <div class="analytics-head">
+        <div>
+          <span class="section-kicker">Job curves</span>
+          <h2>Search workload GPU curves</h2>
+          <p>${disabled ? "SQLite history is not enabled" : jobMetaText(jobCurvePayload, jobs.length)}</p>
+        </div>
+        <div class="analytics-actions job-search-actions">
+          <label class="job-search">
+            <span>Search</span>
+            <input data-job-query type="search" value="${escapeAttr(jobQuery)}" placeholder="user, task, command, pid" />
+          </label>
+          ${metricButtonsForAction(jobMetric, "job-metric")}
+          <button class="icon-button" type="button" data-analytics-action="job-search" aria-label="Search jobs" title="Search jobs">
+            <i data-lucide="search"></i>
+          </button>
+          <button class="icon-button" type="button" data-analytics-action="job-refresh" aria-label="Refresh jobs" title="Refresh jobs">
+            <i data-lucide="refresh-cw"></i>
+          </button>
+        </div>
+      </div>
+      ${
+        disabled
+          ? disabledAnalytics("Enable DB_PATH to search jobs and render persisted rollup fallback curves.")
+          : jobsLoading && !jobPayload
+            ? loadingPanel("loading recent jobs")
+            : jobsBody(jobs, selected)
+      }
+    `;
+    if (!disabled && !jobCurveLoading && jobCurvePayload?.series?.some((item) => item.points.length)) {
+      mountJobChart(jobCurvePayload.series, jobMetric);
     }
   }
 
@@ -494,6 +689,163 @@ export function createAnalyticsController({
     `;
   }
 
+  function jobsBody(jobs: JobItem[], selected: JobItem | null) {
+    return `
+      <div class="analytics-grid">
+        <article class="analytics-card span-4 job-list-card">
+          <div class="card-title">
+            <span><i data-lucide="table-2"></i>Recent jobs</span>
+            <em>${jobs.length} shown</em>
+          </div>
+          ${
+            jobs.length
+              ? `<div class="job-list">${jobs.map(jobListItem).join("")}</div>`
+              : emptyInline("no jobs match the current filter")
+          }
+        </article>
+        <article class="analytics-card span-8">
+          <div class="card-title">
+            <span><i data-lucide="line-chart"></i>${selected ? escapeHtml(selected.task_name) : "GPU curve"}</span>
+            <em>${jobCurvePayload?.source ? sourceLabel(jobCurvePayload.source) : "select a job"}</em>
+          </div>
+          ${selected ? jobDetail(selected) : emptyInline("select a job to render its GPU curve")}
+          ${
+            jobCurveLoading && !jobCurvePayload
+              ? emptyInline("loading job curve")
+              : jobCurvePayload?.series?.some((item) => item.points.length)
+                ? jobLineChart(jobCurvePayload.series, jobMetric)
+                : selected
+                  ? emptyInline("no curve points are available for this job window")
+                  : ""
+          }
+          ${jobWarnings(jobCurvePayload)}
+        </article>
+      </div>
+    `;
+  }
+
+  function jobListItem(item: JobItem) {
+    const active = item.job_key === selectedJobKey;
+    const gpuLabel = item.gpus.map((gpu) => `GPU${gpu.gpu_index ?? "?"}`).join(", ") || `${item.gpu_count} GPUs`;
+    return `
+      <button
+        class="job-list-item ${active ? "is-active" : ""}"
+        type="button"
+        data-analytics-action="job-select"
+        data-job-key="${escapeAttr(item.job_key)}"
+      >
+        <strong>${escapeHtml(item.task_name)}</strong>
+        <span>${escapeHtml(item.user)} / ${escapeHtml(item.node_id)} / ${escapeHtml(gpuLabel)}</span>
+        <small>${fmtDuration(item.duration_seconds)} / ${formatTime(item.last_seen_at)} / ${escapeHtml(item.status)}</small>
+      </button>
+    `;
+  }
+
+  function jobDetail(item: JobItem) {
+    const pids = item.pids.length ? item.pids.join(", ") : "n/a";
+    return `
+      <div class="job-detail-strip">
+        <span><b>User</b>${escapeHtml(item.user)}</span>
+        <span><b>Node</b>${escapeHtml(item.node_id)}</span>
+        <span><b>Runtime</b>${fmtDuration(item.duration_seconds)}</span>
+        <span><b>PIDs</b>${escapeHtml(pids)}</span>
+      </div>
+    `;
+  }
+
+  function jobLineChart(series: JobCurveSeries[], metric: NodeMetric) {
+    return `
+      <div class="chart-wrap job-chart-wrap">
+        <div class="chart-plot uplot-theme">
+          <div class="line-chart" data-job-chart aria-label="${escapeAttr(metricLabel(metric))} job curve"></div>
+        </div>
+        <div class="chart-legend">
+          ${series
+            .map(
+              (item, index) => `
+                <span class="legend-label"><b style="background:var(${CHART_COLORS[index % CHART_COLORS.length]})"></b>${escapeHtml(item.label)}</span>
+              `,
+            )
+            .join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function mountJobChart(series: JobCurveSeries[], metric: NodeMetric) {
+    const target = jobElement.querySelector<HTMLElement>("[data-job-chart]");
+    if (!target) {
+      return;
+    }
+    const plotSeries = series.filter((item) => item.points.length);
+    const chartData = alignedJobChartData(plotSeries, metric);
+    if (!chartData.starts.length) {
+      return;
+    }
+    const metricDef = NODE_METRICS.find((item) => item.key === metric) || NODE_METRICS[0];
+    const values = plotSeries.flatMap((item) => item.points.map((point) => jobMetricValue(point, metric)));
+    const maxValue = metricDef.max || Math.max(1, ...values) * 1.08;
+    const colors = chartColors();
+    const width = chartTargetWidth(target);
+    const height = chartHeight();
+    const css = chartCss();
+    const opts: uPlot.Options = {
+      width,
+      height,
+      padding: [8, 10, 0, 0],
+      scales: {
+        x: { time: true },
+        y: { range: [0, maxValue] },
+      },
+      axes: [
+        {
+          stroke: css.muted,
+          grid: { stroke: css.border, width: 1 },
+          space: chartAxisSpace(),
+          ticks: { stroke: css.border },
+          values: (_self, ticks) => sparseAxisLabels(ticks, chartMaxXAxisLabels(width), (value) => formatTime(Number(value))),
+        },
+        {
+          size: chartYAxisSize(metric),
+          gap: 8,
+          stroke: css.muted,
+          grid: { stroke: css.border, width: 1 },
+          ticks: { stroke: css.border },
+          values: (_self, ticks) => ticks.map((value) => formatMetricTick(Number(value), metric)),
+        },
+      ],
+      cursor: { drag: { x: false, y: false } },
+      legend: { show: true },
+      series: [
+        {},
+        ...plotSeries.map((item, index) => ({
+          label: item.label,
+          stroke: colors[index % colors.length],
+          width: 2.5,
+          points: { show: false },
+          spanGaps: false,
+          value: (_self: uPlot, value: number | null | undefined) =>
+            value === null || value === undefined ? "n/a" : formatMetricTick(Number(value), metric),
+        })),
+      ],
+    };
+    jobChart = new uPlot(opts, chartData.data, target);
+    jobChartResize = new ResizeObserver(([entry]) => {
+      const nextWidth = Math.max(320, Math.floor(entry.contentRect.width));
+      if (jobChart && nextWidth !== jobChart.width) {
+        jobChart.setSize({ width: nextWidth, height: chartHeight() });
+      }
+    });
+    jobChartResize.observe(target);
+  }
+
+  function destroyJobChart() {
+    jobChartResize?.disconnect();
+    jobChartResize = null;
+    jobChart?.destroy();
+    jobChart = null;
+  }
+
   function syncSelectedGpu() {
     const series = nodePayload?.series || [];
     if (!selectedGpuUuids.size || !series.length) {
@@ -524,21 +876,7 @@ export function createAnalyticsController({
   }
 
   function metricButtons(selected: NodeMetric) {
-    return `
-      <div class="segmented metric-tabs" role="group">
-        ${NODE_METRICS.map(
-          (metric) => `
-            <button
-              class="${metric.key === selected ? "is-active" : ""}"
-              type="button"
-              data-analytics-action="node-metric"
-              data-metric="${metric.key}"
-              aria-pressed="${metric.key === selected ? "true" : "false"}"
-            >${metric.label}</button>
-          `,
-        ).join("")}
-      </div>
-    `;
+    return metricButtonsForAction(selected, "node-metric");
   }
 
   function lineChart(series: AnalyticsSeries[], metric: NodeMetric) {
@@ -671,9 +1009,61 @@ export function createAnalyticsController({
     handleClick,
     fetchOverview,
     fetchNode,
+    fetchJobs,
     renderOverview,
     renderNode,
+    renderJobs,
   };
+}
+
+function metricButtonsForAction(selected: NodeMetric, action: string) {
+  return `
+    <div class="segmented metric-tabs" role="group">
+      ${NODE_METRICS.map(
+        (metric) => `
+          <button
+            class="${metric.key === selected ? "is-active" : ""}"
+            type="button"
+            data-analytics-action="${action}"
+            data-metric="${metric.key}"
+            aria-pressed="${metric.key === selected ? "true" : "false"}"
+          >${metric.label}</button>
+        `,
+      ).join("")}
+    </div>
+  `;
+}
+
+function jobMetaText(payload: JobCurve | null, jobCount: number) {
+  if (!payload) {
+    return jobCount ? `${jobCount} recent jobs, select one to load curves` : "Recent short jobs use memory cache when covered, otherwise rollup history.";
+  }
+  const source = payload.source ? sourceLabel(payload.source) : "unknown source";
+  const range = payload.range_start && payload.range_end ? `${formatTime(payload.range_start)}-${formatTime(payload.range_end)}` : "selected range";
+  const resolution = payload.resolution_seconds ? `${formatBucket(payload.resolution_seconds)} resolution` : "native resolution";
+  return `${source} / ${range} / ${resolution}`;
+}
+
+function sourceLabel(source: string) {
+  if (source === "high_res_memory") {
+    return "high-res memory";
+  }
+  if (source === "mixed") {
+    return "mixed coverage";
+  }
+  return "rollup";
+}
+
+function jobWarnings(payload: JobCurve | null) {
+  const warnings = payload?.warnings || [];
+  if (!warnings.length) {
+    return "";
+  }
+  return `
+    <div class="job-warnings">
+      ${warnings.map((warning) => `<span><i data-lucide="alert-triangle"></i>${escapeHtml(warning)}</span>`).join("")}
+    </div>
+  `;
 }
 
 function rangeButtons(values: string[], selected: string, action: string) {
@@ -917,6 +1307,33 @@ function alignedChartData(series: AnalyticsSeries[], metric: NodeMetric) {
     }),
   ];
   return { starts, data };
+}
+
+function alignedJobChartData(series: JobCurveSeries[], metric: NodeMetric) {
+  const starts = Array.from(
+    new Set(series.flatMap((item) => item.points.map((point) => point.bucket_start))),
+  ).sort((a, b) => a - b);
+  const data: uPlot.AlignedData = [
+    starts,
+    ...series.map((item) => {
+      const values = new Map(item.points.map((point) => [point.bucket_start, jobMetricValue(point, metric)]));
+      return starts.map((start) => values.get(start) ?? null);
+    }),
+  ];
+  return { starts, data };
+}
+
+function jobMetricValue(point: JobPoint, metric: NodeMetric) {
+  if (metric === "avg_gpu_utilization") {
+    return Number(point.avg_gpu_utilization ?? point.utilization_gpu ?? 0);
+  }
+  if (metric === "avg_memory_used_mb") {
+    return Number(point.avg_memory_used_mb ?? point.memory_used_mb ?? 0);
+  }
+  if (metric === "avg_power_watts") {
+    return Number(point.avg_power_watts ?? point.power_watts ?? 0);
+  }
+  return Number(point.avg_temperature_c ?? point.temperature_c ?? 0);
 }
 
 function chartCss() {
