@@ -137,6 +137,9 @@ type AnalyticsControllerOptions = {
 
 const OVERVIEW_RANGES = ["24h", "7d", "30d"];
 const NODE_RANGES = ["1h", "24h", "7d", "30d"];
+const HEATMAP_HOURS = 12;
+const HEATMAP_RANGE = "24h";
+const HOUR_SECONDS = 60 * 60;
 const NODE_METRICS: { key: NodeMetric; label: string; max?: number }[] = [
   { key: "avg_gpu_utilization", label: "GPU", max: 100 },
   { key: "avg_memory_used_mb", label: "Memory" },
@@ -168,8 +171,11 @@ export function createAnalyticsController({
   let nodeMetric: NodeMetric = "avg_gpu_utilization";
   const selectedGpuUuids = new Set<string>();
   let nodePayload: NodeAnalytics | null = null;
+  let nodeHeatmapPayload: NodeAnalytics | null = null;
   let nodeKey = "";
+  let nodeHeatmapKey = "";
   let nodeLoading = false;
+  let nodeHeatmapLoading = false;
   let nodeChart: uPlot | null = null;
   let nodeChartResize: ResizeObserver | null = null;
 
@@ -252,8 +258,13 @@ export function createAnalyticsController({
       nodePayload = null;
       selectedGpuUuids.clear();
     }
+    if (!nodeHeatmapKey.startsWith(`${route.nodeId}:`)) {
+      nodeHeatmapPayload = null;
+      nodeHeatmapKey = "";
+    }
     nodeLoading = true;
     renderNode(route);
+    void fetchNodeHeatmap(route);
     try {
       const response = await fetch(
         `/api/analytics/node/${encodeURIComponent(route.nodeId)}?range=${encodeURIComponent(nodeRange)}`,
@@ -269,6 +280,36 @@ export function createAnalyticsController({
       nodeKey = key;
     } finally {
       nodeLoading = false;
+      renderNode(route);
+      renderIcons();
+    }
+  }
+
+  async function fetchNodeHeatmap(route: Route) {
+    if (route.kind !== "node") {
+      return;
+    }
+    const key = `${route.nodeId}:${HEATMAP_RANGE}`;
+    if (nodeHeatmapLoading || nodeHeatmapKey === key) {
+      return;
+    }
+    nodeHeatmapLoading = true;
+    renderNode(route);
+    try {
+      const response = await fetch(
+        `/api/analytics/node/${encodeURIComponent(route.nodeId)}?range=${encodeURIComponent(HEATMAP_RANGE)}`,
+        { cache: "no-store" },
+      );
+      if (!response.ok) {
+        throw new Error(`node heatmap failed: ${response.status}`);
+      }
+      nodeHeatmapPayload = (await response.json()) as NodeAnalytics;
+      nodeHeatmapKey = key;
+    } catch {
+      nodeHeatmapPayload = { enabled: false };
+      nodeHeatmapKey = key;
+    } finally {
+      nodeHeatmapLoading = false;
       renderNode(route);
       renderIcons();
     }
@@ -330,7 +371,7 @@ export function createAnalyticsController({
           ? disabledAnalytics("Enable DB_PATH to show node rollups and heatmaps.")
           : nodeLoading && !payload
             ? loadingPanel("loading node history")
-            : nodeBody(payload)
+            : nodeBody(payload, nodeHeatmapPayload, nodeHeatmapLoading)
       }
     `;
     if (!disabled && !nodeLoading && payload?.series?.some((item) => item.points.length)) {
@@ -417,9 +458,10 @@ export function createAnalyticsController({
     `;
   }
 
-  function nodeBody(payload: NodeAnalytics | null) {
+  function nodeBody(payload: NodeAnalytics | null, heatmapPayload: NodeAnalytics | null, heatmapLoading: boolean) {
     const series = payload?.series || [];
-    const heatmap = payload?.heatmap || [];
+    const heatmap = heatmapPayload?.heatmap || [];
+    const hasHeatmap = hourlyHeatmapRows(heatmap, heatmapPayload).some((row) => row.cells.some((cell) => cell.hasData));
     return `
       <div class="analytics-grid">
         <article class="analytics-card span-12">
@@ -437,13 +479,15 @@ export function createAnalyticsController({
         </article>
         <article class="analytics-card span-12 heatmap-card">
           <div class="card-title">
-            <span><i data-lucide="activity"></i>Activity heatmap</span>
-            <em>${payload?.heatmap_bucket_seconds ? formatBucket(payload.heatmap_bucket_seconds) : "bucketed"}</em>
+            <span><i data-lucide="activity"></i>GPU Heatmap</span>
+            <em>Past ${HEATMAP_HOURS} hours</em>
           </div>
           ${
-            heatmap.some((item) => item.buckets.length)
-              ? heatmapChart(heatmap, payload)
-              : emptyInline("no heatmap buckets in this range")
+            heatmapLoading && !heatmapPayload
+              ? emptyInline("loading GPU heatmap")
+              : hasHeatmap
+              ? heatmapChart(heatmap, heatmapPayload)
+              : emptyInline("No GPU history for the past 12 hours")
           }
         </article>
       </div>
@@ -753,50 +797,101 @@ function offHourUserLabel(item: OffHours, user: string) {
   return user;
 }
 
+type HourlyHeatCell = {
+  start: number;
+  end: number;
+  avg: number;
+  peak: number;
+  memoryAvg: number;
+  hasData: boolean;
+};
+
+type HourlyHeatRow = {
+  gpuIndex: number | null;
+  cells: HourlyHeatCell[];
+};
+
 function heatmapChart(items: AnalyticsHeatmap[], payload: NodeAnalytics | null) {
-  const allStarts = Array.from(
-    new Set(items.flatMap((item) => item.buckets.map((bucket) => bucket.bucket_start))),
-  ).sort((a, b) => a - b);
-  const columns = Math.max(1, allStarts.length);
-  const indexByStart = new Map(allStarts.map((value, index) => [value, index]));
-  const bucketSeconds = payload?.heatmap_bucket_seconds || 0;
+  const rows = hourlyHeatmapRows(items, payload);
   return `
     <div class="heatmap-scroll">
-      <div class="heatmap" style="--heat-cols:${columns}">
-        ${items
-          .map((item) => {
-            const buckets = new Map(item.buckets.map((bucket) => [bucket.bucket_start, bucket]));
-            return `
-              <div class="heat-row-label" title="${escapeAttr(item.gpu_name || item.gpu_uuid)}">GPU${item.gpu_index ?? "?"}</div>
-              <div class="heat-row">
-                ${allStarts
-                  .map((start) => {
-                    const bucket = buckets.get(start);
-                    const value = bucket?.avg_gpu_utilization || 0;
-                    const title = [
-                      `GPU${item.gpu_index ?? "?"}`,
-                      `${formatTime(start)} - ${formatTime(start + bucketSeconds)}`,
-                      `${fmtPct(value)} avg GPU`,
-                      `${fmtPct(bucket?.max_gpu_utilization || 0)} max GPU`,
-                      `${fmtGiB(bucket?.avg_memory_used_mb || 0)} avg memory`,
-                      `${bucket?.sample_count || 0} samples`,
-                    ].join(" / ");
-                    return `<span class="heat" title="${escapeAttr(title)}" style="grid-column:${(indexByStart.get(start) || 0) + 1};background:${heatColor(value)}"></span>`;
-                  })
-                  .join("")}
-              </div>
-            `;
-          })
-          .join("")}
-        ${heatAxis(allStarts, payload)}
+      <div class="heatmap">
+        ${rows.map(heatmapRow).join("")}
+        ${heatAxis(rows[0]?.cells.map((cell) => cell.start) || [])}
       </div>
     </div>
     <div class="heat-legend" aria-label="Heatmap utilization legend">
-      <span><b style="background:${heatColor(2)}"></b>idle</span>
-      <span><b style="background:${heatColor(16)}"></b>low</span>
-      <span><b style="background:${heatColor(50)}"></b>active</span>
-      <span><b style="background:${heatColor(86)}"></b>hot</span>
+      <b class="heat-legend-ramp"></b>
+      <span>idle</span>
+      <span>low</span>
+      <span>active</span>
+      <span>busy</span>
     </div>
+  `;
+}
+
+function hourlyHeatmapRows(items: AnalyticsHeatmap[], payload: NodeAnalytics | null): HourlyHeatRow[] {
+  const end = Math.ceil((payload?.range_end || payload?.generated_at || Date.now() / 1000) / HOUR_SECONDS) * HOUR_SECONDS;
+  const starts = Array.from({ length: HEATMAP_HOURS }, (_item, index) => end - (HEATMAP_HOURS - index) * HOUR_SECONDS);
+  return items.map((item) => ({
+    gpuIndex: item.gpu_index,
+    cells: starts.map((start) => hourlyHeatCell(item, start)),
+  }));
+}
+
+function hourlyHeatCell(item: AnalyticsHeatmap, start: number): HourlyHeatCell {
+  let samples = 0;
+  let gpuWeighted = 0;
+  let memoryWeighted = 0;
+  let peak = 0;
+  for (const bucket of item.buckets) {
+    if (bucket.bucket_start < start || bucket.bucket_start >= start + HOUR_SECONDS) {
+      continue;
+    }
+    const weight = Math.max(1, bucket.sample_count || 0);
+    samples += weight;
+    gpuWeighted += (bucket.avg_gpu_utilization || 0) * weight;
+    memoryWeighted += (bucket.avg_memory_used_mb || 0) * weight;
+    peak = Math.max(peak, bucket.max_gpu_utilization || 0);
+  }
+  return {
+    start,
+    end: start + HOUR_SECONDS,
+    avg: samples ? gpuWeighted / samples : 0,
+    peak,
+    memoryAvg: samples ? memoryWeighted / samples : 0,
+    hasData: samples > 0,
+  };
+}
+
+function heatmapRow(row: HourlyHeatRow) {
+  return `
+    <div class="heat-row-label">GPU${row.gpuIndex ?? "?"}</div>
+    <div class="heat-row">
+      ${row.cells.map((cell) => heatmapCell(row, cell)).join("")}
+    </div>
+  `;
+}
+
+function heatmapCell(row: HourlyHeatRow, cell: HourlyHeatCell) {
+  const gpuLabel = `GPU${row.gpuIndex ?? "?"}`;
+  const tooltip = cell.hasData
+    ? [
+        gpuLabel,
+        `${heatFullTime(cell.start)}-${heatHour(cell.end)}`,
+        `GPU avg ${fmtPct(cell.avg)} · peak ${fmtPct(cell.peak)}`,
+        `Mem avg ${fmtGiB(cell.memoryAvg)}`,
+      ].join("\n")
+    : [gpuLabel, `${heatFullTime(cell.start)}-${heatHour(cell.end)}`, "No data"].join("\n");
+  return `
+    <span
+      class="heat-cell ${cell.hasData ? "" : "is-missing"}"
+      tabindex="0"
+      role="img"
+      aria-label="${escapeMultilineAttr(tooltip)}"
+      data-tooltip="${escapeMultilineAttr(tooltip)}"
+      style="${cell.hasData ? `background:${heatColor(cell.avg)}` : ""}"
+    ></span>
   `;
 }
 
@@ -882,47 +977,47 @@ function formatMetricTick(value: number, metric: NodeMetric) {
   return `${value.toFixed(0)}°C`;
 }
 
-function heatAxis(starts: number[], payload: NodeAnalytics | null) {
+function heatAxis(starts: number[]) {
   if (!starts.length) {
     return "";
   }
-  const first = payload?.range_start || starts[0];
-  const last = payload?.range_end || starts[starts.length - 1];
-  const tickCount = Math.min(starts.length < 4 ? starts.length : 5, 6);
-  const ticks = Array.from({ length: tickCount }, (_, index) => {
-    if (tickCount === 1) {
-      return first;
-    }
-    return first + ((last - first) * index) / (tickCount - 1);
-  });
   return `
     <div class="heat-axis-spacer"></div>
     <div class="heat-axis">
-      ${ticks
-        .map((tick) => {
-          const pct = ((tick - first) / Math.max(1, last - first)) * 100;
-          return `<span style="left:${pct.toFixed(2)}%">${escapeHtml(heatTickLabel(tick))}</span>`;
-        })
-        .join("")}
+      ${starts.map((start) => `<span>${escapeHtml(heatHour(start))}</span>`).join("")}
     </div>
   `;
 }
 
-function heatTickLabel(epochSeconds: number) {
+function heatHour(epochSeconds: number) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(epochSeconds * 1000));
+}
+
+function heatColor(value: number) {
+  if (value < 5) return "var(--surface-sunken)";
+  if (value < 35) return interpolateColor("#dcefe2", "#8bd8ad", (value - 5) / 30);
+  if (value < 70) return interpolateColor("#8bd8ad", "#3ebc8c", (value - 35) / 35);
+  if (value < 90) return interpolateColor("#3ebc8c", "#168ca0", (value - 70) / 20);
+  return interpolateColor("#168ca0", "#0a5365", (value - 90) / 10);
+}
+
+function heatFullTime(epochSeconds: number) {
   return new Intl.DateTimeFormat("zh-CN", {
     timeZone: "Asia/Shanghai",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    hourCycle: "h23",
   }).format(new Date(epochSeconds * 1000));
 }
 
-function heatColor(value: number) {
-  if (value < 5) return "#eef2f6";
-  if (value < 30) return interpolateColor("#d8f3df", "#6ed3a4", (value - 5) / 25);
-  if (value < 70) return interpolateColor("#6ed3a4", "#1597a6", (value - 30) / 40);
-  return interpolateColor("#f6b45b", "#d94841", (value - 70) / 30);
+function escapeMultilineAttr(value: string) {
+  return escapeHtml(value).replace(/\n/g, "&#10;");
 }
 
 function interpolateColor(from: string, to: string, amount: number) {
