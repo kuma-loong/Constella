@@ -273,6 +273,32 @@ fn cluster_state_registers_sample_and_drops_old_seq() {
 }
 
 #[test]
+fn cluster_state_exposes_latest_node_snapshot_for_persistence() {
+    let state = ClusterState::new("manager".to_string());
+    state.register_hello(
+        AgentHello {
+            node_id: "node-a".to_string(),
+            hostname: "host-a".to_string(),
+            agent_version: Some("0.2.0".to_string()),
+            capabilities: None,
+            hardware: None,
+        },
+        Some(10.0),
+        None,
+    );
+    state
+        .ingest_sample(&sample_message("node-a", 1, 66), Some(11.0), None)
+        .unwrap();
+
+    let snapshot = state.latest_node_snapshot("node-a").unwrap();
+
+    assert_eq!(snapshot.node_id, "node-a");
+    assert_eq!(snapshot.agent_version.as_deref(), Some("0.2.0"));
+    assert_eq!(snapshot.gpus[0].utilization_gpu, 66);
+    assert_eq!(snapshot.gpus[0].gpu_id.as_deref(), Some("node-a:GPU-abc"));
+}
+
+#[test]
 fn cluster_state_builds_short_history_from_samples_without_agent_history() {
     let state = ClusterState::with_options("manager".to_string(), None, None, 2);
     state.register_hello(

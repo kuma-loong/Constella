@@ -283,6 +283,14 @@ impl ClusterState {
         cluster_snapshot_from_nodes(nodes, inner.seq, timestamp)
     }
 
+    pub fn latest_node_snapshot(&self, node_id: &str) -> Option<NodeSnapshot> {
+        self.inner
+            .read()
+            .latest_by_node
+            .get(node_id)
+            .map(|runtime| runtime.snapshot.clone())
+    }
+
     pub fn local_node_id(&self) -> String {
         self.inner.read().local_node_id.clone()
     }

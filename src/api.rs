@@ -51,6 +51,11 @@ impl AppState {
         store.close();
         self
     }
+
+    pub fn with_db_path(mut self, path: PathBuf) -> Self {
+        self.db_path = Some(Arc::new(path));
+        self
+    }
 }
 
 pub fn app(state: AppState) -> Router {
@@ -322,6 +327,9 @@ async fn agent_socket(state: AppState, mut socket: WebSocket) {
                         let seq = value.get("seq").cloned().unwrap_or(Value::Null);
                         match state.cluster_state.ingest_sample(&value, None, Some(connection_id)) {
                             Ok(accepted) => {
+                                if accepted {
+                                    persist_latest_snapshot(&state, &node_id);
+                                }
                                 if send_json(&mut socket, &json!({"type": "ack", "seq": seq, "accepted": accepted})).await.is_err() {
                                     return;
                                 }
@@ -390,6 +398,23 @@ fn open_store(path: &PathBuf) -> Result<SQLiteStore, DbError> {
     let mut store = SQLiteStore::new(path.clone());
     store.open()?;
     Ok(store)
+}
+
+fn persist_latest_snapshot(state: &AppState, node_id: &str) {
+    let Some(db_path) = &state.db_path else {
+        return;
+    };
+    let Some(snapshot) = state.cluster_state.latest_node_snapshot(node_id) else {
+        return;
+    };
+    match open_store(db_path) {
+        Ok(store) => {
+            if let Err(error) = store.write_node_snapshot(&snapshot, false) {
+                tracing::warn!(error = %error, "failed to persist node snapshot");
+            }
+        }
+        Err(error) => tracing::warn!(error = %error, "failed to open sqlite store"),
+    }
 }
 
 async fn send_json<T: serde::Serialize>(

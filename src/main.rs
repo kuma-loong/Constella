@@ -35,6 +35,8 @@ struct ServeArgs {
     refresh: Option<f64>,
     #[arg(long, env = "CONSTELLA_PROCESS_SECONDS")]
     process_refresh: Option<f64>,
+    #[arg(long, env = "CONSTELLA_DB_PATH")]
+    db_path: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -51,6 +53,7 @@ async fn main() -> anyhow::Result<()> {
         agent_token_file: None,
         refresh: None,
         process_refresh: None,
+        db_path: None,
     })) {
         Command::Serve(args) => serve(args).await,
     }
@@ -70,11 +73,14 @@ async fn serve(args: ServeArgs) -> anyhow::Result<()> {
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty()),
     };
-    let state = AppState::new(
+    let mut state = AppState::new(
         ClusterState::new(local_node_id(None)),
         settings,
         agent_token,
     );
+    if let Some(db_path) = args.db_path {
+        state = state.with_db_path(db_path);
+    }
     let addr: SocketAddr = format!("{}:{}", args.host, args.port)
         .parse()
         .context("invalid listen address")?;
