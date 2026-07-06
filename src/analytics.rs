@@ -68,13 +68,7 @@ pub fn overview_analytics(
         "user_gpu_hours": user_payloads.into_iter().take(20).collect::<Vec<_>>(),
         "job_rankings": job_payloads.into_iter().take(20).collect::<Vec<_>>(),
         "anomalies": anomaly_payloads(store, &anomaly_candidates, anomaly_start, range_end)?,
-        "off_hours": {
-            "night_job_count": 0,
-            "weekend_job_count": 0,
-            "night_gpu_hours": 0.0,
-            "weekend_gpu_hours": 0.0,
-            "top_users": [],
-        },
+        "off_hours": off_hours_payload(&rows, range_start, range_end),
     }))
 }
 
@@ -200,6 +194,13 @@ struct JobUsage {
     usage_seconds: f64,
 }
 
+#[derive(Debug, Clone, Default)]
+struct OffHourUser {
+    user: String,
+    jobs: BTreeSet<String>,
+    gpu_seconds: f64,
+}
+
 impl UserUsage {
     fn payload(&self) -> Value {
         let mut top_gpu_models: Vec<_> = self.gpu_model_seconds.iter().collect();
@@ -311,6 +312,84 @@ fn roll_up_usage(
         job.usage_seconds += seconds;
     }
     (users, jobs)
+}
+
+fn off_hours_payload(rows: &[UsageRow], range_start: f64, range_end: f64) -> Value {
+    let mut night_jobs = BTreeSet::new();
+    let mut weekend_jobs = BTreeSet::new();
+    let mut night_gpu_seconds = 0.0;
+    let mut weekend_gpu_seconds = 0.0;
+    let mut users = BTreeMap::<String, OffHourUser>::new();
+
+    for row in rows {
+        let start = row.first_seen_at.max(range_start);
+        let end = row.last_seen_at.min(range_end);
+        if end <= start {
+            continue;
+        }
+        let (night_seconds, weekend_seconds) = off_hour_seconds(start, end);
+        if night_seconds <= 0.0 && weekend_seconds <= 0.0 {
+            continue;
+        }
+        let key = job_key(row);
+        let user = row.user.clone().unwrap_or_else(|| "unknown".to_string());
+        let user_entry = users.entry(user.clone()).or_insert_with(|| OffHourUser {
+            user,
+            ..Default::default()
+        });
+        user_entry.jobs.insert(key.clone());
+        user_entry.gpu_seconds += night_seconds + weekend_seconds;
+        if night_seconds > 0.0 {
+            night_jobs.insert(key.clone());
+            night_gpu_seconds += night_seconds;
+        }
+        if weekend_seconds > 0.0 {
+            weekend_jobs.insert(key);
+            weekend_gpu_seconds += weekend_seconds;
+        }
+    }
+
+    let mut top_users: Vec<_> = users.into_values().collect();
+    top_users.sort_by(|left, right| right.gpu_seconds.total_cmp(&left.gpu_seconds));
+    json!({
+        "night_job_count": night_jobs.len(),
+        "weekend_job_count": weekend_jobs.len(),
+        "night_gpu_hours": round2(night_gpu_seconds / 3600.0),
+        "weekend_gpu_hours": round2(weekend_gpu_seconds / 3600.0),
+        "top_users": top_users.into_iter().take(5).map(|user| json!({
+            "user": user.user,
+            "job_count": user.jobs.len(),
+            "gpu_hours": round2(user.gpu_seconds / 3600.0),
+        })).collect::<Vec<_>>(),
+    })
+}
+
+fn off_hour_seconds(start: f64, end: f64) -> (f64, f64) {
+    let mut cursor = start;
+    let mut night = 0.0;
+    let mut weekend = 0.0;
+    while cursor < end {
+        let next_hour = ((cursor + 8.0 * 3600.0) / 3600.0).floor() * 3600.0 + 3600.0 - 8.0 * 3600.0;
+        let segment_end = end.min(next_hour.max(cursor + 1.0));
+        let seconds = segment_end - cursor;
+        if local_hour(cursor) < 6 {
+            night += seconds;
+        }
+        if local_weekday(cursor) >= 5 {
+            weekend += seconds;
+        }
+        cursor = segment_end;
+    }
+    (night, weekend)
+}
+
+fn local_hour(timestamp: f64) -> i64 {
+    (((timestamp + 8.0 * 3600.0) / 3600.0).floor() as i64).rem_euclid(24)
+}
+
+fn local_weekday(timestamp: f64) -> i64 {
+    let local_days = ((timestamp + 8.0 * 3600.0) / 86400.0).floor() as i64;
+    (local_days + 3).rem_euclid(7)
 }
 
 fn anomaly_payloads(

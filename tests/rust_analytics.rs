@@ -155,6 +155,29 @@ fn overview_analytics_aggregates_users_jobs_and_anomalies() {
 }
 
 #[test]
+fn overview_analytics_counts_beijing_night_and_weekend_usage() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = SQLiteStore::new(dir.path().join("constella.db"));
+    store.open().unwrap();
+    store
+        .write_node_snapshot(&make_snapshot(150_000.0, "bob", 222, 16 * 1024, 40), false)
+        .unwrap();
+    store
+        .write_node_snapshot(&make_snapshot(153_600.0, "bob", 222, 16 * 1024, 40), false)
+        .unwrap();
+
+    let payload = overview_analytics(&store, "7d", Some(200_000.0)).unwrap();
+    let off_hours = &payload["off_hours"];
+
+    assert_eq!(off_hours["night_job_count"], 1);
+    assert_eq!(off_hours["weekend_job_count"], 1);
+    assert_eq!(off_hours["night_gpu_hours"], 2.0);
+    assert_eq!(off_hours["weekend_gpu_hours"], 2.0);
+    assert_eq!(off_hours["top_users"][0]["user"], "bob");
+    assert_eq!(off_hours["top_users"][0]["job_count"], 1);
+}
+
+#[test]
 fn node_analytics_returns_series_and_heatmap() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = SQLiteStore::new(dir.path().join("constella.db"));

@@ -89,32 +89,17 @@ This branch replaces the Python backend with a Rust implementation while keeping
   `ws://127.0.0.1:18765/api/agents/ws`, verified through `GET /api/health`
   and `GET /api/cluster/snapshot`.
 
-## Remaining Work
+## Release Status
 
-1. Agent sampling rewrite
-   - Add native NVML sampler or document `nvidia-smi` as the Rust fallback path.
-
-2. High-resolution job curves
-   - Add end-to-end WebSocket integration tests against a live ephemeral server.
-   - Add sidecar-compatible mode if the standalone highres sidecar remains required.
-
-3. Analytics
-   - Complete off-hours/night/weekend timezone segmentation.
-   - Add broader range edge-case coverage.
-
-4. Cluster control and YAML nodes
-   - Keep token handling through stdin/env files, not command-line arguments.
-
-5. Scripts and packaging
-   - Keep safe defaults: bind to `127.0.0.1:8765`, no DB unless `CONSTELLA_DB_PATH`/`DB_PATH` is set.
-   - Add release build instructions and artifact layout.
-
-6. Documentation
-   - Update README and README_zh from Python/uv to Rust/cargo release workflow.
-   - Document API compatibility and migration notes.
-
-7. Final verification
-   - Run Rust unit/integration tests.
-   - Run frontend build without API source changes unless required.
-   - Start Rust server on a non-8765 port for smoke tests.
-   - Verify no access to the existing `run/constella.db` unless explicitly configured.
+- Rust manager, local agent, remote cluster control, SQLite maintenance, analytics,
+  high-resolution job curves, scripts, and public README docs are implemented in this branch.
+- The Rust release path uses `nvidia-smi` plus `/proc` process enrichment as the supported
+  sampler. Native NVML can be added later as an optimization without changing the manager/agent
+  protocol.
+- Verification targets:
+  - `cargo fmt --check`
+  - `cargo test`
+  - shell syntax checks for service, cluster, maintenance, and dev scripts
+  - `cargo build --release`
+  - `npm run build`
+  - non-8765 manager + agent smoke test on `127.0.0.1:18765` with a temporary SQLite DB
