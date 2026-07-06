@@ -23,6 +23,7 @@ RANGES = {
     "7d": 7 * 24 * 60 * 60,
     "30d": 30 * 24 * 60 * 60,
 }
+JOB_PARENT_GROUP_MAX_AGE_SECONDS = 10 * 60
 
 
 @dataclass(slots=True)
@@ -145,9 +146,22 @@ def gpu_weight(name: str | None) -> float:
 
 
 def job_key(row: sqlite3.Row | dict[str, Any]) -> str:
-    start = _value(row, "parent_start_time") or _value(row, "process_start_time") or _value(row, "first_seen_at")
-    parent = _value(row, "ppid") or _value(row, "pid")
-    return f"{_value(row, 'node_id')}:{_value(row, 'user') or 'unknown'}:{start}:{parent}"
+    process_start = _value(row, "process_start_time") or _value(row, "first_seen_at")
+    parent_start = _value(row, "parent_start_time")
+    pid = _value(row, "pid")
+    ppid = _value(row, "ppid")
+    if (
+        process_start is not None
+        and parent_start is not None
+        and ppid is not None
+        and 0 <= float(process_start) - float(parent_start) <= JOB_PARENT_GROUP_MAX_AGE_SECONDS
+    ):
+        start = parent_start
+        owner = ppid
+    else:
+        start = process_start or parent_start or _value(row, "first_seen_at")
+        owner = pid or ppid
+    return f"{_value(row, 'node_id')}:{_value(row, 'user') or 'unknown'}:{start}:{owner}"
 
 
 def overlap_seconds(first_seen_at: float, last_seen_at: float, range_start: float, range_end: float) -> float:

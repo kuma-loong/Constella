@@ -131,9 +131,13 @@ COUNT=20 ./scripts/dev/bench_probe.sh
 - `GET /api/users`：可选用户任务聚合。
 - `GET /api/analytics/overview`：可选 Overview 历史分析。
 - `GET /api/analytics/node/{node_id}`：可选节点历史曲线和热力图。
+- `GET /api/highres/status`：高分辨率内存缓存状态。
+- `GET /api/highres/jobs`：作业搜索。
+- `GET /api/highres/jobs/{job_key}`：作业详情。
+- `GET /api/highres/jobs/{job_key}/gpu`：作业 GPU 曲线。
 - `GET /api/docs`：FastAPI OpenAPI 文档。
 
-未启用 SQLite 时，历史和分析 API 返回 `enabled:false`；实时集群监控仍然通过 `/api/cluster/snapshot` 和 `/ws/cluster` 工作。
+未启用 SQLite 时，历史、分析和作业曲线搜索 API 返回 `enabled:false`；实时集群监控仍然通过 `/api/cluster/snapshot` 和 `/ws/cluster` 工作。
 
 旧单机接口不再作为兼容层维护：`GET /api/snapshot` 返回 `410 Gone`，`WS /ws/gpu` 会立即关闭。本机和远端节点都统一使用 cluster API。
 

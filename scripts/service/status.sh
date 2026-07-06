@@ -6,6 +6,7 @@ HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8765}"
 PID_FILE="$ROOT_DIR/run/constella.pid"
 AGENT_PID_FILE="$ROOT_DIR/run/local-agent.pid"
+HIGHRES_PID_FILE="$ROOT_DIR/run/highres-sidecar.pid"
 AGENT_STATE_FILE="$ROOT_DIR/run/local-agent-state.json"
 
 export NO_PROXY="${NO_PROXY:-127.0.0.1,localhost}"
@@ -29,6 +30,7 @@ print_pid_status() {
 }
 
 print_pid_status "manager" "$PID_FILE"
+print_pid_status "highres sidecar" "$HIGHRES_PID_FILE"
 print_pid_status "local agent" "$AGENT_PID_FILE"
 
 if [[ -f "$AGENT_STATE_FILE" ]]; then

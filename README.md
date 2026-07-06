@@ -135,9 +135,13 @@ COUNT=20 ./scripts/dev/bench_probe.sh
 - `GET /api/users`
 - `GET /api/analytics/overview`
 - `GET /api/analytics/node/{node_id}`
+- `GET /api/highres/status`
+- `GET /api/highres/jobs`
+- `GET /api/highres/jobs/{job_key}`
+- `GET /api/highres/jobs/{job_key}/gpu`
 - `GET /api/docs`
 
-When SQLite is not enabled, history and analytics APIs return `enabled:false`; realtime cluster monitoring continues through `/api/cluster/snapshot` and `/ws/cluster`.
+When SQLite is not enabled, history, analytics, and job curve search APIs return `enabled:false`; realtime cluster monitoring continues through `/api/cluster/snapshot` and `/ws/cluster`.
 
 Deprecated single-node endpoints are intentionally not compatibility layers: `GET /api/snapshot` returns `410 Gone`, and `WS /ws/gpu` closes immediately. Use the cluster API for local and remote nodes.
 

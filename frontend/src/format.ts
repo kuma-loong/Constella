@@ -1,3 +1,5 @@
+export const DISPLAY_TIME_ZONE = "Asia/Shanghai";
+
 export function fmtGiB(mib: number) {
   if (!Number.isFinite(mib)) {
     return "n/a";
@@ -34,7 +36,7 @@ export function formatTime(epochSeconds: number) {
     return "n/a";
   }
   return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
+    timeZone: DISPLAY_TIME_ZONE,
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",

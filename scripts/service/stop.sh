@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PID_FILE="$ROOT_DIR/run/constella.pid"
 AGENT_PID_FILE="$ROOT_DIR/run/local-agent.pid"
+HIGHRES_PID_FILE="$ROOT_DIR/run/highres-sidecar.pid"
 
 stop_pid() {
   local label="$1"
@@ -37,4 +38,5 @@ stop_pid() {
 }
 
 stop_pid "local agent" "$AGENT_PID_FILE"
+stop_pid "highres sidecar" "$HIGHRES_PID_FILE"
 stop_pid "manager" "$PID_FILE"

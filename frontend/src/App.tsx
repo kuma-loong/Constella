@@ -8,16 +8,19 @@ import {
   Gauge,
   LineChart,
   ListTree,
+  Maximize2,
   Monitor,
   Moon,
   Pause,
   Play,
   RefreshCw,
+  Search,
   Server,
   Sun,
   Table2,
   Thermometer,
   Users,
+  X,
   Zap,
   createIcons,
 } from "lucide";
@@ -38,16 +41,19 @@ const iconSet = {
   Gauge,
   LineChart,
   ListTree,
+  Maximize2,
   Monitor,
   Moon,
   Pause,
   Play,
   RefreshCw,
+  Search,
   Server,
   Sun,
   Table2,
   Thermometer,
   Users,
+  X,
   Zap,
 };
 
@@ -75,6 +81,7 @@ export default function App() {
   const routeRef = useRef(route);
   const overviewAnalyticsRef = useRef<HTMLElement>(null);
   const nodeHistoryRef = useRef<HTMLElement>(null);
+  const jobCurvesRef = useRef<HTMLElement>(null);
   const analyticsRef = useRef<AnalyticsController | null>(null);
 
   pausedRef.current = paused;
@@ -121,12 +128,13 @@ export default function App() {
   });
 
   useEffect(() => {
-    if (!overviewAnalyticsRef.current || !nodeHistoryRef.current || analyticsRef.current) {
+    if (!overviewAnalyticsRef.current || !nodeHistoryRef.current || !jobCurvesRef.current || analyticsRef.current) {
       return;
     }
     analyticsRef.current = createAnalyticsController({
       overviewElement: overviewAnalyticsRef.current,
       nodeElement: nodeHistoryRef.current,
+      jobElement: jobCurvesRef.current,
       currentRoute: () => routeRef.current,
       renderIcons: () => createIcons({ icons: iconSet }),
     });
@@ -144,19 +152,31 @@ export default function App() {
 
   useEffect(() => {
     const controller = analyticsRef.current;
-    if (!controller || !snapshot) {
+    if (!controller) {
       return;
     }
-    if (route.kind === "overview") {
+    syncAnalyticsRoute(route);
+  }, [route]);
+
+  function syncAnalyticsRoute(nextRoute: Route) {
+    const controller = analyticsRef.current;
+    if (!controller) {
+      return;
+    }
+    if (nextRoute.kind === "overview") {
       controller.renderOverview();
       createIcons({ icons: iconSet });
       void controller.fetchOverview();
-    } else {
-      controller.renderNode(route);
+    } else if (nextRoute.kind === "node") {
+      controller.renderNode(nextRoute);
       createIcons({ icons: iconSet });
-      void controller.fetchNode(route);
+      void controller.fetchNode(nextRoute);
+    } else {
+      controller.renderJobs();
+      createIcons({ icons: iconSet });
+      void controller.fetchJobs();
     }
-  }, [route, snapshot]);
+  }
 
   useEffect(() => {
     let socket: WebSocket | null = null;
@@ -315,8 +335,14 @@ export default function App() {
     }
   }
 
+  function handleAppKeyDown(event: JSX.TargetedKeyboardEvent<HTMLDivElement>) {
+    if (analyticsRef.current?.handleKeyDown(event as unknown as KeyboardEvent)) {
+      return;
+    }
+  }
+
   return (
-    <div onClick={handleAppClick}>
+    <div onClick={handleAppClick} onKeyDown={handleAppKeyDown}>
       <Header
         snapshot={snapshot}
         route={route}
@@ -344,6 +370,8 @@ export default function App() {
 
         <section class="analytics-section" ref={overviewAnalyticsRef} hidden={route.kind !== "overview"} />
 
+        <section class="analytics-section" ref={jobCurvesRef} hidden={route.kind !== "jobs"} />
+
         <section class="gpu-grid" hidden={route.kind !== "node"}>
           {route.kind === "node" ? <GpuGrid nodeId={route.nodeId} node={selectedNode} /> : null}
         </section>
@@ -367,11 +395,14 @@ function currentRoute(): Route {
     const encoded = path.slice("/nodes/".length);
     return { kind: "node", nodeId: decodeURIComponent(encoded) };
   }
+  if (path === "/jobs") {
+    return { kind: "jobs" };
+  }
   return { kind: "overview" };
 }
 
 function isAppPath(pathname: string) {
-  return pathname === "/" || pathname === "/overview" || pathname.startsWith("/nodes/");
+  return pathname === "/" || pathname === "/overview" || pathname === "/jobs" || pathname.startsWith("/nodes/");
 }
 
 function shouldHandleAppLink(event: JSX.TargetedMouseEvent<HTMLDivElement>, link: HTMLAnchorElement | null): link is HTMLAnchorElement {
