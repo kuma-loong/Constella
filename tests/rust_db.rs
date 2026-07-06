@@ -2,7 +2,7 @@ use axum::body::Body;
 use axum::http::Request;
 use constella::api::{app, AppState};
 use constella::cluster::ClusterState;
-use constella::db::{RollupRow, SQLiteStore, ROLLUP_20S, ROLLUP_2M};
+use constella::db::{RollupRow, SQLiteStore, ROLLUP_20S, ROLLUP_20S_RETENTION_SECONDS, ROLLUP_2M};
 use constella::schema::{node_totals_from_gpus, GpuInfo, GpuProcess, NodeSnapshot};
 use constella::settings::ManagerSettings;
 use http_body_util::BodyExt;
@@ -184,6 +184,67 @@ fn sqlite_store_rollup_uses_sample_count_weighting() {
     assert_eq!(rollup.4, 4);
 }
 
+#[test]
+fn sqlite_store_prunes_expired_rollups_by_retention() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = SQLiteStore::new(dir.path().join("constella.db"));
+    store.open().unwrap();
+    let now = 1_000_000.0;
+    store
+        .upsert_gpu_metric_rollups(&[
+            rollup_row(now - ROLLUP_20S_RETENTION_SECONDS - 1.0, ROLLUP_20S),
+            rollup_row(now - 10.0, ROLLUP_20S),
+        ])
+        .unwrap();
+
+    assert_eq!(store.prune_rollups(now, None).unwrap(), 1);
+    assert_eq!(
+        store
+            .scalar_i64("SELECT COUNT(*) FROM gpu_metric_rollups")
+            .unwrap(),
+        1
+    );
+}
+
+#[test]
+fn sqlite_store_maintain_runs_rollups_and_prunes_old_rows() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = SQLiteStore::new(dir.path().join("constella.db"));
+    store.open().unwrap();
+    store
+        .write_node_snapshot(&make_node_snapshot(100.0, 50), true)
+        .unwrap();
+    let now = 1_000_000.0;
+    store
+        .upsert_gpu_metric_rollups(&[
+            rollup_row(now - 200.0, ROLLUP_20S),
+            rollup_row(now - 180.0, ROLLUP_20S),
+            rollup_row(now - ROLLUP_20S_RETENTION_SECONDS - 1.0, ROLLUP_20S),
+        ])
+        .unwrap();
+    store
+        .connection()
+        .unwrap()
+        .execute(
+            "INSERT INTO raw_snapshots(sampled_at, node_id, payload_json) VALUES (?1, ?2, ?3)",
+            rusqlite::params![10.0, "node-a", "{}"],
+        )
+        .unwrap();
+
+    let result = store.maintain(now, 300.0, 60.0).unwrap();
+
+    assert_eq!(result.closed_sessions, 1);
+    assert!(result.rollups_2m >= 1);
+    assert_eq!(result.pruned_rollups, 1);
+    assert_eq!(result.pruned_raw_snapshots, 2);
+    assert_eq!(
+        store
+            .scalar_i64("SELECT COUNT(*) FROM process_sessions WHERE status='ended'")
+            .unwrap(),
+        1
+    );
+}
+
 #[tokio::test]
 async fn db_history_api_reads_store() {
     let dir = tempfile::tempdir().unwrap();
@@ -264,6 +325,24 @@ async fn db_history_api_reads_store() {
             "sample_count": 2
         })
     );
+}
+
+fn rollup_row(bucket_start: f64, bucket_seconds: i64) -> RollupRow {
+    RollupRow {
+        bucket_start,
+        bucket_seconds,
+        node_id: "node-a".to_string(),
+        gpu_uuid: "GPU-0".to_string(),
+        avg_gpu_utilization: 20.0,
+        max_gpu_utilization: 25.0,
+        avg_memory_used_mb: 10.0,
+        max_memory_used_mb: 12,
+        avg_power_watts: 100.0,
+        max_power_watts: 110.0,
+        avg_temperature_c: 40.0,
+        max_temperature_c: 42,
+        sample_count: 1,
+    }
 }
 
 async fn json_body(response: axum::response::Response) -> Value {

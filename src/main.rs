@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
@@ -7,6 +8,7 @@ use constella::agent::{run_agent, AgentConfig};
 use constella::api::{app, AppState};
 use constella::cluster::ClusterState;
 use constella::cluster_config::load_manager_hostname;
+use constella::db::{SQLiteStore, RAW_SNAPSHOT_RETENTION_SECONDS};
 use constella::schema::local_node_id;
 use constella::settings::ManagerSettings;
 
@@ -22,6 +24,7 @@ struct Cli {
 enum Command {
     Serve(ServeArgs),
     Agent(AgentArgs),
+    Db(DbArgs),
     Config(ConfigArgs),
 }
 
@@ -75,6 +78,50 @@ struct AgentArgs {
     state_file: Option<PathBuf>,
 }
 
+#[derive(Debug, Parser)]
+struct DbArgs {
+    #[command(subcommand)]
+    command: Option<DbCommand>,
+}
+
+#[derive(Debug, Subcommand)]
+enum DbCommand {
+    Maintain {
+        #[arg(long, default_value = "run/constella.db")]
+        path: PathBuf,
+        #[arg(long, default_value_t = RAW_SNAPSHOT_RETENTION_SECONDS)]
+        raw_retention_seconds: f64,
+        #[arg(long, default_value_t = 300.0)]
+        session_stale_seconds: f64,
+    },
+    Rollup {
+        #[arg(long, default_value = "run/constella.db")]
+        path: PathBuf,
+        #[arg(long)]
+        from_bucket_seconds: i64,
+        #[arg(long)]
+        to_bucket_seconds: i64,
+    },
+    PruneRollups {
+        #[arg(long, default_value = "run/constella.db")]
+        path: PathBuf,
+        #[arg(long)]
+        bucket_seconds: Option<i64>,
+    },
+    PruneRaw {
+        #[arg(long, default_value = "run/constella.db")]
+        path: PathBuf,
+        #[arg(long, default_value_t = RAW_SNAPSHOT_RETENTION_SECONDS)]
+        retention_seconds: f64,
+    },
+    CloseSessions {
+        #[arg(long, default_value = "run/constella.db")]
+        path: PathBuf,
+        #[arg(long, default_value_t = 60.0)]
+        stale_seconds: f64,
+    },
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -93,6 +140,7 @@ async fn main() -> anyhow::Result<()> {
     })) {
         Command::Serve(args) => serve(args).await,
         Command::Agent(args) => agent(args).await,
+        Command::Db(args) => db(args),
         Command::Config(args) => config(args),
     }
 }
@@ -109,6 +157,84 @@ async fn agent(args: AgentArgs) -> anyhow::Result<()> {
     )?;
     run_agent(config).await?;
     Ok(())
+}
+
+fn db(args: DbArgs) -> anyhow::Result<()> {
+    let Some(command) = args.command else {
+        return Ok(());
+    };
+    match command {
+        DbCommand::Maintain {
+            path,
+            raw_retention_seconds,
+            session_stale_seconds,
+        } => {
+            let mut store = open_store(path)?;
+            let result =
+                store.maintain(now_seconds(), session_stale_seconds, raw_retention_seconds)?;
+            for (key, value) in result.to_map() {
+                println!("{key}: {value}");
+            }
+            store.close();
+        }
+        DbCommand::Rollup {
+            path,
+            from_bucket_seconds,
+            to_bucket_seconds,
+        } => {
+            let mut store = open_store(path)?;
+            let count = store.rollup_gpu_metric_rollups(
+                from_bucket_seconds,
+                to_bucket_seconds,
+                now_seconds(),
+            )?;
+            println!(
+                "rolled up {count} GPU buckets {from_bucket_seconds}s -> {to_bucket_seconds}s"
+            );
+            store.close();
+        }
+        DbCommand::PruneRollups {
+            path,
+            bucket_seconds,
+        } => {
+            let mut store = open_store(path)?;
+            let count = store.prune_rollups(now_seconds(), bucket_seconds)?;
+            println!("deleted {count} expired rollups");
+            store.close();
+        }
+        DbCommand::PruneRaw {
+            path,
+            retention_seconds,
+        } => {
+            let mut store = open_store(path)?;
+            let count = store.prune_raw_snapshots(now_seconds(), retention_seconds)?;
+            println!("deleted {count} raw snapshots");
+            store.close();
+        }
+        DbCommand::CloseSessions {
+            path,
+            stale_seconds,
+        } => {
+            let mut store = open_store(path)?;
+            let count = store.close_stale_sessions(now_seconds(), stale_seconds)?;
+            println!("closed {count} process sessions");
+            store.close();
+        }
+    }
+    Ok(())
+}
+
+fn open_store(path: PathBuf) -> anyhow::Result<SQLiteStore> {
+    let mut store = SQLiteStore::new(path);
+    store.open()?;
+    Ok(store)
+}
+
+fn now_seconds() -> f64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64()
 }
 
 fn config(args: ConfigArgs) -> anyhow::Result<()> {

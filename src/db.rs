@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use rusqlite::{params, Connection, OptionalExtension, Row};
@@ -11,6 +11,9 @@ pub const RAW_SNAPSHOT_RETENTION_SECONDS: f64 = 12.0 * 60.0 * 60.0;
 pub const ROLLUP_20S: i64 = 20;
 pub const ROLLUP_2M: i64 = 120;
 pub const ROLLUP_1H: i64 = 3600;
+pub const ROLLUP_20S_RETENTION_SECONDS: f64 = 7.0 * 24.0 * 60.0 * 60.0;
+pub const ROLLUP_2M_RETENTION_SECONDS: f64 = 60.0 * 24.0 * 60.0 * 60.0;
+pub const ROLLUP_1H_RETENTION_SECONDS: f64 = 365.0 * 24.0 * 60.0 * 60.0;
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -30,6 +33,27 @@ pub enum DbError {
 pub struct SQLiteStore {
     path: PathBuf,
     connection: Option<Connection>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MaintenanceResult {
+    pub closed_sessions: usize,
+    pub rollups_2m: usize,
+    pub rollups_1h: usize,
+    pub pruned_rollups: usize,
+    pub pruned_raw_snapshots: usize,
+}
+
+impl MaintenanceResult {
+    pub fn to_map(&self) -> BTreeMap<&'static str, usize> {
+        BTreeMap::from([
+            ("closed_sessions", self.closed_sessions),
+            ("pruned_raw_snapshots", self.pruned_raw_snapshots),
+            ("pruned_rollups", self.pruned_rollups),
+            ("rollups_1h", self.rollups_1h),
+            ("rollups_2m", self.rollups_2m),
+        ])
+    }
 }
 
 impl SQLiteStore {
@@ -452,6 +476,40 @@ impl SQLiteStore {
         )?)
     }
 
+    pub fn prune_rollups(&self, now: f64, bucket_seconds: Option<i64>) -> Result<usize, DbError> {
+        let buckets = if let Some(bucket) = bucket_seconds {
+            vec![normalize_history_bucket(bucket)?]
+        } else {
+            vec![ROLLUP_20S, ROLLUP_2M, ROLLUP_1H]
+        };
+        let mut deleted = 0usize;
+        for bucket in buckets {
+            let Some(retention_seconds) = rollup_retention_seconds(bucket) else {
+                return Err(DbError::UnsupportedHistoryBucket(bucket));
+            };
+            deleted += self.connection()?.execute(
+                "DELETE FROM gpu_metric_rollups WHERE bucket_seconds = ?1 AND bucket_start < ?2",
+                params![bucket, now - retention_seconds],
+            )?;
+        }
+        Ok(deleted)
+    }
+
+    pub fn maintain(
+        &self,
+        now: f64,
+        stale_session_seconds: f64,
+        raw_retention_seconds: f64,
+    ) -> Result<MaintenanceResult, DbError> {
+        Ok(MaintenanceResult {
+            closed_sessions: self.close_stale_sessions(now, stale_session_seconds)?,
+            rollups_2m: self.rollup_gpu_metric_rollups(ROLLUP_20S, ROLLUP_2M, now)?,
+            rollups_1h: self.rollup_gpu_metric_rollups(ROLLUP_2M, ROLLUP_1H, now)?,
+            pruned_rollups: self.prune_rollups(now, None)?,
+            pruned_raw_snapshots: self.prune_raw_snapshots(now, raw_retention_seconds)?,
+        })
+    }
+
     pub fn query_gpu_history(
         &self,
         node_id: Option<&str>,
@@ -597,9 +655,19 @@ fn source_bucket(bucket_seconds: i64) -> Option<i64> {
 }
 
 fn normalize_history_bucket(bucket_seconds: i64) -> Result<i64, DbError> {
+    if rollup_retention_seconds(bucket_seconds).is_some() {
+        Ok(bucket_seconds)
+    } else {
+        Err(DbError::UnsupportedHistoryBucket(bucket_seconds))
+    }
+}
+
+fn rollup_retention_seconds(bucket_seconds: i64) -> Option<f64> {
     match bucket_seconds {
-        ROLLUP_20S | ROLLUP_2M | ROLLUP_1H => Ok(bucket_seconds),
-        other => Err(DbError::UnsupportedHistoryBucket(other)),
+        ROLLUP_20S => Some(ROLLUP_20S_RETENTION_SECONDS),
+        ROLLUP_2M => Some(ROLLUP_2M_RETENTION_SECONDS),
+        ROLLUP_1H => Some(ROLLUP_1H_RETENTION_SECONDS),
+        _ => None,
     }
 }
 

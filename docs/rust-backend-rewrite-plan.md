@@ -75,7 +75,8 @@ This branch replaces the Python backend with a Rust implementation while keeping
   - start runs `target/release/constella serve`,
   - manager hostname can be read from `nodes.yaml` through the Rust CLI,
   - highres is served by the Rust manager instead of a separate sidecar,
-  - `LOCAL_AGENT=1` starts the Rust local agent through `/api/agents/ws`.
+  - `LOCAL_AGENT=1` starts the Rust local agent through `/api/agents/ws`,
+  - maintenance script calls Rust `constella db maintain`.
 - Current Rust verification: `cargo fmt --check` and `cargo test`.
 - Current release smoke test: `target/release/constella serve --host 127.0.0.1 --port 18765`
   with a temporary SQLite DB and `target/release/constella agent` connected to
