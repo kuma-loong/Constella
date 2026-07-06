@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -15,6 +16,7 @@ use serde_json::{json, Value};
 use tokio::sync::broadcast;
 
 use crate::cluster::{parse_agent_hello, ClusterState};
+use crate::db::{DbError, SQLiteStore};
 use crate::settings::{ManagerSettings, SettingsUpdate};
 
 #[derive(Debug, Clone)]
@@ -22,6 +24,7 @@ pub struct AppState {
     pub cluster_state: ClusterState,
     pub settings: Arc<RwLock<ManagerSettings>>,
     pub agent_token: Option<String>,
+    pub db_path: Option<Arc<PathBuf>>,
     pub config_tx: broadcast::Sender<Value>,
     pub connection_ids: Arc<AtomicU64>,
 }
@@ -37,9 +40,16 @@ impl AppState {
             cluster_state,
             settings: Arc::new(RwLock::new(settings)),
             agent_token,
+            db_path: None,
             config_tx,
             connection_ids: Arc::new(AtomicU64::new(1)),
         }
+    }
+
+    pub fn with_db_store(mut self, mut store: SQLiteStore) -> Self {
+        self.db_path = Some(Arc::new(store.path().to_path_buf()));
+        store.close();
+        self
     }
 }
 
@@ -49,9 +59,9 @@ pub fn app(state: AppState) -> Router {
         .route("/api/snapshot", get(deprecated_snapshot))
         .route("/api/cluster/snapshot", get(cluster_snapshot))
         .route("/api/settings", get(settings).patch(update_settings))
-        .route("/api/history/gpu", get(disabled_items))
-        .route("/api/history/tasks", get(disabled_items))
-        .route("/api/users", get(disabled_items))
+        .route("/api/history/gpu", get(gpu_history))
+        .route("/api/history/tasks", get(task_history))
+        .route("/api/users", get(users))
         .route("/api/analytics/overview", get(disabled_object))
         .route("/api/analytics/node/:node_id", get(disabled_object))
         .route("/api/highres/status", get(highres_status))
@@ -132,6 +142,70 @@ async fn highres_status() -> Json<Value> {
         "oldest_at": null,
         "newest_at": null,
     }))
+}
+
+#[derive(Debug, Deserialize)]
+struct GpuHistoryQuery {
+    node_id: Option<String>,
+    gpu_uuid: Option<String>,
+    since: Option<f64>,
+    until: Option<f64>,
+    limit: Option<i64>,
+}
+
+async fn gpu_history(
+    State(state): State<AppState>,
+    Query(query): Query<GpuHistoryQuery>,
+) -> Result<Json<Value>, Response> {
+    let Some(db_path) = state.db_path else {
+        return Ok(disabled_items().await);
+    };
+    let store = open_store(&db_path).map_err(internal_error)?;
+    let items = store
+        .query_gpu_history(
+            query.node_id.as_deref(),
+            query.gpu_uuid.as_deref(),
+            query.since,
+            query.until,
+            None,
+            query.limit.unwrap_or(1000).clamp(1, 5000),
+        )
+        .map_err(internal_error)?;
+    Ok(Json(json!({"enabled": true, "items": items})))
+}
+
+#[derive(Debug, Deserialize)]
+struct TaskHistoryQuery {
+    user: Option<String>,
+    status: Option<String>,
+    limit: Option<i64>,
+}
+
+async fn task_history(
+    State(state): State<AppState>,
+    Query(query): Query<TaskHistoryQuery>,
+) -> Result<Json<Value>, Response> {
+    let Some(db_path) = state.db_path else {
+        return Ok(disabled_items().await);
+    };
+    let store = open_store(&db_path).map_err(internal_error)?;
+    let items = store
+        .query_tasks(
+            query.user.as_deref(),
+            query.status.as_deref(),
+            query.limit.unwrap_or(200).clamp(1, 1000),
+        )
+        .map_err(internal_error)?;
+    Ok(Json(json!({"enabled": true, "items": items})))
+}
+
+async fn users(State(state): State<AppState>) -> Result<Json<Value>, Response> {
+    let Some(db_path) = state.db_path else {
+        return Ok(disabled_items().await);
+    };
+    let store = open_store(&db_path).map_err(internal_error)?;
+    let items = store.query_users().map_err(internal_error)?;
+    Ok(Json(json!({"enabled": true, "items": items})))
 }
 
 #[derive(Debug, Deserialize)]
@@ -302,6 +376,20 @@ fn authorized(headers: &HeaderMap, expected_token: Option<&str>) -> bool {
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
         == Some(expected_token)
+}
+
+fn internal_error(error: impl std::fmt::Display) -> Response {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({"detail": error.to_string()})),
+    )
+        .into_response()
+}
+
+fn open_store(path: &PathBuf) -> Result<SQLiteStore, DbError> {
+    let mut store = SQLiteStore::new(path.clone());
+    store.open()?;
+    Ok(store)
 }
 
 async fn send_json<T: serde::Serialize>(
