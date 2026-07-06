@@ -444,17 +444,19 @@ a:focus-visible {
 }
 
 .shell {
+  --panel-gap: clamp(22px, 2.2vw, 34px);
+  --grid-gap: clamp(16px, 1.55vw, 22px);
   width: min(100vw, 1480px);
   max-width: 100vw;
   margin: 0 auto;
-  padding: 22px clamp(16px, 2.4vw, 34px) 48px;
+  padding: 26px clamp(16px, 2.4vw, 34px) 56px;
   overflow-x: hidden;
 }
 
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(150px, 1fr));
-  gap: 12px;
+  gap: var(--grid-gap);
 }
 
 .metric-card,
@@ -610,7 +612,7 @@ a:focus-visible {
 .fabric-band {
   display: grid;
   gap: 14px;
-  margin-top: 24px;
+  margin-top: var(--panel-gap);
 }
 
 .fabric-copy {
@@ -873,8 +875,8 @@ a:focus-visible {
 .gpu-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(318px, 1fr));
-  gap: 14px;
-  margin-top: 14px;
+  gap: var(--grid-gap);
+  margin-top: var(--panel-gap);
 }
 
 .gpu-card {
@@ -1016,7 +1018,7 @@ a:focus-visible {
 }
 
 .process-section {
-  margin-top: 14px;
+  margin-top: var(--panel-gap);
   overflow: hidden;
   max-width: 100%;
 }
@@ -1138,7 +1140,7 @@ svg {
 }
 
 .analytics-section {
-  margin-top: 26px;
+  margin-top: calc(var(--panel-gap) + 4px);
 }
 
 .analytics-head {
@@ -1173,7 +1175,7 @@ svg {
 .analytics-grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 14px;
+  gap: var(--grid-gap);
   align-items: start;
 }
 
@@ -1614,6 +1616,13 @@ svg {
 }
 
 @media (max-width: 760px) {
+  .shell {
+    --panel-gap: 20px;
+    --grid-gap: 14px;
+    padding-top: 20px;
+    padding-bottom: 44px;
+  }
+
   .topbar {
     display: flex;
     align-items: stretch;
