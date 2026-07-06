@@ -5,6 +5,7 @@ import {
   fmtGiB,
   fmtNumber,
   fmtPct,
+  DISPLAY_TIME_ZONE,
   formatBucket,
   formatTime,
 } from "./format";
@@ -242,8 +243,12 @@ export function createAnalyticsController({
   let jobCurveKey = "";
   let jobCurveLoading = false;
   let jobMetric: NodeMetric = "avg_gpu_utilization";
+  const selectedJobGpuUuids = new Set<string>();
+  let jobChartExpanded = false;
   let jobChart: uPlot | null = null;
   let jobChartResize: ResizeObserver | null = null;
+  let jobModalChart: uPlot | null = null;
+  let jobModalChartResize: ResizeObserver | null = null;
 
   function handleClick(target: HTMLButtonElement) {
     const action = target.dataset.analyticsAction;
@@ -274,14 +279,7 @@ export function createAnalyticsController({
       return true;
     }
     if (action === "job-search") {
-      const input = jobElement.querySelector<HTMLInputElement>("[data-job-query]");
-      jobQuery = input?.value.trim() || "";
-      jobKey = "";
-      selectedJobKey = "";
-      jobCurvePayload = null;
-      jobCurveKey = "";
-      renderJobs();
-      void fetchJobs();
+      submitJobSearch();
       return true;
     }
     if (action === "job-refresh") {
@@ -297,12 +295,29 @@ export function createAnalyticsController({
       selectedJobKey = target.dataset.jobKey;
       jobCurvePayload = null;
       jobCurveKey = "";
+      selectedJobGpuUuids.clear();
+      jobChartExpanded = false;
       renderJobs();
       void fetchJobCurve(selectedJobKey);
       return true;
     }
     if (action === "job-metric" && target.dataset.metric) {
       jobMetric = target.dataset.metric as NodeMetric;
+      renderJobs();
+      return true;
+    }
+    if (action === "job-gpu") {
+      updateSelectedJobGpu(target.dataset.gpuUuid || null);
+      renderJobs();
+      return true;
+    }
+    if (action === "job-expand") {
+      jobChartExpanded = true;
+      renderJobs();
+      return true;
+    }
+    if (action === "job-collapse") {
+      jobChartExpanded = false;
       renderJobs();
       return true;
     }
@@ -317,6 +332,35 @@ export function createAnalyticsController({
       return true;
     }
     return false;
+  }
+
+  function handleKeyDown(event: KeyboardEvent) {
+    const target = event.target as HTMLElement | null;
+    if (event.key === "Enter" && target?.matches("[data-job-query]")) {
+      event.preventDefault();
+      submitJobSearch();
+      return true;
+    }
+    if (event.key === "Escape" && jobChartExpanded) {
+      event.preventDefault();
+      jobChartExpanded = false;
+      renderJobs();
+      return true;
+    }
+    return false;
+  }
+
+  function submitJobSearch() {
+    const input = jobElement.querySelector<HTMLInputElement>("[data-job-query]");
+    jobQuery = input?.value.trim() || "";
+    jobKey = "";
+    selectedJobKey = "";
+    selectedJobGpuUuids.clear();
+    jobChartExpanded = false;
+    jobCurvePayload = null;
+    jobCurveKey = "";
+    renderJobs();
+    void fetchJobs();
   }
 
   async function fetchOverview() {
@@ -540,6 +584,7 @@ export function createAnalyticsController({
     const disabled = jobPayload && jobPayload.enabled === false;
     const jobs = jobPayload?.items || [];
     const selected = jobs.find((item) => item.job_key === selectedJobKey) || jobCurvePayload?.job || null;
+    const visibleSeries = selectedJobSeries(jobCurvePayload?.series || []);
     jobElement.innerHTML = `
       <div class="analytics-head">
         <div>
@@ -552,14 +597,20 @@ export function createAnalyticsController({
             <span>Search</span>
             <input data-job-query type="search" value="${escapeAttr(jobQuery)}" placeholder="user, task, command, pid" />
           </label>
-          ${metricButtonsForAction(jobMetric, "job-metric")}
-          <button class="icon-button" type="button" data-analytics-action="job-search" aria-label="Search jobs" title="Search jobs">
-            <i data-lucide="search"></i>
-          </button>
-          <button class="icon-button" type="button" data-analytics-action="job-refresh" aria-label="Refresh jobs" title="Refresh jobs">
-            <i data-lucide="refresh-cw"></i>
-          </button>
+          <div class="job-toolbar-buttons">
+            ${metricButtonsForAction(jobMetric, "job-metric")}
+            <button class="icon-button" type="button" data-analytics-action="job-search" aria-label="Search jobs" title="Search jobs">
+              <i data-lucide="search"></i>
+            </button>
+            <button class="icon-button" type="button" data-analytics-action="job-refresh" aria-label="Refresh jobs" title="Refresh jobs">
+              <i data-lucide="refresh-cw"></i>
+            </button>
+          </div>
         </div>
+      </div>
+      <div class="job-feature-note">
+        <strong>Supports job search within 7 days.</strong>
+        <span>Jobs that ended within 2 hours and ran under 1 hour use high-resolution memory data when available; other jobs use persisted 20s-or-coarser rollups.</span>
       </div>
       ${
         disabled
@@ -568,9 +619,10 @@ export function createAnalyticsController({
             ? loadingPanel("loading recent jobs")
             : jobsBody(jobs, selected)
       }
+      ${jobChartExpanded && visibleSeries.some((item) => item.points.length) ? expandedJobChart(visibleSeries, jobMetric) : ""}
     `;
-    if (!disabled && !jobCurveLoading && jobCurvePayload?.series?.some((item) => item.points.length)) {
-      mountJobChart(jobCurvePayload.series, jobMetric);
+    if (!disabled && !jobCurveLoading && visibleSeries.some((item) => item.points.length)) {
+      mountJobChart(visibleSeries, jobMetric);
     }
   }
 
@@ -754,89 +806,49 @@ export function createAnalyticsController({
   }
 
   function jobLineChart(series: JobCurveSeries[], metric: NodeMetric) {
+    const hasPoints = selectedJobSeries(series).some((item) => item.points.length);
     return `
       <div class="chart-wrap job-chart-wrap">
+        <div class="chart-tools">
+          <button class="icon-button chart-expand-button" type="button" data-analytics-action="job-expand" aria-label="Expand job curve" title="Expand job curve" ${hasPoints ? "" : "disabled"}>
+            <i data-lucide="maximize-2"></i>
+          </button>
+        </div>
         <div class="chart-plot uplot-theme">
           <div class="line-chart" data-job-chart aria-label="${escapeAttr(metricLabel(metric))} job curve"></div>
         </div>
-        <div class="chart-legend">
-          ${series
-            .map(
-              (item, index) => `
-                <span class="legend-label"><b style="background:var(${CHART_COLORS[index % CHART_COLORS.length]})"></b>${escapeHtml(item.label)}</span>
-              `,
-            )
-            .join("")}
-        </div>
+        ${jobLegend(series)}
       </div>
     `;
   }
 
   function mountJobChart(series: JobCurveSeries[], metric: NodeMetric) {
-    const target = jobElement.querySelector<HTMLElement>("[data-job-chart]");
-    if (!target) {
-      return;
-    }
-    const plotSeries = series.filter((item) => item.points.length);
-    const chartData = alignedJobChartData(plotSeries, metric);
-    if (!chartData.starts.length) {
-      return;
-    }
-    const metricDef = NODE_METRICS.find((item) => item.key === metric) || NODE_METRICS[0];
-    const values = plotSeries.flatMap((item) => item.points.map((point) => jobMetricValue(point, metric)));
-    const maxValue = metricDef.max || Math.max(1, ...values) * 1.08;
-    const colors = chartColors();
-    const width = chartTargetWidth(target);
-    const height = chartHeight();
-    const css = chartCss();
-    const opts: uPlot.Options = {
-      width,
-      height,
-      padding: [8, 10, 0, 0],
-      scales: {
-        x: { time: true },
-        y: { range: [0, maxValue] },
-      },
-      axes: [
-        {
-          stroke: css.muted,
-          grid: { stroke: css.border, width: 1 },
-          space: chartAxisSpace(),
-          ticks: { stroke: css.border },
-          values: (_self, ticks) => sparseAxisLabels(ticks, chartMaxXAxisLabels(width), (value) => formatTime(Number(value))),
-        },
-        {
-          size: chartYAxisSize(metric),
-          gap: 8,
-          stroke: css.muted,
-          grid: { stroke: css.border, width: 1 },
-          ticks: { stroke: css.border },
-          values: (_self, ticks) => ticks.map((value) => formatMetricTick(Number(value), metric)),
-        },
-      ],
-      cursor: { drag: { x: false, y: false } },
-      legend: { show: true },
-      series: [
-        {},
-        ...plotSeries.map((item, index) => ({
-          label: item.label,
-          stroke: colors[index % colors.length],
-          width: 2.5,
-          points: { show: false },
-          spanGaps: false,
-          value: (_self: uPlot, value: number | null | undefined) =>
-            value === null || value === undefined ? "n/a" : formatMetricTick(Number(value), metric),
-        })),
-      ],
-    };
-    jobChart = new uPlot(opts, chartData.data, target);
-    jobChartResize = new ResizeObserver(([entry]) => {
-      const nextWidth = Math.max(320, Math.floor(entry.contentRect.width));
-      if (jobChart && nextWidth !== jobChart.width) {
-        jobChart.setSize({ width: nextWidth, height: chartHeight() });
-      }
+    const inline = mountMetricChart({
+      target: jobElement.querySelector<HTMLElement>("[data-job-chart]"),
+      series,
+      metric,
+      alignedData: alignedJobChartData,
+      valueAt: jobMetricValue,
+      labels: (item) => item.label,
+      height: chartHeight(),
     });
-    jobChartResize.observe(target);
+    if (inline) {
+      jobChart = inline.chart;
+      jobChartResize = inline.resize;
+    }
+    const modal = mountMetricChart({
+      target: jobElement.querySelector<HTMLElement>("[data-job-chart-modal]"),
+      series,
+      metric,
+      alignedData: alignedJobChartData,
+      valueAt: jobMetricValue,
+      labels: (item) => item.label,
+      height: expandedChartHeight(),
+    });
+    if (modal) {
+      jobModalChart = modal.chart;
+      jobModalChartResize = modal.resize;
+    }
   }
 
   function destroyJobChart() {
@@ -844,6 +856,56 @@ export function createAnalyticsController({
     jobChartResize = null;
     jobChart?.destroy();
     jobChart = null;
+    jobModalChartResize?.disconnect();
+    jobModalChartResize = null;
+    jobModalChart?.destroy();
+    jobModalChart = null;
+  }
+
+  function jobLegend(series: JobCurveSeries[]) {
+    return `
+      <div class="chart-legend">
+        <button class="${selectedJobGpuUuids.size === 0 ? "is-active" : ""}" type="button" data-analytics-action="job-gpu" data-legend-all="true" aria-pressed="${selectedJobGpuUuids.size === 0 ? "true" : "false"}">
+          <b style="background:var(--text)"></b>All
+        </button>
+        ${series
+          .map((item, index) => {
+            const selected = isJobGpuSelected(item.gpu_uuid);
+            return `
+              <button
+                class="${selected ? "is-selected" : "is-muted"}"
+                type="button"
+                data-analytics-action="job-gpu"
+                data-gpu-uuid="${escapeAttr(item.gpu_uuid)}"
+                aria-pressed="${selected ? "true" : "false"}"
+              ><b style="background:var(${CHART_COLORS[index % CHART_COLORS.length]})"></b>${escapeHtml(item.label)}</button>
+            `;
+          })
+          .join("")}
+      </div>
+    `;
+  }
+
+  function expandedJobChart(series: JobCurveSeries[], metric: NodeMetric) {
+    return `
+      <div class="chart-modal-backdrop" role="presentation">
+        <section class="chart-modal" role="dialog" aria-modal="true" aria-label="${escapeAttr(metricLabel(metric))} job curve expanded">
+          <div class="chart-modal-head">
+            <div>
+              <span class="section-kicker">Expanded curve</span>
+              <h2>${escapeHtml(metricLabel(metric))} by GPU</h2>
+            </div>
+            <button class="icon-button" type="button" data-analytics-action="job-collapse" aria-label="Close expanded curve" title="Close expanded curve">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+          <div class="chart-plot uplot-theme">
+            <div class="line-chart line-chart-expanded" data-job-chart-modal aria-label="${escapeAttr(metricLabel(metric))} expanded job curve"></div>
+          </div>
+          ${jobLegend(series)}
+        </section>
+      </div>
+    `;
   }
 
   function syncSelectedGpu() {
@@ -873,6 +935,30 @@ export function createAnalyticsController({
       return;
     }
     selectedGpuUuids.add(gpuUuid);
+  }
+
+  function updateSelectedJobGpu(gpuUuid: string | null) {
+    if (!gpuUuid) {
+      selectedJobGpuUuids.clear();
+      return;
+    }
+    if (!selectedJobGpuUuids.size) {
+      selectedJobGpuUuids.add(gpuUuid);
+      return;
+    }
+    if (selectedJobGpuUuids.has(gpuUuid)) {
+      selectedJobGpuUuids.delete(gpuUuid);
+      return;
+    }
+    selectedJobGpuUuids.add(gpuUuid);
+  }
+
+  function isJobGpuSelected(gpuUuid: string) {
+    return selectedJobGpuUuids.size === 0 || selectedJobGpuUuids.has(gpuUuid);
+  }
+
+  function selectedJobSeries(series: JobCurveSeries[]) {
+    return series.filter((item) => isJobGpuSelected(item.gpu_uuid));
   }
 
   function metricButtons(selected: NodeMetric) {
@@ -910,77 +996,20 @@ export function createAnalyticsController({
   }
 
   function mountNodeChart(series: AnalyticsSeries[], metric: NodeMetric) {
-    const target = nodeElement.querySelector<HTMLElement>("[data-node-chart]");
-    if (!target) {
-      return;
-    }
-    const plotSeries = series.filter((item) => item.points.length);
-    const chartData = alignedChartData(plotSeries, metric);
-    if (!chartData.starts.length) {
-      return;
-    }
-    const metricDef = NODE_METRICS.find((item) => item.key === metric) || NODE_METRICS[0];
-    const visibleValues = plotSeries
-      .filter((item) => isGpuSelected(item.gpu_uuid))
-      .flatMap((item) => item.points.map((point) => metricValue(point, metric)));
-    const maxValue = metricDef.max || Math.max(1, ...visibleValues) * 1.08;
-    const colors = chartColors();
-    const width = chartTargetWidth(target);
-    const height = chartHeight();
-    const css = chartCss();
-    const opts: uPlot.Options = {
-      width,
-      height,
-      padding: [8, 10, 0, 0],
-      scales: {
-        x: { time: true },
-        y: { range: [0, maxValue] },
-      },
-      axes: [
-        {
-          stroke: css.muted,
-          grid: { stroke: css.border, width: 1 },
-          space: chartAxisSpace(),
-          ticks: { stroke: css.border },
-          values: (_self, ticks) => sparseAxisLabels(ticks, chartMaxXAxisLabels(width), (value) => formatTime(Number(value))),
-        },
-        {
-          size: chartYAxisSize(metric),
-          gap: 8,
-          stroke: css.muted,
-          grid: { stroke: css.border, width: 1 },
-          ticks: { stroke: css.border },
-          values: (_self, ticks) => ticks.map((value) => formatMetricTick(Number(value), metric)),
-        },
-      ],
-      cursor: {
-        drag: { x: false, y: false },
-      },
-      legend: {
-        show: true,
-      },
-      series: [
-        {},
-        ...plotSeries.map((item, index) => ({
-          label: `GPU${item.gpu_index ?? "?"}`,
-          show: isGpuSelected(item.gpu_uuid),
-          stroke: colors[index % colors.length],
-          width: 2.5,
-          points: { show: false },
-          spanGaps: false,
-          value: (_self: uPlot, value: number | null | undefined) =>
-            value === null || value === undefined ? "n/a" : formatMetricTick(Number(value), metric),
-        })),
-      ],
-    };
-    nodeChart = new uPlot(opts, chartData.data, target);
-    nodeChartResize = new ResizeObserver(([entry]) => {
-      const nextWidth = Math.max(320, Math.floor(entry.contentRect.width));
-      if (nodeChart && nextWidth !== nodeChart.width) {
-        nodeChart.setSize({ width: nextWidth, height: chartHeight() });
-      }
+    const mounted = mountMetricChart({
+      target: nodeElement.querySelector<HTMLElement>("[data-node-chart]"),
+      series,
+      metric,
+      alignedData: alignedChartData,
+      valueAt: metricValue,
+      labels: (item) => `GPU${item.gpu_index ?? "?"}`,
+      show: (item) => isGpuSelected(item.gpu_uuid),
+      height: chartHeight(),
     });
-    nodeChartResize.observe(target);
+    if (mounted) {
+      nodeChart = mounted.chart;
+      nodeChartResize = mounted.resize;
+    }
   }
 
   function destroyNodeChart() {
@@ -1007,6 +1036,7 @@ export function createAnalyticsController({
 
   return {
     handleClick,
+    handleKeyDown,
     fetchOverview,
     fetchNode,
     fetchJobs,
@@ -1032,6 +1062,94 @@ function metricButtonsForAction(selected: NodeMetric, action: string) {
       ).join("")}
     </div>
   `;
+}
+
+function mountMetricChart<T extends { points: P[] }, P>({
+  target,
+  series,
+  metric,
+  alignedData,
+  valueAt,
+  labels,
+  show,
+  height,
+}: {
+  target: HTMLElement | null;
+  series: T[];
+  metric: NodeMetric;
+  alignedData: (series: T[], metric: NodeMetric) => { starts: number[]; data: uPlot.AlignedData };
+  valueAt: (point: P, metric: NodeMetric) => number;
+  labels: (item: T, index: number) => string;
+  show?: (item: T) => boolean;
+  height: number;
+}) {
+  if (!target) {
+    return null;
+  }
+  const plotSeries = series.filter((item) => item.points.length);
+  const chartData = alignedData(plotSeries, metric);
+  if (!chartData.starts.length) {
+    return null;
+  }
+  const metricDef = NODE_METRICS.find((item) => item.key === metric) || NODE_METRICS[0];
+  const visibleValues = plotSeries
+    .filter((item) => (show ? show(item) : true))
+    .flatMap((item) => item.points.map((point) => valueAt(point, metric)));
+  const maxValue = metricDef.max || Math.max(1, ...visibleValues) * 1.08;
+  const colors = chartColors();
+  const width = chartTargetWidth(target);
+  const css = chartCss();
+  const opts: uPlot.Options = {
+    width,
+    height,
+    tzDate: (timestamp) => uPlot.tzDate(new Date(timestamp * 1000), DISPLAY_TIME_ZONE),
+    padding: [8, 10, 0, 0],
+    scales: {
+      x: { time: true },
+      y: { range: [0, maxValue] },
+    },
+    axes: [
+      {
+        stroke: css.muted,
+        grid: { stroke: css.border, width: 1 },
+        space: chartAxisSpace(),
+        ticks: { stroke: css.border },
+        values: (_self, ticks) => sparseAxisLabels(ticks, chartMaxXAxisLabels(width), (value) => formatTime(Number(value))),
+      },
+      {
+        size: chartYAxisSize(metric),
+        gap: 8,
+        stroke: css.muted,
+        grid: { stroke: css.border, width: 1 },
+        ticks: { stroke: css.border },
+        values: (_self, ticks) => ticks.map((value) => formatMetricTick(Number(value), metric)),
+      },
+    ],
+    cursor: { drag: { x: false, y: false } },
+    legend: { show: true },
+    series: [
+      {},
+      ...plotSeries.map((item, index) => ({
+        label: labels(item, index),
+        show: show ? show(item) : true,
+        stroke: colors[index % colors.length],
+        width: 2.5,
+        points: { show: false },
+        spanGaps: false,
+        value: (_self: uPlot, value: number | null | undefined) =>
+          value === null || value === undefined ? "n/a" : formatMetricTick(Number(value), metric),
+      })),
+    ],
+  };
+  const chart = new uPlot(opts, chartData.data, target);
+  const resize = new ResizeObserver(([entry]) => {
+    const nextWidth = Math.max(320, Math.floor(entry.contentRect.width));
+    if (nextWidth !== chart.width) {
+      chart.setSize({ width: nextWidth, height });
+    }
+  });
+  resize.observe(target);
+  return { chart, resize };
 }
 
 function jobMetaText(payload: JobCurve | null, jobCount: number) {
@@ -1353,6 +1471,10 @@ function chartHeight() {
   return window.matchMedia("(max-width: 760px)").matches ? 240 : 320;
 }
 
+function expandedChartHeight() {
+  return window.matchMedia("(max-width: 760px)").matches ? Math.floor(window.innerHeight * 0.58) : Math.min(560, Math.floor(window.innerHeight * 0.58));
+}
+
 function chartTargetWidth(target: HTMLElement) {
   const styles = getComputedStyle(target);
   const padding = Number.parseFloat(styles.paddingLeft) + Number.parseFloat(styles.paddingRight);
@@ -1432,7 +1554,7 @@ function heatClock(epochSeconds: number) {
 
 function heatParts(epochSeconds: number) {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Shanghai",
+    timeZone: DISPLAY_TIME_ZONE,
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -1477,7 +1599,7 @@ function metaText(payload: AnalyticsMeta | null) {
     payload.range_start && payload.range_end
       ? `${formatTime(payload.range_start)} - ${formatTime(payload.range_end)}`
       : "selected range";
-  return `${range} / generated ${formatTime(payload.generated_at)} / ${payload.timezone || "Asia/Shanghai"}`;
+  return `${range} / generated ${formatTime(payload.generated_at)} / ${payload.timezone || DISPLAY_TIME_ZONE}`;
 }
 
 function disabledAnalytics(message: string) {

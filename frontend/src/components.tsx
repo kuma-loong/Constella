@@ -143,28 +143,32 @@ export function Nav({ snapshot, route }: { snapshot: ClusterSnapshot | null; rou
   const jobsActive = route.kind === "jobs";
   return (
     <nav class="top-nav" aria-label="Primary navigation">
-      <a class={`nav-link ${overviewActive ? "is-active" : ""}`} aria-current={overviewActive ? "page" : undefined} href="/overview">
-        <Icon name="list-tree" />
-        <span>Overview</span>
-      </a>
-      <a class={`nav-link ${jobsActive ? "is-active" : ""}`} aria-current={jobsActive ? "page" : undefined} href="/jobs">
-        <Icon name="line-chart" />
-        <span>Jobs</span>
-      </a>
-      {(snapshot?.nodes || []).map((node) => {
-        const active = route.kind === "node" && (route.nodeId === node.node_id || route.nodeId === node.hostname);
-        return (
-          <a
-            key={node.node_id}
-            class={`nav-link ${active ? "is-active" : ""}`}
-            aria-current={active ? "page" : undefined}
-            href={`/nodes/${encodeURIComponent(node.node_id)}`}
-          >
-            <Icon name="server" />
-            <span>{node.node_id}</span>
-          </a>
-        );
-      })}
+      <div class="nav-row nav-row-primary">
+        <a class={`nav-link ${overviewActive ? "is-active" : ""}`} aria-current={overviewActive ? "page" : undefined} href="/overview">
+          <Icon name="list-tree" />
+          <span>Overview</span>
+        </a>
+        <a class={`nav-link ${jobsActive ? "is-active" : ""}`} aria-current={jobsActive ? "page" : undefined} href="/jobs">
+          <Icon name="line-chart" />
+          <span>Jobs</span>
+        </a>
+      </div>
+      <div class="nav-row nav-row-nodes" aria-label="Nodes">
+        {(snapshot?.nodes || []).map((node) => {
+          const active = route.kind === "node" && (route.nodeId === node.node_id || route.nodeId === node.hostname);
+          return (
+            <a
+              key={node.node_id}
+              class={`nav-link node-link ${active ? "is-active" : ""}`}
+              aria-current={active ? "page" : undefined}
+              href={`/nodes/${encodeURIComponent(node.node_id)}`}
+            >
+              <Icon name="server" />
+              <span>{node.node_id}</span>
+            </a>
+          );
+        })}
+      </div>
     </nav>
   );
 }

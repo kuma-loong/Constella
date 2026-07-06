@@ -114,6 +114,8 @@ def test_overlap_gpu_weight_and_job_key_helpers() -> None:
         "pid": 111,
     }
     assert job_key(row) == "node-a:alice:80.0:10"
+    row["parent_start_time"] = -1000.0
+    assert job_key(row) == "node-a:alice:100.0:111"
 
 
 def test_overview_analytics_aggregates_users_jobs_and_anomalies(tmp_path) -> None:

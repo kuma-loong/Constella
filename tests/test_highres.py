@@ -17,18 +17,26 @@ from constella.highres_sidecar import HighresSidecarConfig, create_highres_sidec
 from constella.schema import GpuInfo, GpuProcess, NodeSnapshot, node_totals_from_gpus
 
 
-def make_node_snapshot(sampled_at: float, *, gpu_util: int = 50) -> NodeSnapshot:
+def make_node_snapshot(
+    sampled_at: float,
+    *,
+    gpu_util: int = 50,
+    pid: int = 1234,
+    process_start_time: float = 90.0,
+    ppid: int = 4321,
+    parent_start_time: float = 80.0,
+) -> NodeSnapshot:
     process = GpuProcess(
-        pid=1234,
+        pid=pid,
         name="python",
         task_name="train.py",
         user="alice",
         cmdline="python train.py",
         cmdline_hash="hash",
         gpu_memory_mb=2048,
-        ppid=4321,
-        process_start_time=90.0,
-        parent_start_time=80.0,
+        ppid=ppid,
+        process_start_time=process_start_time,
+        parent_start_time=parent_start_time,
     )
     gpus = [
         GpuInfo(
@@ -108,6 +116,25 @@ def test_query_jobs_groups_sessions_by_existing_job_key(tmp_path) -> None:
         sink.store.close()
 
 
+def test_query_jobs_does_not_merge_short_tasks_from_long_lived_parent(tmp_path) -> None:
+    sink = AsyncDBSink(SQLiteSinkConfig(path=tmp_path / "constella.db"))
+    sink.store.open()
+    try:
+        sink.store.write_node_snapshot(
+            make_node_snapshot(100.0, pid=1234, process_start_time=95.0, ppid=4321, parent_start_time=-1000.0)
+        )
+        sink.store.write_node_snapshot(
+            make_node_snapshot(140.0, pid=5678, process_start_time=135.0, ppid=4321, parent_start_time=-1000.0)
+        )
+
+        jobs = query_jobs(sink.store, now=160.0)
+
+        assert len(jobs) == 2
+        assert [job["pids"] for job in jobs] == [[5678], [1234]]
+    finally:
+        sink.store.close()
+
+
 def test_query_jobs_defaults_to_seven_days_and_includes_long_jobs(tmp_path) -> None:
     sink = AsyncDBSink(SQLiteSinkConfig(path=tmp_path / "constella.db"))
     sink.store.open()
@@ -154,6 +181,38 @@ def test_highres_job_curve_api_returns_memory_series(tmp_path) -> None:
         assert payload["expired"] is False
         assert len(payload["series"]) == 2
         assert payload["series"][0]["points"][0]["sampled_at"] == base - 20.0
+    finally:
+        sink.store.close()
+
+
+def test_highres_job_curve_padding_gap_does_not_force_rollup(tmp_path) -> None:
+    sink = AsyncDBSink(SQLiteSinkConfig(path=tmp_path / "constella.db"))
+    sink.store.open()
+    cache = HighresGpuCache(retention_seconds=120.0, min_interval_seconds=1.0)
+    try:
+        base = time.time()
+        for offset in range(0, 11):
+            sampled_at = base + offset
+            cache.add_snapshot(make_node_snapshot(sampled_at, gpu_util=int(sampled_at) % 100))
+        sink.store.write_node_snapshot(make_node_snapshot(base, gpu_util=50))
+        sink.store.write_node_snapshot(make_node_snapshot(base + 10.0, gpu_util=60))
+        job = query_jobs(sink.store, now=base + 11.0)[0]
+        client = TestClient(
+            create_app(
+                cluster_state=ClusterState(local_node_id="local"),
+                db_sink=sink,
+                highres_cache=cache,
+            )
+        )
+
+        response = client.get(f"/api/highres/jobs/{job['job_key']}/gpu?padding_seconds=20")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["source"] == "high_res_memory"
+        assert payload["warnings"] == []
+        assert payload["series"][0]["points"][0]["sampled_at"] == base
+        assert payload["series"][0]["points"][-1]["sampled_at"] == base + 10.0
     finally:
         sink.store.close()
 

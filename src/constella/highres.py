@@ -263,10 +263,19 @@ def job_curve(
     padding = max(0.0, min(float(padding_seconds), 300.0))
     range_start = max(0.0, float(job["started_at"]) - padding)
     range_end = float(job["last_seen_at"]) + padding
+    required_start = float(job["started_at"])
+    required_end = float(job["last_seen_at"])
     duration = max(0.0, float(job["duration_seconds"]))
     warnings: list[str] = []
     if duration < HIGHRES_MAX_JOB_SECONDS:
-        highres = _highres_curve(cache, job=job, range_start=range_start, range_end=range_end)
+        highres = _highres_curve(
+            cache,
+            job=job,
+            point_start=range_start,
+            point_end=range_end,
+            required_start=required_start,
+            required_end=required_end,
+        )
         if highres is not None:
             return {
                 **highres,
@@ -457,8 +466,10 @@ def _highres_curve(
     cache: HighresGpuCache,
     *,
     job: dict[str, Any],
-    range_start: float,
-    range_end: float,
+    point_start: float,
+    point_end: float,
+    required_start: float,
+    required_end: float,
 ) -> dict[str, Any] | None:
     series: list[dict[str, Any]] = []
     coverage_start: float | None = None
@@ -468,14 +479,14 @@ def _highres_curve(
         ring, points = cache.series_for(
             node_id=gpu["node_id"],
             gpu_uuid=gpu["gpu_uuid"],
-            since=range_start,
-            until=range_end,
+            since=point_start,
+            until=point_end,
         )
         if ring is None or not points:
             return None
         oldest = ring.oldest_at
         newest = ring.newest_at
-        if oldest is None or newest is None or oldest > range_start or newest < range_end:
+        if oldest is None or newest is None or oldest > required_start or newest < required_end:
             return None
         interval = ring.observed_interval_seconds()
         if interval is not None:

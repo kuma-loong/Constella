@@ -8,6 +8,7 @@ import {
   Gauge,
   LineChart,
   ListTree,
+  Maximize2,
   Monitor,
   Moon,
   Pause,
@@ -19,6 +20,7 @@ import {
   Table2,
   Thermometer,
   Users,
+  X,
   Zap,
   createIcons,
 } from "lucide";
@@ -39,6 +41,7 @@ const iconSet = {
   Gauge,
   LineChart,
   ListTree,
+  Maximize2,
   Monitor,
   Moon,
   Pause,
@@ -50,6 +53,7 @@ const iconSet = {
   Table2,
   Thermometer,
   Users,
+  X,
   Zap,
 };
 
@@ -331,8 +335,14 @@ export default function App() {
     }
   }
 
+  function handleAppKeyDown(event: JSX.TargetedKeyboardEvent<HTMLDivElement>) {
+    if (analyticsRef.current?.handleKeyDown(event as unknown as KeyboardEvent)) {
+      return;
+    }
+  }
+
   return (
-    <div onClick={handleAppClick}>
+    <div onClick={handleAppClick} onKeyDown={handleAppKeyDown}>
       <Header
         snapshot={snapshot}
         route={route}
