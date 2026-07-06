@@ -64,3 +64,13 @@ fn publish_snapshot_sets_runtime_refresh_interval_and_history() {
     assert_eq!(second.history["0"]["gpu"], vec![50.0, 80.0]);
     assert_eq!(collector.snapshot().unwrap().seq, 2);
 }
+
+#[test]
+fn nvidia_smi_fallback_sampling_path_is_available() {
+    let mut collector = SnapshotCollector::new(1.0, 3.0, 120).unwrap();
+
+    let snapshot = collector.sample_once_with_nvidia_smi(false);
+
+    assert_eq!(snapshot.seq, 1);
+    assert!(matches!(snapshot.source.as_str(), "nvidia-smi" | "none"));
+}

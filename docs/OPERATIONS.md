@@ -160,7 +160,7 @@ target/release/constella probe --pretty
 COUNT=20 ./scripts/dev/bench_probe.sh
 ```
 
-正常情况下 `probe` 的 `source` 为 `nvidia-smi`。如果当前机器没有可用 NVIDIA 工具，probe 会返回错误快照；服务模式下，本机采样警告在 `logs/local-agent.log` 中。
+正常情况下 `probe` 的 `source` 为 `nvml`。如果 NVML 不可用但 `nvidia-smi` 可用，source 会回退为 `nvidia-smi`；如果当前机器没有可用 NVIDIA 工具，probe 会返回错误快照。服务模式下，本机采样警告在 `logs/local-agent.log` 中。
 
 ## 验证集群 API
 

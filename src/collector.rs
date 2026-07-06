@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, VecDeque};
 
-use crate::nvidia_smi;
 use crate::schema::{HistoryPayload, Snapshot};
 use crate::settings::{validate_refresh_interval, SettingsError, ALLOWED_REFRESH_INTERVALS};
+use crate::{nvidia_smi, nvml};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SnapshotCollector {
     pub refresh_interval: f64,
     process_interval: f64,
@@ -12,6 +12,7 @@ pub struct SnapshotCollector {
     seq: i64,
     snapshot: Option<Snapshot>,
     history: BTreeMap<String, BTreeMap<String, VecDeque<f64>>>,
+    nvml: Option<nvml::NvmlSampler>,
 }
 
 impl SnapshotCollector {
@@ -27,6 +28,7 @@ impl SnapshotCollector {
             seq: 0,
             snapshot: None,
             history: BTreeMap::new(),
+            nvml: nvml::NvmlSampler::new().ok(),
         })
     }
 
@@ -58,6 +60,24 @@ impl SnapshotCollector {
     }
 
     pub fn sample_once(&mut self, collect_processes: bool) -> Snapshot {
+        let snapshot = match self
+            .nvml
+            .as_ref()
+            .map(|sampler| sampler.sample(collect_processes))
+        {
+            Some(Ok(snapshot)) => snapshot,
+            Some(Err(error)) => nvidia_smi::sample(collect_processes).unwrap_or_else(|fallback| {
+                nvidia_smi::error_snapshot(format!("{error}; fallback failed: {fallback}"), "nvml")
+            }),
+            None => match nvidia_smi::sample(collect_processes) {
+                Ok(snapshot) => snapshot,
+                Err(error) => nvidia_smi::error_snapshot(error.to_string(), "none"),
+            },
+        };
+        self.publish(snapshot)
+    }
+
+    pub fn sample_once_with_nvidia_smi(&mut self, collect_processes: bool) -> Snapshot {
         let snapshot = match nvidia_smi::sample(collect_processes) {
             Ok(snapshot) => snapshot,
             Err(error) => nvidia_smi::error_snapshot(error.to_string(), "none"),

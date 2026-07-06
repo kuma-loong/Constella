@@ -15,21 +15,21 @@
 <div align="center" id="constella-badges">
 
 [![Rust](https://img.shields.io/badge/rust-1.80%2B-B7410E?logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![NVIDIA SMI](https://img.shields.io/badge/NVIDIA-nvidia--smi-76B900?logo=nvidia&logoColor=white)](https://docs.nvidia.com/deploy/nvidia-smi/)
+[![NVIDIA NVML](https://img.shields.io/badge/NVIDIA-NVML-76B900?logo=nvidia&logoColor=white)](https://docs.nvidia.com/deploy/nvml-api/)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/kuma-loong/Constella)
 
 </div>
 
 <p align="center">English | <a href="README_zh.md">简体中文</a></p>
 
-Lightweight realtime NVIDIA GPU monitoring for one server or a small GPU cluster. Every GPU node, including the manager host when local monitoring is enabled, runs the same Rust agent path: `nvidia-smi` plus `/proc` process enrichment, WebSocket sample ingest into the manager.
+Lightweight realtime NVIDIA GPU monitoring for one server or a small GPU cluster. Every GPU node, including the manager host when local monitoring is enabled, runs the same Rust agent path: native NVML sampling, `nvidia-smi` fallback, `/proc` process enrichment, and WebSocket sample ingest into the manager.
 
 ## Features
 
 - Realtime NVIDIA GPU monitoring for a single server or small cluster, with a modular architecture and optional components.
 - Low-overhead sampling: one persistent sampler per GPU node, current-point agent payloads, manager-side realtime history, and no per-browser GPU polling.
 - Rich GPU and process telemetry: utilization, memory, power, temperature, clocks, P-state, ECC, MIG, process memory, runtime, users, PIDs, and command fingerprints.
-- Resilient agent sampling path: `nvidia-smi` GPU/process sampling, `/proc` command enrichment, selectable refresh rates, and lower-cadence process sampling to reduce jitter.
+- High-performance agent sampling path: one persistent NVML handle per agent, `nvidia-smi` fallback, `/proc` command enrichment, selectable refresh rates, and lower-cadence process sampling to reduce jitter.
 - User-level deployment with no sudo or system service required; optional SQLite history is available when persisted metrics are needed.
 - Optional analytics dashboards for weighted GPU hours, job rankings, low-utilization reservations, off-hour activity, per-node trends, and range-aware heatmaps.
 - Standard APIs for custom frontends, dashboards, and automation.

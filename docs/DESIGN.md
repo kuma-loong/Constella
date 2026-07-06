@@ -8,8 +8,8 @@
 
 ```mermaid
 flowchart LR
-  L["Local GPU agent<br/>nvidia-smi + /proc"] -->|"WS /api/agents/ws"| M["Rust manager<br/>Axum + ingest"]
-  R["Remote GPU agent<br/>nvidia-smi + /proc"] -->|"WS /api/agents/ws"| M
+  L["Local GPU agent<br/>NVML + /proc"] -->|"WS /api/agents/ws"| M["Rust manager<br/>Axum + ingest"]
+  R["Remote GPU agent<br/>NVML + /proc"] -->|"WS /api/agents/ws"| M
   M --> A["History accumulator<br/>120-point realtime cache"]
   A --> S["Cluster state<br/>latest by node"]
   S --> G["Axum HTTP<br/>/api/cluster/snapshot"]
@@ -25,18 +25,20 @@ manager 在 ingest 当前采样点后维护每张 GPU 的 120 点实时短历史
 ## 数据路径
 
 1. 每个 GPU 节点 agent 启动后按 manager 下发的刷新率执行 Rust collector。
-2. collector 使用 `nvidia-smi --query-gpu=... --format=csv,noheader,nounits` 读取 GPU 名称、UUID、显存、利用率、温度、功耗、时钟、P-state、Compute Mode、ECC 和 MIG；刷新率可在 Web 端切换为 0.5 秒、1 秒、2 秒或 5 秒。
+2. collector 默认使用启动时初始化的 NVML handle 读取 GPU 名称、UUID、显存、利用率、温度、功耗、时钟、P-state、Compute Mode、ECC 和 MIG；刷新率可在 Web 端切换为 0.5 秒、1 秒、2 秒或 5 秒。
 3. 进程枚举默认每 3 秒执行一次并缓存，实际间隔不低于当前核心刷新率，降低多用户进程查询带来的抖动。
-4. 进程详情通过 `nvidia-smi` 进程查询和 `/proc/<pid>` 补充父进程、命令行、用户和任务名推断。
-5. agent 内部 collector 给快照补充序号和当前刷新间隔；WebSocket sample 只携带当前采样点，不携带短历史数组。
-6. agent 通过 `WS /api/agents/ws` 发送 `hello`、`sample` 和 `heartbeat`。
-7. manager 按 `node_id` 维护 latest state，丢弃同节点旧 `seq`，用 `HistoryAccumulator` 从当前点生成 120 点短历史，并按本地接收时间标记 stale/offline。
-8. manager 把接受的 `NodeSnapshot` 提交给可选 SQLite sink；本机 agent 与远端 agent 写库路径完全一致。
-9. WebSocket 客户端收到 `ClusterSnapshot` 后刷新前端路由：`/overview` 只显示集群 KPI 和按节点拆分的 fabric 卡片；`/nodes/<node_id>` 只显示对应节点的 GPU 卡片、任务表和历史曲线。
+4. 进程详情通过 NVML running process list 和 `/proc/<pid>` 补充父进程、命令行、用户和任务名推断。
+5. 如果 NVML 初始化或单次采样失败，collector 回退到 `nvidia-smi --query-gpu=... --format=csv,noheader,nounits`，保持快照契约不变。
+6. agent 内部 collector 给快照补充序号和当前刷新间隔；WebSocket sample 只携带当前采样点，不携带短历史数组。
+7. agent 通过 `WS /api/agents/ws` 发送 `hello`、`sample` 和 `heartbeat`。
+8. manager 按 `node_id` 维护 latest state，丢弃同节点旧 `seq`，用 `HistoryAccumulator` 从当前点生成 120 点短历史，并按本地接收时间标记 stale/offline。
+9. manager 把接受的 `NodeSnapshot` 提交给可选 SQLite sink；本机 agent 与远端 agent 写库路径完全一致。
+10. WebSocket 客户端收到 `ClusterSnapshot` 后刷新前端路由：`/overview` 只显示集群 KPI 和按节点拆分的 fabric 卡片；`/nodes/<node_id>` 只显示对应节点的 GPU 卡片、任务表和历史曲线。
 
 ## 低开销策略
 
-- 不使用 `nvidia-smi -l` 常驻子进程，每次采样使用短生命周期命令，失败时生成错误快照。
+- 正常路径不 fork 外部进程；每个 GPU 节点 agent 初始化一次 NVML，并复用同一个 handle。
+- `nvidia-smi` 只作为 NVML 不可用或单次 NVML 采样失败时的 fallback。
 - 每个 GPU 节点只有一个 Rust collector 串行采样。
 - 刷新率是 manager 维护并广播给 agent 的运行时设置，浏览器切换不会创建额外 collector。
 - 进程列表降频采样，避免 `/proc` 和驱动进程查询影响核心指标刷新。
@@ -45,11 +47,11 @@ manager 在 ingest 当前采样点后维护每张 GPU 的 120 点实时短历史
 
 ## 普通用户权限
 
-manager 侧使用当前用户目录、`cargo`、`npm` 和 `nohup`。本机 agent 可通过 `LOCAL_AGENT=1 scripts/service/start.sh` 启动，也使用普通用户后台进程。远端 GPU 节点 agent 不要求安装 `uv` 或 Python runtime；manager 本地构建 Rust release binary 后通过 SSH 同步，远端只需要 `nvidia-smi` 和普通用户权限。不写 `/etc`，不调用 sudo。默认监听 `127.0.0.1`，通过 SSH `-L` 端口转发访问。
+manager 侧使用当前用户目录、`cargo`、`npm` 和 `nohup`。本机 agent 可通过 `LOCAL_AGENT=1 scripts/service/start.sh` 启动，也使用普通用户后台进程。远端 GPU 节点 agent 不要求安装 `uv` 或 Python runtime；manager 本地构建 Rust release binary 后通过 SSH 同步，远端只需要 NVIDIA driver/NVML、`nvidia-smi` fallback 和普通用户权限。不写 `/etc`，不调用 sudo。默认监听 `127.0.0.1`，通过 SSH `-L` 端口转发访问。
 
 ## 硬件自适应
 
-项目不假设固定 GPU 数量或型号。GPU 数量、型号、显存、功耗上限、时钟、ECC、MIG 和进程信息都来自 `nvidia-smi --query-gpu` 的 CSV 输出和 `/proc` 补充信息。前端根据集群快照中的节点和 GPU 列表动态生成总览、节点矩阵、卡片和任务表。
+项目不假设固定 GPU 数量或型号。GPU 数量、型号、显存、功耗上限、时钟、ECC、MIG 和进程信息都来自 NVML，必要时回退到 `nvidia-smi --query-gpu` 的 CSV 输出和 `/proc` 补充信息。前端根据集群快照中的节点和 GPU 列表动态生成总览、节点矩阵、卡片和任务表。
 
 ## 阶段二数据契约
 
@@ -85,5 +87,6 @@ Rust manager 暴露 `GET /api/analytics/overview` 和 `GET /api/analytics/node/{
 
 ## 参考资料
 
+- NVIDIA NVML API Reference Guide: https://docs.nvidia.com/deploy/nvml-api/index.html
 - NVIDIA System Management Interface 文档: https://docs.nvidia.com/deploy/nvidia-smi/index.html
 - Grafana dashboard gallery: https://grafana.com/grafana/dashboards/

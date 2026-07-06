@@ -64,6 +64,7 @@ This branch replaces the Python backend with a Rust implementation while keeping
   - refresh/process interval defaults,
   - node host/user/port entries.
 - Added agent sampling foundation:
+  - native NVML sampler with one persistent NVML handle per collector,
   - `nvidia-smi` GPU CSV parsing,
   - `nvidia-smi` process CSV parsing,
   - `/proc/<pid>/stat` parent PID parsing,
@@ -93,9 +94,8 @@ This branch replaces the Python backend with a Rust implementation while keeping
 
 - Rust manager, local agent, remote cluster control, SQLite maintenance, analytics,
   high-resolution job curves, scripts, and public README docs are implemented in this branch.
-- The Rust release path uses `nvidia-smi` plus `/proc` process enrichment as the supported
-  sampler. Native NVML can be added later as an optimization without changing the manager/agent
-  protocol.
+- The Rust release path uses native NVML plus `/proc` process enrichment as the supported
+  high-performance sampler, with `nvidia-smi` fallback when NVML is unavailable.
 - Verification targets:
   - `cargo fmt --check`
   - `cargo test`
@@ -103,3 +103,5 @@ This branch replaces the Python backend with a Rust implementation while keeping
   - `cargo build --release`
   - `npm run build`
   - non-8765 manager + agent smoke test on `127.0.0.1:18765` with a temporary SQLite DB
+- Current NVML hot-path benchmark on an 8x H100 host:
+  `COUNT=20 scripts/dev/bench_probe.sh` -> source `nvml`, avg `56.88ms`, p95 `87.31ms`

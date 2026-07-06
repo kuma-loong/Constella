@@ -12,9 +12,9 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::cluster::SCHEMA_VERSION;
 use crate::collector::SnapshotCollector;
-use crate::nvidia_smi;
 use crate::schema::{local_hostname, local_node_id, GpuHardwareInfo, NodeHardware, Snapshot};
 use crate::settings::{validate_refresh_interval, SettingsError};
+use crate::{nvidia_smi, nvml};
 
 const RECONNECT_DELAYS: [f64; 5] = [1.0, 2.0, 5.0, 15.0, 30.0];
 
@@ -271,7 +271,9 @@ pub fn agent_hello(config: &AgentConfig, hardware: Option<NodeHardware>) -> Valu
 }
 
 pub fn sample_hardware_inventory() -> Option<NodeHardware> {
-    nvidia_smi::sample(false)
+    nvml::NvmlSampler::new()
+        .and_then(|sampler| sampler.sample(false))
+        .or_else(|_| nvidia_smi::sample(false))
         .ok()
         .map(|snapshot| hardware_from_snapshot(&snapshot))
 }

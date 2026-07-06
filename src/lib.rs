@@ -8,6 +8,7 @@ pub mod collector;
 pub mod db;
 pub mod highres;
 pub mod nvidia_smi;
+pub mod nvml;
 pub mod procfs;
 pub mod schema;
 pub mod settings;

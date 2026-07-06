@@ -86,6 +86,10 @@ struct AgentArgs {
 struct ProbeArgs {
     #[arg(long)]
     pretty: bool,
+    #[arg(long, default_value_t = 1)]
+    count: usize,
+    #[arg(long)]
+    no_processes: bool,
     #[arg(long, env = "CONSTELLA_REFRESH_SECONDS")]
     refresh: Option<f64>,
     #[arg(long, env = "CONSTELLA_PROCESS_SECONDS")]
@@ -206,7 +210,32 @@ fn probe(args: ProbeArgs) -> anyhow::Result<()> {
         settings.process_interval(),
         constella::cluster::HISTORY_SIZE,
     )?;
-    let snapshot = collector.sample_once(true);
+    let count = args.count.max(1);
+    if count > 1 {
+        let mut elapsed_ms = Vec::with_capacity(count);
+        let mut last = None;
+        for _ in 0..count {
+            let started = std::time::Instant::now();
+            last = Some(collector.sample_once(!args.no_processes));
+            elapsed_ms.push(started.elapsed().as_secs_f64() * 1000.0);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        elapsed_ms.sort_by(f64::total_cmp);
+        let avg = elapsed_ms.iter().sum::<f64>() / elapsed_ms.len() as f64;
+        let p95_index = ((elapsed_ms.len() as f64 * 0.95).ceil() as usize)
+            .saturating_sub(1)
+            .min(elapsed_ms.len() - 1);
+        let snapshot = last.expect("count is non-zero");
+        println!("samples={count}");
+        println!(
+            "source={} gpu_count={}",
+            snapshot.source,
+            snapshot.gpus.len()
+        );
+        println!("avg_ms={:.2} p95_ms={:.2}", avg, elapsed_ms[p95_index]);
+        return Ok(());
+    }
+    let snapshot = collector.sample_once(!args.no_processes);
     if args.pretty {
         println!("{}", serde_json::to_string_pretty(&snapshot)?);
     } else {
