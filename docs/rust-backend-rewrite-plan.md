@@ -52,6 +52,12 @@ This branch replaces the Python backend with a Rust implementation while keeping
   - high-res memory curve API,
   - adaptive rollup fallback for long jobs,
   - lightweight `gpu_sample` stream publishing.
+- Added analytics APIs:
+  - overview user/job GPU-hour aggregation,
+  - GPU model weighting,
+  - long low-utilization anomaly detection,
+  - node rollup series,
+  - node heatmap buckets.
 - Current Rust verification: `cargo fmt --check` and `cargo test`.
 
 ## Remaining Work
@@ -66,9 +72,8 @@ This branch replaces the Python backend with a Rust implementation while keeping
    - Add sidecar-compatible mode if the standalone highres sidecar remains required.
 
 3. Analytics
-   - Port overview analytics.
-   - Port node series and heatmap analytics.
-   - Preserve range handling and Asia/Shanghai timezone semantics.
+   - Complete off-hours/night/weekend timezone segmentation.
+   - Add broader range edge-case coverage.
 
 4. Cluster control and YAML nodes
    - Port `nodes.yaml` loading.

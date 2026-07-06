@@ -15,6 +15,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::broadcast;
 
+use crate::analytics;
 use crate::cluster::{parse_agent_hello, ClusterState};
 use crate::db::{DbError, SQLiteStore};
 use crate::highres::{self, HighresGpuCache, JobFilter};
@@ -75,8 +76,8 @@ pub fn app(state: AppState) -> Router {
         .route("/api/history/gpu", get(gpu_history))
         .route("/api/history/tasks", get(task_history))
         .route("/api/users", get(users))
-        .route("/api/analytics/overview", get(disabled_object))
-        .route("/api/analytics/node/:node_id", get(disabled_object))
+        .route("/api/analytics/overview", get(analytics_overview))
+        .route("/api/analytics/node/:node_id", get(analytics_node))
         .route("/api/highres/status", get(highres_status))
         .route("/api/highres/jobs", get(highres_jobs))
         .route("/api/highres/jobs/:job_key/gpu", get(highres_job_gpu))
@@ -147,6 +148,45 @@ async fn disabled_items() -> Json<Value> {
 
 async fn disabled_object() -> Json<Value> {
     Json(json!({"enabled": false}))
+}
+
+#[derive(Debug, Deserialize)]
+struct AnalyticsRangeQuery {
+    range: Option<String>,
+}
+
+async fn analytics_overview(
+    State(state): State<AppState>,
+    Query(query): Query<AnalyticsRangeQuery>,
+) -> Result<Json<Value>, Response> {
+    let Some(db_path) = state.db_path else {
+        return Ok(disabled_object().await);
+    };
+    let store = open_store(&db_path).map_err(internal_error)?;
+    Ok(Json(
+        analytics::overview_analytics(&store, query.range.as_deref().unwrap_or("7d"), None)
+            .map_err(internal_error)?,
+    ))
+}
+
+async fn analytics_node(
+    State(state): State<AppState>,
+    AxumPath(node_id): AxumPath<String>,
+    Query(query): Query<AnalyticsRangeQuery>,
+) -> Result<Json<Value>, Response> {
+    let Some(db_path) = state.db_path else {
+        return Ok(disabled_object().await);
+    };
+    let store = open_store(&db_path).map_err(internal_error)?;
+    Ok(Json(
+        analytics::node_analytics(
+            &store,
+            &node_id,
+            query.range.as_deref().unwrap_or("24h"),
+            None,
+        )
+        .map_err(internal_error)?,
+    ))
 }
 
 async fn highres_status(State(state): State<AppState>) -> Json<Value> {
