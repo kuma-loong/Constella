@@ -40,7 +40,7 @@ Run the bundled maintenance script:
 Or run the same command directly:
 
 ```bash
-uv run constella db maintain --path run/constella.db
+target/release/constella db maintain --path run/constella.db
 ```
 
 The maintenance script accepts retention settings:
@@ -55,18 +55,14 @@ SESSION_STALE_SECONDS=300 \
 Individual commands are also available:
 
 ```bash
-uv run constella db rollup --path run/constella.db --from-bucket-seconds 20 --to-bucket-seconds 120
-uv run constella db rollup --path run/constella.db --from-bucket-seconds 120 --to-bucket-seconds 3600
-uv run constella db prune-rollups --path run/constella.db
-uv run constella db prune-raw --path run/constella.db
-uv run constella db close-sessions --path run/constella.db
+target/release/constella db rollup --path run/constella.db --from-bucket-seconds 20 --to-bucket-seconds 120
+target/release/constella db rollup --path run/constella.db --from-bucket-seconds 120 --to-bucket-seconds 3600
+target/release/constella db prune-rollups --path run/constella.db
+target/release/constella db prune-raw --path run/constella.db
+target/release/constella db close-sessions --path run/constella.db
 ```
 
-For an old database that already contains `gpu_metric_samples`, run a one-time migration before pruning or archiving the old raw rows:
-
-```bash
-uv run constella db migrate-samples --path run/constella.db --bucket-seconds 20
-```
+Rust-generated databases write rollups directly. Legacy Python databases that still contain old `gpu_metric_samples` should be archived or migrated before switching production traffic.
 
 ## Runtime Behavior
 
@@ -106,7 +102,7 @@ Constella exposes a unified job curve view at `/jobs` when SQLite history is ena
 
 Recent short jobs can use an in-memory high-resolution GPU cache. The cache is a fixed-capacity per-GPU ring buffer populated only after an agent sample is accepted by the manager. It does not write raw 1s samples to SQLite. The default retention is 2 hours and the default capacity is sized for 0.5s samples.
 
-The preferred deployment is a separate high-resolution sidecar process. The manager publishes a lightweight local WebSocket stream at `/api/highres/stream`; `constella highres-sidecar` subscribes to that stream, owns the high-resolution memory cache, and exposes `/api/highres/*` APIs. The manager also keeps same-process `/api/highres/*` endpoints for simple deployments and tests.
+The Rust manager owns the high-resolution memory cache in-process and exposes `/api/highres/*` directly. It also publishes a lightweight local WebSocket stream at `/api/highres/stream` for future external consumers.
 
 Curve source selection:
 

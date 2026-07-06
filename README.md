@@ -14,22 +14,22 @@
 
 <div align="center" id="constella-badges">
 
-[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![NVIDIA NVML](https://img.shields.io/badge/NVIDIA-NVML-76B900?logo=nvidia&logoColor=white)](https://docs.nvidia.com/deploy/nvml-api/)
+[![Rust](https://img.shields.io/badge/rust-1.80%2B-B7410E?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![NVIDIA SMI](https://img.shields.io/badge/NVIDIA-nvidia--smi-76B900?logo=nvidia&logoColor=white)](https://docs.nvidia.com/deploy/nvidia-smi/)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/kuma-loong/Constella)
 
 </div>
 
 <p align="center">English | <a href="README_zh.md">简体中文</a></p>
 
-Lightweight realtime NVIDIA GPU monitoring for one server or a small GPU cluster. Every GPU node, including the manager host when local monitoring is enabled, runs the same agent path: NVML first, `nvidia-smi` fallback, WebSocket sample ingest into the manager.
+Lightweight realtime NVIDIA GPU monitoring for one server or a small GPU cluster. Every GPU node, including the manager host when local monitoring is enabled, runs the same Rust agent path: `nvidia-smi` plus `/proc` process enrichment, WebSocket sample ingest into the manager.
 
 ## Features
 
 - Realtime NVIDIA GPU monitoring for a single server or small cluster, with a modular architecture and optional components.
 - Low-overhead sampling: one persistent sampler per GPU node, current-point agent payloads, manager-side realtime history, and no per-browser GPU polling.
 - Rich GPU and process telemetry: utilization, memory, power, temperature, clocks, P-state, ECC, MIG, process memory, runtime, users, PIDs, and command fingerprints.
-- Resilient agent sampling path: NVML first, `nvidia-smi` fallback, selectable refresh rates, and lower-cadence process sampling to reduce jitter.
+- Resilient agent sampling path: `nvidia-smi` GPU/process sampling, `/proc` command enrichment, selectable refresh rates, and lower-cadence process sampling to reduce jitter.
 - User-level deployment with no sudo or system service required; optional SQLite history is available when persisted metrics are needed.
 - Optional analytics dashboards for weighted GPU hours, job rankings, low-utilization reservations, off-hour activity, per-node trends, and range-aware heatmaps.
 - Standard APIs for custom frontends, dashboards, and automation.
@@ -37,7 +37,7 @@ Lightweight realtime NVIDIA GPU monitoring for one server or a small GPU cluster
 ## Layout
 
 ```text
-src/constella/          Python backend, agent, cluster manager, NVML sampler, API/WebSocket
+src/                    Rust backend, agent, cluster manager, sampler, API/WebSocket
 frontend/               Vite + TypeScript frontend
 scripts/                categorized service, cluster, tunnel, maintenance, and dev scripts
 docs/                   design and operations notes
@@ -52,7 +52,7 @@ cd Constella
 ./scripts/service/start.sh
 ```
 
-By default this starts both the manager and a local GPU agent. The manager listens on `127.0.0.1:8765`; the local agent connects back to `ws://127.0.0.1:8765/api/agents/ws`. Use SSH forwarding from your local machine:
+By default this starts the manager only. The manager listens on `127.0.0.1:8765`. Use SSH forwarding from your local machine:
 
 ```bash
 ssh -N -L 8765:127.0.0.1:8765 <user>@<server>
@@ -64,10 +64,10 @@ Then open:
 http://127.0.0.1:8765/overview
 ```
 
-Set `LOCAL_AGENT=0` when the host should run only the manager:
+Set `LOCAL_AGENT=1` when the manager host should also run a local GPU agent:
 
 ```bash
-LOCAL_AGENT=0 ./scripts/service/start.sh
+LOCAL_AGENT=1 ./scripts/service/start.sh
 ```
 
 ## Cluster Mode
@@ -100,7 +100,7 @@ Start, inspect, and stop remote agents:
 
 `constella cluster start` uses SSH only for setup/control. The remote agent token is written through stdin into `~/.constella/run/agent.env` with mode `600`; it is not placed on the remote command line.
 
-Remote GPU nodes do not need `uv`. The manager builds a minimal agent runtime bundle locally and syncs only the agent-side Constella modules plus `websockets`; the remote start script runs it with `python3 -m constella.agent_main`. Restart all agents after upgrading the manager so every node uses the current-point sample protocol.
+Remote GPU nodes do not need `uv` or a Python runtime. `constella cluster start` syncs the local `target/release/constella` binary to `~/.constella/agent/bin/constella`; the remote start script runs `constella agent`. Restart all agents after upgrading the manager so every node uses the current sample protocol.
 
 ## Optional Components
 
@@ -114,11 +114,11 @@ Remote GPU nodes do not need `uv`. The manager builds a minimal agent runtime bu
 ./scripts/service/stop.sh
 HOST=127.0.0.1 PORT=8765 REFRESH=1.0 PROCESS_REFRESH=3.0 ./scripts/service/start.sh
 LOCAL_AGENT=0 ./scripts/service/start.sh
-uv run constella probe --pretty
-uv run constella agent
-uv run constella cluster start --nodes nodes.yaml
-uv run constella cluster status --nodes nodes.yaml
-uv run constella cluster stop --nodes nodes.yaml
+target/release/constella probe --pretty
+target/release/constella agent --manager-url ws://127.0.0.1:8765/api/agents/ws --token-file run/agent-token
+target/release/constella cluster start --nodes nodes.yaml
+target/release/constella cluster status --nodes nodes.yaml
+target/release/constella cluster stop --nodes nodes.yaml
 COUNT=20 ./scripts/dev/bench_probe.sh
 ```
 
@@ -139,8 +139,6 @@ COUNT=20 ./scripts/dev/bench_probe.sh
 - `GET /api/highres/jobs`
 - `GET /api/highres/jobs/{job_key}`
 - `GET /api/highres/jobs/{job_key}/gpu`
-- `GET /api/docs`
-
 When SQLite is not enabled, history, analytics, and job curve search APIs return `enabled:false`; realtime cluster monitoring continues through `/api/cluster/snapshot` and `/ws/cluster`.
 
 Deprecated single-node endpoints are intentionally not compatibility layers: `GET /api/snapshot` returns `410 Gone`, and `WS /ws/gpu` closes immediately. Use the cluster API for local and remote nodes.
@@ -148,8 +146,8 @@ Deprecated single-node endpoints are intentionally not compatibility layers: `GE
 ## Development
 
 ```bash
-uv sync
-uv run pytest
+cargo test
+cargo build --release
 
 cd frontend
 npm install
@@ -163,7 +161,7 @@ cd frontend
 npm run dev
 ```
 
-For production, build `frontend/dist`; FastAPI serves the static frontend directly.
+For production, build `frontend/dist`; the Rust manager serves the static frontend directly.
 
 ## License
 

@@ -8,26 +8,26 @@
 
 ```mermaid
 flowchart LR
-  L["Local GPU agent<br/>NVML + nvidia-smi fallback"] -->|"WS /api/agents/ws"| M["Manager<br/>FastAPI + ingest"]
-  R["Remote GPU agent<br/>NVML + nvidia-smi fallback"] -->|"WS /api/agents/ws"| M
+  L["Local GPU agent<br/>nvidia-smi + /proc"] -->|"WS /api/agents/ws"| M["Rust manager<br/>Axum + ingest"]
+  R["Remote GPU agent<br/>nvidia-smi + /proc"] -->|"WS /api/agents/ws"| M
   M --> A["History accumulator<br/>120-point realtime cache"]
   A --> S["Cluster state<br/>latest by node"]
-  S --> G["FastAPI HTTP<br/>/api/cluster/snapshot"]
-  S --> H["FastAPI WebSocket<br/>/ws/cluster"]
+  S --> G["Axum HTTP<br/>/api/cluster/snapshot"]
+  S --> H["Axum WebSocket<br/>/ws/cluster"]
   H --> F["Vite TypeScript UI"]
   S -.optional bounded queue.-> DB["SQLite sink"]
 ```
 
-manager 不直接采样本机 GPU。启用本机监控时，服务脚本会额外启动一个 local agent；这个 agent 和远端 agent 使用同一条 WebSocket ingest、ClusterState、DB sink 和前端 API 路径。浏览器连接数增加时，不会增加 NVML 调用次数，只会复用 manager 中的最新 `ClusterSnapshot`。
+manager 不直接采样本机 GPU。启用本机监控时，服务脚本会额外启动一个 local agent；这个 agent 和远端 agent 使用同一条 WebSocket ingest、ClusterState、DB sink 和前端 API 路径。浏览器连接数增加时，不会增加 GPU 采样次数，只会复用 manager 中的最新 `ClusterSnapshot`。
 
 manager 在 ingest 当前采样点后维护每张 GPU 的 120 点实时短历史，再把每个节点的 latest `NodeSnapshot` 聚合成 `ClusterSnapshot` 推给前端。SSH 只用于安装、写配置、启动、停止和状态查询，不作为实时数据通道；agent 主动通过 WebSocket 回连 manager，不开放入站 HTTP 服务。
 
 ## 数据路径
 
-1. 每个 GPU 节点 agent 启动时初始化 `NVMLSampler`，加载 `libnvidia-ml.so`。
-2. 按全局刷新率读取 GPU 名称、UUID、显存、利用率、温度、功耗、时钟、P-state、Compute Mode、ECC 和 MIG；刷新率可在 Web 端切换为 0.5 秒、1 秒、2 秒或 5 秒。
+1. 每个 GPU 节点 agent 启动后按 manager 下发的刷新率执行 Rust collector。
+2. collector 使用 `nvidia-smi --query-gpu=... --format=csv,noheader,nounits` 读取 GPU 名称、UUID、显存、利用率、温度、功耗、时钟、P-state、Compute Mode、ECC 和 MIG；刷新率可在 Web 端切换为 0.5 秒、1 秒、2 秒或 5 秒。
 3. 进程枚举默认每 3 秒执行一次并缓存，实际间隔不低于当前核心刷新率，降低多用户进程查询带来的抖动。
-4. 如果 NVML 初始化或单次采样失败，关闭当前 NVML 句柄并执行 `nvidia-smi --query-gpu=... --format=csv,noheader,nounits`。
+4. 进程详情通过 `nvidia-smi` 进程查询和 `/proc/<pid>` 补充父进程、命令行、用户和任务名推断。
 5. agent 内部 collector 给快照补充序号和当前刷新间隔；WebSocket sample 只携带当前采样点，不携带短历史数组。
 6. agent 通过 `WS /api/agents/ws` 发送 `hello`、`sample` 和 `heartbeat`。
 7. manager 按 `node_id` 维护 latest state，丢弃同节点旧 `seq`，用 `HistoryAccumulator` 从当前点生成 120 点短历史，并按本地接收时间标记 stale/offline。
@@ -36,8 +36,8 @@ manager 在 ingest 当前采样点后维护每张 GPU 的 120 点实时短历史
 
 ## 低开销策略
 
-- 不使用 `nvidia-smi -l` 常驻子进程，正常路径不每秒 fork。
-- NVML 在 agent 进程内保持初始化状态，每个 GPU 节点只有一个 collector 串行采样。
+- 不使用 `nvidia-smi -l` 常驻子进程，每次采样使用短生命周期命令，失败时生成错误快照。
+- 每个 GPU 节点只有一个 Rust collector 串行采样。
 - 刷新率是 manager 维护并广播给 agent 的运行时设置，浏览器切换不会创建额外 collector。
 - 进程列表降频采样，避免 `/proc` 和驱动进程查询影响核心指标刷新。
 - 前端不依赖大型图表库，短曲线用 SVG polyline 绘制。
@@ -45,11 +45,11 @@ manager 在 ingest 当前采样点后维护每张 GPU 的 120 点实时短历史
 
 ## 普通用户权限
 
-manager 侧使用当前用户目录、`uv`、`npm` 和 `nohup`。本机 agent 由 `scripts/service/start.sh` 默认启动，也使用普通用户后台进程。远端 GPU 节点 agent 不要求安装 `uv`；manager 本地构建最小 agent runtime 后通过 SSH 同步，远端只需要 `python3 >= 3.10`、NVML/`nvidia-smi` 和普通用户权限。不写 `/etc`，不调用 sudo。默认监听 `127.0.0.1`，通过 SSH `-L` 端口转发访问。
+manager 侧使用当前用户目录、`cargo`、`npm` 和 `nohup`。本机 agent 可通过 `LOCAL_AGENT=1 scripts/service/start.sh` 启动，也使用普通用户后台进程。远端 GPU 节点 agent 不要求安装 `uv` 或 Python runtime；manager 本地构建 Rust release binary 后通过 SSH 同步，远端只需要 `nvidia-smi` 和普通用户权限。不写 `/etc`，不调用 sudo。默认监听 `127.0.0.1`，通过 SSH `-L` 端口转发访问。
 
 ## 硬件自适应
 
-项目不假设固定 GPU 数量或型号。GPU 数量、型号、显存、功耗上限、时钟、ECC、MIG 和进程信息都来自本机 NVML 采样结果；NVML 不可用时，再使用 `nvidia-smi --query-gpu` 的 CSV 输出兜底。前端根据集群快照中的节点和 GPU 列表动态生成总览、节点矩阵、卡片和任务表。
+项目不假设固定 GPU 数量或型号。GPU 数量、型号、显存、功耗上限、时钟、ECC、MIG 和进程信息都来自 `nvidia-smi --query-gpu` 的 CSV 输出和 `/proc` 补充信息。前端根据集群快照中的节点和 GPU 列表动态生成总览、节点矩阵、卡片和任务表。
 
 ## 阶段二数据契约
 
@@ -77,14 +77,13 @@ SQLite sink 默认关闭。启用后，实时链路仍然是 `agent sample -> ma
 optional SQLite DB -> analytics query layer -> HTTP API -> frontend dashboard widgets
 ```
 
-`src/constella/analytics.py` 负责用户卡时、加权卡时、启发式作业合并、异常占用检测、节点历史曲线和热力图聚合。异常占用检测固定读取最近 24 小时窗口，避免 Overview 长时间窗扩大扫描范围。Node 热力图按展示窗口二次聚合为 5 分钟、1 小时、6 小时或 1 天 bucket，前端用连续 band 展示。
+`src/analytics.rs` 负责用户卡时、加权卡时、启发式作业合并、异常占用检测、节点历史曲线和热力图聚合。异常占用检测固定读取最近 24 小时窗口，避免 Overview 长时间窗扩大扫描范围。Node 热力图按展示窗口二次聚合为 5 分钟、1 小时、6 小时或 1 天 bucket，前端用连续 band 展示。
 
-`app.py` 只暴露 `GET /api/analytics/overview` 和 `GET /api/analytics/node/{node_id}`。SQLite 未启用时，这两个 API 返回 `enabled:false`，前端只保留实时监控页面，不把数据库变成必需路径。
+Rust manager 暴露 `GET /api/analytics/overview` 和 `GET /api/analytics/node/{node_id}`。SQLite 未启用时，这两个 API 返回 `enabled:false`，前端只保留实时监控页面，不把数据库变成必需路径。
 
 分析前端仍使用原生 SVG/CSS。Node History 的 GPU 多选只是本地视觉状态：图例点击更新已有曲线和按钮 class，不重新请求分析 API，也不重建热力图 DOM。时间窗切换才重新读取节点分析数据。
 
 ## 参考资料
 
-- NVIDIA NVML API Reference Guide: https://docs.nvidia.com/deploy/nvml-api/index.html
 - NVIDIA System Management Interface 文档: https://docs.nvidia.com/deploy/nvidia-smi/index.html
 - Grafana dashboard gallery: https://grafana.com/grafana/dashboards/

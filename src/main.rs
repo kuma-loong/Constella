@@ -9,6 +9,7 @@ use constella::api::{app, AppState};
 use constella::cluster::ClusterState;
 use constella::cluster_config::{load_cluster_config, load_manager_hostname};
 use constella::cluster_control::{format_results, ClusterController};
+use constella::collector::SnapshotCollector;
 use constella::db::{SQLiteStore, RAW_SNAPSHOT_RETENTION_SECONDS};
 use constella::schema::local_node_id;
 use constella::settings::ManagerSettings;
@@ -25,6 +26,7 @@ struct Cli {
 enum Command {
     Serve(ServeArgs),
     Agent(AgentArgs),
+    Probe(ProbeArgs),
     Db(DbArgs),
     Cluster(ClusterArgs),
     Config(ConfigArgs),
@@ -78,6 +80,16 @@ struct AgentArgs {
     process_refresh: Option<f64>,
     #[arg(long, env = "CONSTELLA_AGENT_STATE_FILE")]
     state_file: Option<PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+struct ProbeArgs {
+    #[arg(long)]
+    pretty: bool,
+    #[arg(long, env = "CONSTELLA_REFRESH_SECONDS")]
+    refresh: Option<f64>,
+    #[arg(long, env = "CONSTELLA_PROCESS_SECONDS")]
+    process_refresh: Option<f64>,
 }
 
 #[derive(Debug, Parser)]
@@ -166,6 +178,7 @@ async fn main() -> anyhow::Result<()> {
     })) {
         Command::Serve(args) => serve(args).await,
         Command::Agent(args) => agent(args).await,
+        Command::Probe(args) => probe(args),
         Command::Db(args) => db(args),
         Command::Cluster(args) => cluster(args),
         Command::Config(args) => config(args),
@@ -183,6 +196,22 @@ async fn agent(args: AgentArgs) -> anyhow::Result<()> {
         args.state_file,
     )?;
     run_agent(config).await?;
+    Ok(())
+}
+
+fn probe(args: ProbeArgs) -> anyhow::Result<()> {
+    let settings = ManagerSettings::from_env(args.refresh, args.process_refresh)?;
+    let mut collector = SnapshotCollector::new(
+        settings.refresh_interval,
+        settings.process_interval(),
+        constella::cluster::HISTORY_SIZE,
+    )?;
+    let snapshot = collector.sample_once(true);
+    if args.pretty {
+        println!("{}", serde_json::to_string_pretty(&snapshot)?);
+    } else {
+        println!("{}", serde_json::to_string(&snapshot)?);
+    }
     Ok(())
 }
 

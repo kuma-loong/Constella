@@ -103,7 +103,7 @@ LOCAL_AGENT_NODE_ID=H100 ./scripts/service/start.sh
 普通用户部署限制：
 
 - 不使用 sudo，不写 `/etc`，不安装 system service。
-- GPU 节点不需要安装 `uv`；只要求 `python3 >= 3.10`。manager 会同步最小 agent runtime。
+- GPU 节点不需要安装 `uv` 或 Python runtime；manager 会同步 Rust release binary。
 - agent 默认写入 `~/.constella/run/agent.pid`、`~/.constella/logs/agent.log`、`~/.constella/run/agent-state.json`。
 - 节点重启后 agent 不保证自动恢复；重新执行 `./scripts/cluster/start.sh` 即可。
 - token 通过 stdin 写入远端 env 文件，不放在 SSH 命令行参数中。
@@ -134,22 +134,13 @@ curl -s http://127.0.0.1:8765/api/analytics/node/<node_id>
 http://127.0.0.1:8765/jobs
 ```
 
-如需使用独立高精度 sidecar，在启动服务时启用：
-
-```bash
-DB_PATH=run/constella.db HIGHRES_SIDECAR=1 ./scripts/service/start.sh
-```
-
-默认 sidecar 监听 `127.0.0.1:8766`，订阅 manager 的
-`ws://127.0.0.1:8765/api/highres/stream`。可用 `HIGHRES_HOST`、`HIGHRES_PORT`、
-`HIGHRES_MANAGER_STREAM_URL` 和 `HIGHRES_TOKEN_FILE` 覆盖。
+Rust manager 内置高精度缓存和 `/api/highres/*` 接口，不需要单独 sidecar 进程。
 
 相关状态与接口验证：
 
 ```bash
 curl -s http://127.0.0.1:8765/api/highres/status
 curl -s 'http://127.0.0.1:8765/api/highres/jobs?limit=20'
-curl -s http://127.0.0.1:8766/api/highres/status
 ```
 
 `/api/highres/status` 即使未启用 SQLite 也可查看内存 ring buffer 状态；作业搜索和曲线详情需要 `DB_PATH`，因为作业元数据来自 SQLite。
@@ -165,11 +156,11 @@ curl -s http://127.0.0.1:8766/api/highres/status
 ## 验证采样
 
 ```bash
-uv run constella probe --pretty
+target/release/constella probe --pretty
 COUNT=20 ./scripts/dev/bench_probe.sh
 ```
 
-正常情况下 `probe` 的 `source` 为 `nvml`。如果为 `nvidia-smi`，说明 NVML 路径失败但兜底仍可用。服务模式下，本机采样警告在 `logs/local-agent.log` 中。
+正常情况下 `probe` 的 `source` 为 `nvidia-smi`。如果当前机器没有可用 NVIDIA 工具，probe 会返回错误快照；服务模式下，本机采样警告在 `logs/local-agent.log` 中。
 
 ## 验证集群 API
 
