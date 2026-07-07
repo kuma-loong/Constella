@@ -18,6 +18,7 @@ from .db import RAW_SNAPSHOT_RETENTION_SECONDS, SQLiteStore
 from .highres_sidecar import HighresSidecarConfig
 from .nvml import sample_with_fallback
 from .paths import default_build_root, default_project_root
+from .service import ServiceConfig, format_service_results, start_service, status_service, stop_service
 
 PROJECT_ROOT = default_project_root()
 
@@ -81,6 +82,44 @@ def main(argv: list[str] | None = None) -> None:
 
     cluster_stop = cluster_subparsers.add_parser("stop", help="stop remote agents")
     cluster_stop.add_argument("--nodes", type=Path, default=Path("nodes.yaml"))
+
+    service = subparsers.add_parser("service", help="start, stop, and inspect a local service stack")
+    service_subparsers = service.add_subparsers(dest="service_command")
+
+    service_start = service_subparsers.add_parser("start", help="start manager and optional helpers")
+    add_service_common_args(service_start)
+    service_start.add_argument("--no-local-agent", action="store_true")
+    service_start.add_argument("--local-agent-node-id")
+    service_start.add_argument("--local-agent-manager-url")
+    service_start.add_argument("--manager-hostname")
+    service_start.add_argument("--agent-token-file", type=Path)
+    service_start.add_argument("--db-path", type=Path)
+    service_start.add_argument("--no-db", action="store_true")
+    service_start.add_argument("--db-queue-size", type=int, default=1024)
+    service_start.add_argument("--raw-snapshot-seconds", type=float, default=0.0)
+    service_start.add_argument("--frontend-dir", type=Path)
+    service_start.add_argument("--highres-sidecar", action="store_true")
+    service_start.add_argument("--highres-host", default="127.0.0.1")
+    service_start.add_argument("--highres-port", type=int, default=8766)
+    service_start.add_argument("--highres-token-file", type=Path)
+    service_start.add_argument("--highres-manager-stream-url")
+    service_start.add_argument("--highres-retention-seconds", type=float)
+    service_start.add_argument("--cluster-nodes", type=Path)
+    service_start.add_argument("--cluster-no-sync", action="store_true")
+    service_start.add_argument("--wait-timeout", type=float, default=10.0)
+
+    service_status = service_subparsers.add_parser("status", help="show service process status")
+    add_service_common_args(service_status, include_runtime=False)
+    service_status.add_argument("--cluster-nodes", type=Path)
+
+    service_stop = service_subparsers.add_parser("stop", help="stop service processes")
+    add_service_common_args(service_stop, include_runtime=False)
+    service_stop.add_argument("--cluster-nodes", type=Path)
+    service_stop.add_argument(
+        "--stop-cluster",
+        action="store_true",
+        help="also stop remote agents from --cluster-nodes",
+    )
 
     db = subparsers.add_parser("db", help="maintain the optional SQLite database")
     db_subparsers = db.add_subparsers(dest="db_command")
@@ -234,6 +273,27 @@ def main(argv: list[str] | None = None) -> None:
             sys.exit(1)
         return
 
+    if args.command == "service":
+        if not args.service_command:
+            service.print_help()
+            return
+        try:
+            config = service_config_from_args(args)
+            if args.service_command == "start":
+                results = start_service(config)
+            elif args.service_command == "status":
+                results = status_service(config, include_cluster=args.cluster_nodes is not None)
+            elif args.service_command == "stop":
+                results = stop_service(config, stop_cluster=args.stop_cluster)
+            else:
+                parser.error(f"unknown service command: {args.service_command}")
+        except (OSError, RuntimeError, ValueError) as exc:
+            parser.error(str(exc))
+        print(format_service_results(results))
+        if any(not result.ok for result in results):
+            sys.exit(1)
+        return
+
     if args.command == "db":
         if not args.db_command:
             db.print_help()
@@ -282,3 +342,56 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     parser.print_help()
+
+
+def add_service_common_args(parser: argparse.ArgumentParser, *, include_runtime: bool = True) -> None:
+    if include_runtime:
+        parser.add_argument("--host", default="127.0.0.1")
+        parser.add_argument("--port", type=int, default=8765)
+        parser.add_argument("--refresh", type=float, default=1.0)
+        parser.add_argument("--process-refresh", type=float, default=3.0)
+        parser.add_argument("--log-level", default="info")
+    else:
+        parser.add_argument("--host", default="127.0.0.1")
+        parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--run-dir", type=Path, default=Path("run"))
+    parser.add_argument("--log-dir", type=Path, default=Path("logs"))
+
+
+def service_config_from_args(args: argparse.Namespace) -> ServiceConfig:
+    db_path = getattr(args, "db_path", None)
+    if getattr(args, "service_command", None) == "start" and db_path is None:
+        db_path = args.run_dir / "constella.db"
+    if getattr(args, "no_db", False):
+        db_path = None
+    return ServiceConfig(
+        host=args.host,
+        port=args.port,
+        refresh=getattr(args, "refresh", 1.0),
+        process_refresh=getattr(args, "process_refresh", 3.0),
+        log_level=getattr(args, "log_level", "info"),
+        run_dir=args.run_dir,
+        log_dir=args.log_dir,
+        local_agent=not getattr(args, "no_local_agent", False),
+        local_agent_node_id=getattr(args, "local_agent_node_id", None),
+        local_agent_manager_url=getattr(args, "local_agent_manager_url", None),
+        manager_hostname=getattr(args, "manager_hostname", None),
+        agent_token_file=getattr(args, "agent_token_file", None),
+        db_path=db_path,
+        db_queue_size=getattr(args, "db_queue_size", 1024),
+        raw_snapshot_seconds=getattr(args, "raw_snapshot_seconds", 0.0),
+        frontend_dir=getattr(args, "frontend_dir", None),
+        highres_sidecar=getattr(args, "highres_sidecar", False),
+        highres_host=getattr(args, "highres_host", "127.0.0.1"),
+        highres_port=getattr(args, "highres_port", 8766),
+        highres_token_file=getattr(args, "highres_token_file", None),
+        highres_manager_stream_url=getattr(args, "highres_manager_stream_url", None),
+        highres_retention_seconds=getattr(args, "highres_retention_seconds", None),
+        cluster_nodes=getattr(args, "cluster_nodes", None),
+        cluster_no_sync=getattr(args, "cluster_no_sync", False),
+        wait_timeout=getattr(args, "wait_timeout", 10.0),
+    )
+
+
+if __name__ == "__main__":
+    main()

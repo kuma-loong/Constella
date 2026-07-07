@@ -17,38 +17,45 @@ The script builds the frontend into `src/constella/frontend/dist`, then creates 
 
 ## Installed CLI Usage
 
-Manager only:
+One-command service start:
 
 ```bash
-constella serve --host 127.0.0.1 --port 8765
+constella service start
 ```
 
-Manager with SQLite history and agent ingest:
+By default this starts the manager, creates `run/agent-token`, enables SQLite at `run/constella.db`, and starts a local GPU agent. Use explicit paths when running outside a project checkout:
 
 ```bash
-mkdir -p run
-umask 077
-printf '%s\n' 'replace-with-a-random-token' > run/agent-token
-constella serve \
-  --host 127.0.0.1 \
+constella service start \
+  --host 0.0.0.0 \
   --port 8765 \
-  --db-path run/constella.db \
-  --agent-token-file run/agent-token
+  --run-dir ~/.constella/run \
+  --log-dir ~/.constella/logs
 ```
 
-Local agent:
+Stop or inspect that local service stack:
 
 ```bash
-constella agent \
-  --node-id "$(hostname)" \
-  --manager-url ws://127.0.0.1:8765/api/agents/ws \
-  --token-file run/agent-token \
-  --state-file run/local-agent-state.json
+constella service status
+constella service stop
 ```
 
-High-resolution sidecar:
+Optional service flags:
 
 ```bash
+constella service start --no-local-agent
+constella service start --db-path /data/constella.db
+constella service start --no-db
+constella service start --highres-sidecar --highres-port 8766
+constella service start --cluster-nodes nodes.yaml
+constella service stop --cluster-nodes nodes.yaml --stop-cluster
+```
+
+The lower-level commands remain available for manual process managers, custom supervisors, and debugging:
+
+```bash
+constella serve --host 127.0.0.1 --port 8765 --db-path run/constella.db
+constella agent --manager-url ws://127.0.0.1:8765/api/agents/ws --token-file run/agent-token
 constella highres-sidecar \
   --host 127.0.0.1 \
   --port 8766 \
@@ -92,12 +99,9 @@ Never reuse a production port or database during packaging validation. If `8765`
 ```bash
 python3 -m venv /tmp/constella-wheel-test
 /tmp/constella-wheel-test/bin/pip install dist/constella-*.whl
-mkdir -p /tmp/constella-smoke
-umask 077
-printf '%s\n' 'local-smoke-token' > /tmp/constella-smoke/agent-token
-/tmp/constella-wheel-test/bin/constella serve \
+/tmp/constella-wheel-test/bin/constella service start \
   --host 127.0.0.1 \
   --port 18875 \
-  --db-path /tmp/constella-smoke/constella.db \
-  --agent-token-file /tmp/constella-smoke/agent-token
+  --run-dir /tmp/constella-smoke/run \
+  --log-dir /tmp/constella-smoke/logs
 ```
