@@ -467,6 +467,8 @@ export function GpuCard({
     .join(" / ");
   const smClock = gpu.clock_sm_mhz ? `SM ${gpu.clock_sm_mhz} MHz` : "SM clock n/a";
   const memClock = gpu.clock_mem_mhz ? `MEM ${gpu.clock_mem_mhz} MHz` : "MEM clock n/a";
+  const memoryPercent = percentOrRatio(gpu.memory_percent, gpu.memory_used_mb, gpu.memory_total_mb);
+  const powerPercent = percentOrRatio(gpu.power_percent, gpu.power_watts, gpu.power_limit_watts);
   return (
     <article class="gpu-card">
       <div class="gpu-head">
@@ -488,13 +490,13 @@ export function GpuCard({
         <Bar label="GPU" value={gpu.utilization_gpu} meta={fmtPct(gpu.utilization_gpu)} tone="green" />
         <Bar
           label="Memory"
-          value={gpu.memory_percent}
+          value={memoryPercent}
           meta={`${fmtGiB(gpu.memory_used_mb)} / ${fmtGiB(gpu.memory_total_mb)}`}
           tone="cyan"
         />
         <Bar
           label="Power"
-          value={gpu.power_percent}
+          value={powerPercent}
           meta={`${gpu.power_watts.toFixed(0)} / ${gpu.power_limit_watts.toFixed(0)} W`}
           tone="amber"
         />
@@ -523,6 +525,7 @@ export function GpuCard({
 }
 
 export function Bar({ label, value, meta, tone }: { label: string; value: number; meta: string; tone: string }) {
+  const percent = clamp(value);
   return (
     <div class={`bar-row tone-${tone}`}>
       <div class="bar-label">
@@ -530,10 +533,20 @@ export function Bar({ label, value, meta, tone }: { label: string; value: number
         <strong>{meta}</strong>
       </div>
       <div class="bar-track">
-        <span style={{ width: `${clamp(value)}%` }} />
+        <span style={{ transform: `scaleX(${percent / 100})` }} />
       </div>
     </div>
   );
+}
+
+function percentOrRatio(value: number | null | undefined, numerator: number, denominator: number) {
+  if (Number.isFinite(value)) {
+    return value as number;
+  }
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) {
+    return 0;
+  }
+  return (numerator / denominator) * 100;
 }
 
 export function Sparkline({ values, color, max }: { values: number[]; color: string; max: number }) {

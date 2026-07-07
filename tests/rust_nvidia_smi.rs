@@ -2,7 +2,7 @@ use constella::nvidia_smi::{
     parse_gpu_query_csv, parse_process_query_csv, parse_process_query_csv_with_details,
     ProcessDetails,
 };
-use constella::procfs::parent_pid_from_stat;
+use constella::procfs::{parent_pid_from_stat, process_start_time_seconds_at, uid_from_status};
 
 #[test]
 fn parse_gpu_query_csv_matches_python_contract() {
@@ -64,6 +64,7 @@ fn parse_process_query_csv_includes_parent_identity() {
     let processes = parse_process_query_csv_with_details("GPU-abc, 1234, python, 4096\n", |pid| {
         ProcessDetails {
             ppid: Some(4321),
+            user: Some("alice".to_string()),
             process_start_time: Some(if pid == 1234 { 90.0 } else { 0.0 }),
             parent_start_time: Some(80.0),
             cmdline: Some("python train.py".to_string()),
@@ -74,6 +75,7 @@ fn parse_process_query_csv_includes_parent_identity() {
     let process = &processes["GPU-abc"][0];
 
     assert_eq!(process.ppid, Some(4321));
+    assert_eq!(process.user.as_deref(), Some("alice"));
     assert_eq!(process.process_start_time, Some(90.0));
     assert_eq!(process.parent_start_time, Some(80.0));
     assert_eq!(process.task_name.as_deref(), Some("train.py"));
@@ -85,4 +87,29 @@ fn parent_pid_from_proc_stat_handles_spaces_in_comm() {
     let stat = "123 (python train.py) S 42 42 42 0 -1 4194304 0 0 0 0 0 0 0 0 20 0 1 0 1000\n";
 
     assert_eq!(parent_pid_from_stat(stat), Some(42));
+}
+
+#[test]
+fn procfs_uid_from_status_uses_real_uid_column() {
+    let status = "Name:\tpython\nUid:\t1001\t1001\t1001\t1001\nGid:\t1001\t1001\t1001\t1001\n";
+
+    assert_eq!(uid_from_status(status), Some(1001));
+}
+
+#[test]
+fn procfs_process_start_time_uses_boot_time_and_start_ticks() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("stat"), "cpu  1 2 3\nbtime 100\n").unwrap();
+    let process_dir = dir.path().join("1234");
+    std::fs::create_dir(&process_dir).unwrap();
+    std::fs::write(
+        process_dir.join("stat"),
+        "1234 (python train.py) S 42 0 0 0 0 0 0 0 0 0 0 0 0 0 20 0 1 0 250\n",
+    )
+    .unwrap();
+
+    let started_at = process_start_time_seconds_at(dir.path(), 1234).unwrap();
+
+    assert!(started_at > 100.0);
+    assert!(started_at < 110.0);
 }

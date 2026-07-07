@@ -270,6 +270,7 @@ dependencies = [
  "clap",
  "futures-util",
  "http-body-util",
+ "libc",
  "nvml-wrapper",
  "parking_lot",
  "rusqlite",

@@ -123,7 +123,7 @@ raw_snapshots 可选
 ```json
 {
   "refresh_interval": 1.0,
-  "process_interval": 3.0,
+  "process_interval": 5.0,
   "allowed_refresh_intervals": [0.5, 1.0, 2.0, 5.0]
 }
 ```

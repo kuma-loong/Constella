@@ -52,11 +52,30 @@ nodes:
 fn load_cluster_config_uses_defaults_and_rejects_empty_nodes() {
     let dir = tempfile::tempdir().unwrap();
     let nodes_file = dir.path().join("nodes.yaml");
+    let token_file = dir.path().join("agent-token");
+    std::fs::write(&token_file, "secret\n").unwrap();
     std::fs::write(
         &nodes_file,
         r#"
 manager_url: ws://manager:8765/api/agents/ws
-agent_token_file: run/agent-token
+agent_token_file: agent-token
+nodes:
+  - id: gpu-node-01
+    host: gpu-node-01
+"#,
+    )
+    .unwrap();
+
+    let config = load_cluster_config(&nodes_file).unwrap();
+
+    assert_eq!(config.refresh_interval, 1.0);
+    assert_eq!(config.process_interval, 5.0);
+
+    std::fs::write(
+        &nodes_file,
+        r#"
+manager_url: ws://manager:8765/api/agents/ws
+agent_token_file: agent-token
 nodes: []
 "#,
     )

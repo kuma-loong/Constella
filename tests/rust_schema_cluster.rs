@@ -91,6 +91,21 @@ fn snapshot_totals_match_python_contract() {
 }
 
 #[test]
+fn gpu_info_serializes_python_derived_percent_fields() {
+    let payload = serde_json::to_value(GpuInfo {
+        memory_total_mb: 100,
+        memory_used_mb: 25,
+        power_watts: 150.0,
+        power_limit_watts: 300.0,
+        ..Default::default()
+    })
+    .unwrap();
+
+    assert_eq!(payload["memory_percent"], 25.0);
+    assert_eq!(payload["power_percent"], 50.0);
+}
+
+#[test]
 fn snapshot_wraps_to_node_snapshot_with_stable_gpu_ids() {
     let mut history = std::collections::BTreeMap::new();
     history.insert(

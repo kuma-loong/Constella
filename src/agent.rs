@@ -99,7 +99,7 @@ impl AgentConfig {
                     .parse()
                     .ok()
             })
-            .unwrap_or(3.0);
+            .unwrap_or(5.0);
         let state_file = state_file
             .or_else(|| {
                 std::env::var("CONSTELLA_AGENT_STATE_FILE")

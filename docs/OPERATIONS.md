@@ -16,7 +16,7 @@ cd Constella
 可配置项：
 
 ```bash
-HOST=127.0.0.1 PORT=8765 REFRESH=1.0 PROCESS_REFRESH=3.0 ./scripts/service/start.sh
+HOST=127.0.0.1 PORT=8765 REFRESH=1.0 PROCESS_REFRESH=5.0 ./scripts/service/start.sh
 ```
 
 默认会启动两个后台进程：

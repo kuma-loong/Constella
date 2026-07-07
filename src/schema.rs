@@ -1,4 +1,5 @@
-use serde::{Deserialize, Serialize};
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -81,7 +82,7 @@ pub struct NodeHardware {
     pub gpus: Vec<GpuHardwareInfo>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct GpuInfo {
     pub index: i64,
     pub node_id: Option<String>,
@@ -169,6 +170,43 @@ impl GpuInfo {
         } else {
             round1((self.power_watts / self.power_limit_watts) * 100.0)
         }
+    }
+}
+
+impl Serialize for GpuInfo {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("GpuInfo", 27)?;
+        state.serialize_field("index", &self.index)?;
+        state.serialize_field("node_id", &self.node_id)?;
+        state.serialize_field("gpu_id", &self.gpu_id)?;
+        state.serialize_field("uuid", &self.uuid)?;
+        state.serialize_field("name", &self.name)?;
+        state.serialize_field("pci_bus_id", &self.pci_bus_id)?;
+        state.serialize_field("utilization_gpu", &self.utilization_gpu)?;
+        state.serialize_field("utilization_mem", &self.utilization_mem)?;
+        state.serialize_field("memory_total_mb", &self.memory_total_mb)?;
+        state.serialize_field("memory_used_mb", &self.memory_used_mb)?;
+        state.serialize_field("memory_free_mb", &self.memory_free_mb)?;
+        state.serialize_field("memory_percent", &self.memory_percent())?;
+        state.serialize_field("temperature_c", &self.temperature_c)?;
+        state.serialize_field("power_watts", &self.power_watts)?;
+        state.serialize_field("power_limit_watts", &self.power_limit_watts)?;
+        state.serialize_field("power_percent", &self.power_percent())?;
+        state.serialize_field("clock_sm_mhz", &self.clock_sm_mhz)?;
+        state.serialize_field("clock_mem_mhz", &self.clock_mem_mhz)?;
+        state.serialize_field("max_clock_sm_mhz", &self.max_clock_sm_mhz)?;
+        state.serialize_field("max_clock_mem_mhz", &self.max_clock_mem_mhz)?;
+        state.serialize_field("pstate", &self.pstate)?;
+        state.serialize_field("compute_mode", &self.compute_mode)?;
+        state.serialize_field("mig_mode", &self.mig_mode)?;
+        state.serialize_field("ecc_mode", &self.ecc_mode)?;
+        state.serialize_field("processes", &self.processes)?;
+        state.serialize_field("other_users", &self.other_users)?;
+        state.serialize_field("error", &self.error)?;
+        state.end()
     }
 }
 

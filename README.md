@@ -112,7 +112,7 @@ Remote GPU nodes do not need `uv` or a Python runtime. `constella cluster start`
 ```bash
 ./scripts/service/status.sh
 ./scripts/service/stop.sh
-HOST=127.0.0.1 PORT=8765 REFRESH=1.0 PROCESS_REFRESH=3.0 ./scripts/service/start.sh
+HOST=127.0.0.1 PORT=8765 REFRESH=1.0 PROCESS_REFRESH=5.0 ./scripts/service/start.sh
 LOCAL_AGENT=0 ./scripts/service/start.sh
 target/release/constella probe --pretty
 target/release/constella agent --manager-url ws://127.0.0.1:8765/api/agents/ws --token-file run/agent-token

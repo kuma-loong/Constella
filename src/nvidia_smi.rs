@@ -70,14 +70,19 @@ pub fn parse_gpu_query_csv(output: &str) -> (Vec<GpuInfo>, Option<String>) {
 }
 
 pub fn parse_process_query_csv(output: &str) -> BTreeMap<String, Vec<GpuProcess>> {
-    parse_process_query_csv_with_details(output, |pid| ProcessDetails {
-        ppid: procfs::process_parent_pid(pid),
-        cmdline: procfs::process_cmdline(pid).0,
-        exe: procfs::process_exe(pid),
-        runtime_seconds: None,
-        process_start_time: None,
-        parent_start_time: None,
-        detail_status: procfs::process_cmdline(pid).1,
+    parse_process_query_csv_with_details(output, |pid| {
+        let (cmdline, detail_status) = procfs::process_cmdline(pid);
+        let ppid = procfs::process_parent_pid(pid);
+        ProcessDetails {
+            ppid,
+            user: procfs::process_user(pid),
+            cmdline,
+            exe: procfs::process_exe(pid),
+            runtime_seconds: procfs::process_runtime_seconds(pid),
+            process_start_time: procfs::process_start_time_seconds(pid),
+            parent_start_time: ppid.and_then(procfs::process_start_time_seconds),
+            detail_status,
+        }
     })
 }
 
@@ -106,6 +111,7 @@ where
         if pid != 0 {
             let detail = details(pid);
             process.ppid = detail.ppid;
+            process.user = detail.user;
             process.cmdline = detail.cmdline;
             process.cmdline_hash = cmdline_fingerprint(process.cmdline.as_deref());
             process.exe = detail.exe;
@@ -129,6 +135,7 @@ where
 #[derive(Debug, Clone, Default)]
 pub struct ProcessDetails {
     pub ppid: Option<i64>,
+    pub user: Option<String>,
     pub cmdline: Option<String>,
     pub exe: Option<String>,
     pub runtime_seconds: Option<i64>,

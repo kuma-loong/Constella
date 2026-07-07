@@ -185,6 +185,9 @@ fn nvml_processes(
         let pid = process.pid as i64;
         let cmdline = procfs::process_cmdline(pid);
         let exe = procfs::process_exe(pid);
+        let ppid = procfs::process_parent_pid(pid);
+        let process_start_time = procfs::process_start_time_seconds(pid);
+        let parent_start_time = ppid.and_then(procfs::process_start_time_seconds);
         let name = nvml
             .sys_process_name(process.pid, 256)
             .ok()
@@ -194,8 +197,8 @@ fn nvml_processes(
             pid,
             name: name.clone(),
             gpu_memory_mb: used_gpu_memory_mib(process.used_gpu_memory),
-            ppid: procfs::process_parent_pid(pid),
-            user: None,
+            ppid,
+            user: procfs::process_user(pid),
             task_name: Some(infer_task_name(
                 cmdline.0.as_deref(),
                 exe.as_deref(),
@@ -207,6 +210,9 @@ fn nvml_processes(
             cmdline_hash: cmdline_fingerprint(cmdline.0.as_deref()),
             cmdline: cmdline.0,
             kind: "compute".to_string(),
+            runtime_seconds: procfs::process_runtime_seconds(pid),
+            process_start_time,
+            parent_start_time,
             detail_status: cmdline.1,
             ..Default::default()
         });

@@ -132,7 +132,7 @@ impl ClusterState {
                 sampled_at: seen_at,
                 received_at: Some(seen_at),
                 refresh_interval: 1.0,
-                process_interval: 3.0,
+                process_interval: 5.0,
                 status: "online".to_string(),
                 source: "none".to_string(),
                 gpus: vec![],
@@ -490,7 +490,7 @@ pub fn node_snapshot_from_agent_sample(
             .unwrap_or(1.0),
         process_interval: float_value(message.get("process_interval"))
             .or_else(|| float_value(payload.get("process_interval")))
-            .unwrap_or(3.0),
+            .unwrap_or(5.0),
         status: if payload.get("ok").and_then(Value::as_bool).unwrap_or(true) {
             "online".to_string()
         } else {

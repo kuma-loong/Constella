@@ -69,7 +69,7 @@ pub fn load_cluster_config(path: impl AsRef<Path>) -> Result<ClusterConfig, Clus
         manager_url: raw.manager_url,
         agent_token_file: agent_token_file.canonicalize().unwrap_or(agent_token_file),
         refresh_interval: raw.refresh_interval.unwrap_or(1.0),
-        process_interval: raw.process_interval.unwrap_or(3.0),
+        process_interval: raw.process_interval.unwrap_or(5.0),
         remote_base: raw
             .remote_base
             .unwrap_or_else(|| "$HOME/.constella".to_string()),
