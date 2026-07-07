@@ -139,6 +139,7 @@ COUNT=20 ./scripts/dev/bench_probe.sh
 - `GET /api/highres/jobs`
 - `GET /api/highres/jobs/{job_key}`
 - `GET /api/highres/jobs/{job_key}/gpu`
+- `WS /api/highres/stream`
 When SQLite is not enabled, history, analytics, and job curve search APIs return `enabled:false`; realtime cluster monitoring continues through `/api/cluster/snapshot` and `/ws/cluster`.
 
 Deprecated single-node endpoints are intentionally not compatibility layers: `GET /api/snapshot` returns `410 Gone`, and `WS /ws/gpu` closes immediately. Use the cluster API for local and remote nodes.
@@ -162,6 +163,8 @@ npm run dev
 ```
 
 For production, build `frontend/dist`; the Rust manager serves the static frontend directly.
+
+SQLite ingest runs through a bounded background writer. Tune it with `DB_QUEUE_SIZE` and `RAW_SNAPSHOT_SECONDS` when using `scripts/service/start.sh`; set `HIGHRES_TOKEN_FILE` if `/api/highres/stream` should require bearer-token access.
 
 ## License
 

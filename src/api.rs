@@ -14,10 +14,11 @@ use parking_lot::RwLock;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::broadcast;
+use tower_http::services::{ServeDir, ServeFile};
 
 use crate::analytics;
 use crate::cluster::{parse_agent_hello, ClusterState};
-use crate::db::{DbError, SQLiteStore};
+use crate::db::{AsyncDbSink, DbError, SQLiteStore};
 use crate::highres::{self, HighresGpuCache, JobFilter};
 use crate::settings::{ManagerSettings, SettingsUpdate};
 
@@ -26,12 +27,15 @@ pub struct AppState {
     pub cluster_state: ClusterState,
     pub settings: Arc<RwLock<ManagerSettings>>,
     pub agent_token: Option<String>,
+    pub highres_token: Option<String>,
     pub db_path: Option<Arc<PathBuf>>,
+    pub db_sink: Option<AsyncDbSink>,
     pub highres_cache: Arc<RwLock<HighresGpuCache>>,
     pub config_tx: broadcast::Sender<Value>,
     pub highres_tx: broadcast::Sender<Value>,
     pub highres_published: Arc<AtomicU64>,
     pub connection_ids: Arc<AtomicU64>,
+    pub frontend_dist: Option<Arc<PathBuf>>,
 }
 
 impl AppState {
@@ -46,12 +50,15 @@ impl AppState {
             cluster_state,
             settings: Arc::new(RwLock::new(settings)),
             agent_token,
+            highres_token: None,
             db_path: None,
+            db_sink: None,
             highres_cache: Arc::new(RwLock::new(HighresGpuCache::default())),
             config_tx,
             highres_tx,
             highres_published: Arc::new(AtomicU64::new(0)),
             connection_ids: Arc::new(AtomicU64::new(1)),
+            frontend_dist: default_frontend_dist().map(Arc::new),
         }
     }
 
@@ -65,10 +72,27 @@ impl AppState {
         self.db_path = Some(Arc::new(path));
         self
     }
+
+    pub fn with_db_sink(mut self, sink: AsyncDbSink) -> Self {
+        self.db_path = Some(Arc::new(sink.path().to_path_buf()));
+        self.db_sink = Some(sink);
+        self
+    }
+
+    pub fn with_highres_token(mut self, token: Option<String>) -> Self {
+        self.highres_token = token.filter(|value| !value.is_empty());
+        self
+    }
+
+    pub fn with_frontend_dist(mut self, path: Option<PathBuf>) -> Self {
+        self.frontend_dist = path.map(Arc::new);
+        self
+    }
 }
 
 pub fn app(state: AppState) -> Router {
-    Router::new()
+    let frontend_dist = state.frontend_dist.clone();
+    let router = Router::new()
         .route("/api/health", get(health))
         .route("/api/snapshot", get(deprecated_snapshot))
         .route("/api/cluster/snapshot", get(cluster_snapshot))
@@ -86,7 +110,8 @@ pub fn app(state: AppState) -> Router {
         .route("/ws/cluster", get(cluster_ws))
         .route("/api/agents/ws", get(agent_ws))
         .route("/api/highres/stream", get(highres_stream))
-        .with_state(state)
+        .with_state(state);
+    with_frontend(router, frontend_dist.as_deref())
 }
 
 async fn health(State(state): State<AppState>) -> Json<Value> {
@@ -500,7 +525,14 @@ async fn agent_socket(state: AppState, mut socket: WebSocket) {
     }
 }
 
-async fn highres_stream(State(state): State<AppState>, ws: WebSocketUpgrade) -> impl IntoResponse {
+async fn highres_stream(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    if state.highres_token.is_some() && !authorized(&headers, state.highres_token.as_deref()) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
     ws.on_upgrade(|mut socket| async move {
         let mut rx = state.highres_tx.subscribe();
         let _ = send_json(
@@ -569,6 +601,16 @@ fn persist_latest_snapshot(state: &AppState, node_id: &str) {
     if state.highres_tx.send(message).is_ok() {
         state.highres_published.fetch_add(1, Ordering::Relaxed);
     }
+    if let Some(db_sink) = &state.db_sink {
+        if !db_sink.submit_node_snapshot(&snapshot) {
+            tracing::warn!(
+                dropped_samples = db_sink.dropped_samples(),
+                write_errors = db_sink.write_errors(),
+                "failed to enqueue node snapshot"
+            );
+        }
+        return;
+    }
     let Some(db_path) = &state.db_path else {
         return;
     };
@@ -596,4 +638,28 @@ async fn send_json<T: serde::Serialize>(
 #[allow(dead_code)]
 fn empty_body() -> Body {
     Body::empty()
+}
+
+fn default_frontend_dist() -> Option<PathBuf> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("frontend")
+        .join("dist");
+    path.exists().then_some(path)
+}
+
+fn with_frontend(router: Router, frontend_dist: Option<&PathBuf>) -> Router {
+    let Some(frontend_dist) = frontend_dist.filter(|path| path.exists()) else {
+        return router;
+    };
+    let index = frontend_dist.join("index.html");
+    if !index.exists() {
+        return router;
+    }
+    let assets = frontend_dist.join("assets");
+    let router = if assets.exists() {
+        router.nest_service("/assets", ServeDir::new(assets))
+    } else {
+        router
+    };
+    router.fallback_service(ServeDir::new(frontend_dist).fallback(ServeFile::new(index)))
 }

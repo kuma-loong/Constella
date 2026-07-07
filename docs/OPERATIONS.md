@@ -119,7 +119,11 @@ LOCAL_AGENT_NODE_ID=H100 ./scripts/service/start.sh
 DB_PATH=run/constella.db ./scripts/service/start.sh
 ```
 
-数据库路径由部署环境决定，项目脚本不假设系统盘或专用数据盘。
+数据库路径由部署环境决定，项目脚本不假设系统盘或专用数据盘。Rust manager 会通过后台 DB writer 异步写入快照、生成 20s/2m/1h rollup，并定期清理过期数据。可按部署压力调整：
+
+```bash
+DB_PATH=run/constella.db DB_QUEUE_SIZE=2048 RAW_SNAPSHOT_SECONDS=30 ./scripts/service/start.sh
+```
 
 未启用 SQLite 时，历史分析 API 返回 `enabled:false`，不影响实时监控：
 
@@ -135,6 +139,7 @@ http://127.0.0.1:8765/jobs
 ```
 
 Rust manager 内置高精度缓存和 `/api/highres/*` 接口，不需要单独 sidecar 进程。
+如需保护 `/api/highres/stream` WebSocket，可设置 `HIGHRES_TOKEN_FILE`；客户端使用 `Authorization: Bearer <token>` 访问。
 
 相关状态与接口验证：
 

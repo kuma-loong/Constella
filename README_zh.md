@@ -135,6 +135,7 @@ COUNT=20 ./scripts/dev/bench_probe.sh
 - `GET /api/highres/jobs`：作业搜索。
 - `GET /api/highres/jobs/{job_key}`：作业详情。
 - `GET /api/highres/jobs/{job_key}/gpu`：作业 GPU 曲线。
+- `WS /api/highres/stream`：高分辨率实时样本流。
 未启用 SQLite 时，历史、分析和作业曲线搜索 API 返回 `enabled:false`；实时集群监控仍然通过 `/api/cluster/snapshot` 和 `/ws/cluster` 工作。
 
 旧单机接口不再作为兼容层维护：`GET /api/snapshot` 返回 `410 Gone`，`WS /ws/gpu` 会立即关闭。本机和远端节点都统一使用 cluster API。
@@ -158,6 +159,8 @@ npm run dev
 ```
 
 生产服务依赖 `frontend/dist`，执行 `npm run build` 后由 Rust manager 直接托管。
+
+启用 SQLite 时，Rust manager 使用有界后台 writer 异步写入快照并生成 20s/2m/1h rollup。通过脚本启动时可用 `DB_QUEUE_SIZE` 和 `RAW_SNAPSHOT_SECONDS` 调整队列和 raw snapshot 间隔；如需保护 `/api/highres/stream`，设置 `HIGHRES_TOKEN_FILE` 并使用 bearer token 访问。
 
 ## License
 

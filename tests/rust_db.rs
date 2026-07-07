@@ -2,7 +2,10 @@ use axum::body::Body;
 use axum::http::Request;
 use constella::api::{app, AppState};
 use constella::cluster::ClusterState;
-use constella::db::{RollupRow, SQLiteStore, ROLLUP_20S, ROLLUP_20S_RETENTION_SECONDS, ROLLUP_2M};
+use constella::db::{
+    AsyncDbSink, DbSinkConfig, RollupRow, SQLiteStore, ROLLUP_20S, ROLLUP_20S_RETENTION_SECONDS,
+    ROLLUP_2M,
+};
 use constella::schema::{node_totals_from_gpus, GpuInfo, GpuProcess, NodeSnapshot};
 use constella::settings::ManagerSettings;
 use http_body_util::BodyExt;
@@ -185,6 +188,49 @@ fn sqlite_store_rollup_uses_sample_count_weighting() {
 }
 
 #[test]
+fn sqlite_store_history_query_selects_rollup_bucket_by_range() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = SQLiteStore::new(dir.path().join("constella.db"));
+    store.open().unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    let bucket_start = now - 8.0 * 24.0 * 60.0 * 60.0;
+    store
+        .upsert_gpu_metric_rollups(&[RollupRow {
+            bucket_start,
+            bucket_seconds: ROLLUP_2M,
+            node_id: "node-a".to_string(),
+            gpu_uuid: "GPU-0".to_string(),
+            avg_gpu_utilization: 42.0,
+            max_gpu_utilization: 50.0,
+            avg_memory_used_mb: 2048.0,
+            max_memory_used_mb: 4096,
+            avg_power_watts: 125.0,
+            max_power_watts: 140.0,
+            avg_temperature_c: 44.0,
+            max_temperature_c: 46,
+            sample_count: 2,
+        }])
+        .unwrap();
+
+    let items = store
+        .query_gpu_history(
+            Some("node-a"),
+            Some("GPU-0"),
+            Some(bucket_start - 10.0),
+            Some(now),
+            None,
+            100,
+        )
+        .unwrap();
+
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["bucket_seconds"], ROLLUP_2M);
+}
+
+#[test]
 fn sqlite_store_prunes_expired_rollups_by_retention() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = SQLiteStore::new(dir.path().join("constella.db"));
@@ -243,6 +289,47 @@ fn sqlite_store_maintain_runs_rollups_and_prunes_old_rows() {
             .unwrap(),
         1
     );
+}
+
+#[test]
+fn async_db_sink_writes_snapshots_and_online_rollups() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("constella.db");
+    let sink = AsyncDbSink::start(DbSinkConfig {
+        path: db_path.clone(),
+        queue_size: 8,
+        raw_snapshot_interval: 1.0,
+    })
+    .unwrap();
+
+    let sampled_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64()
+        - 60.0;
+    assert!(sink.submit_node_snapshot(&make_node_snapshot(sampled_at, 50)));
+
+    let mut observed = None;
+    for _ in 0..40 {
+        let mut store = SQLiteStore::new(&db_path);
+        store.open().unwrap();
+        let nodes = store.scalar_i64("SELECT COUNT(*) FROM nodes").unwrap();
+        let rollups = store
+            .scalar_i64("SELECT COUNT(*) FROM gpu_metric_rollups WHERE bucket_seconds=20")
+            .unwrap();
+        let raw = store
+            .scalar_i64("SELECT COUNT(*) FROM raw_snapshots")
+            .unwrap();
+        store.close();
+        if nodes == 1 && rollups == 2 && raw == 1 {
+            observed = Some((nodes, rollups, raw));
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    assert_eq!(observed, Some((1, 2, 1)));
+    assert_eq!(sink.dropped_samples(), 0);
 }
 
 #[tokio::test]

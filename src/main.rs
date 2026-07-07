@@ -10,7 +10,7 @@ use constella::cluster::ClusterState;
 use constella::cluster_config::{load_cluster_config, load_manager_hostname};
 use constella::cluster_control::{format_results, ClusterController};
 use constella::collector::SnapshotCollector;
-use constella::db::{SQLiteStore, RAW_SNAPSHOT_RETENTION_SECONDS};
+use constella::db::{AsyncDbSink, DbSinkConfig, SQLiteStore, RAW_SNAPSHOT_RETENTION_SECONDS};
 use constella::schema::local_node_id;
 use constella::settings::ManagerSettings;
 
@@ -56,6 +56,10 @@ struct ServeArgs {
     agent_token: Option<String>,
     #[arg(long, env = "CONSTELLA_AGENT_TOKEN_FILE")]
     agent_token_file: Option<PathBuf>,
+    #[arg(long, env = "CONSTELLA_HIGHRES_TOKEN")]
+    highres_token: Option<String>,
+    #[arg(long, env = "CONSTELLA_HIGHRES_TOKEN_FILE")]
+    highres_token_file: Option<PathBuf>,
     #[arg(long, env = "CONSTELLA_REFRESH_SECONDS")]
     refresh: Option<f64>,
     #[arg(long, env = "CONSTELLA_PROCESS_SECONDS")]
@@ -176,6 +180,8 @@ async fn main() -> anyhow::Result<()> {
         port: 8765,
         agent_token: None,
         agent_token_file: None,
+        highres_token: None,
+        highres_token_file: None,
         refresh: None,
         process_refresh: None,
         db_path: None,
@@ -360,25 +366,31 @@ fn config(args: ConfigArgs) -> anyhow::Result<()> {
 
 async fn serve(args: ServeArgs) -> anyhow::Result<()> {
     let settings = ManagerSettings::from_env(args.refresh, args.process_refresh)?;
-    let agent_token = match (args.agent_token, args.agent_token_file) {
-        (Some(token), _) if !token.is_empty() => Some(token),
-        (_, Some(path)) => std::fs::read_to_string(&path)
-            .ok()
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty()),
-        _ => std::env::var("CONSTELLA_AGENT_TOKEN_FILE")
-            .ok()
-            .and_then(|path| std::fs::read_to_string(path).ok())
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty()),
-    };
+    let agent_token = load_token(
+        args.agent_token,
+        args.agent_token_file,
+        "CONSTELLA_AGENT_TOKEN",
+        "CONSTELLA_AGENT_TOKEN_FILE",
+    );
+    let highres_token = load_token(
+        args.highres_token,
+        args.highres_token_file,
+        "CONSTELLA_HIGHRES_TOKEN",
+        "CONSTELLA_HIGHRES_TOKEN_FILE",
+    );
     let mut state = AppState::new(
         ClusterState::new(local_node_id(None)),
         settings,
         agent_token,
-    );
+    )
+    .with_highres_token(highres_token);
     if let Some(db_path) = args.db_path {
-        state = state.with_db_path(db_path);
+        let db_sink = AsyncDbSink::start(DbSinkConfig {
+            path: db_path,
+            queue_size: env_usize("CONSTELLA_DB_QUEUE_SIZE", 1024),
+            raw_snapshot_interval: env_f64("CONSTELLA_RAW_SNAPSHOT_SECONDS", 0.0),
+        })?;
+        state = state.with_db_sink(db_sink);
     }
     let addr: SocketAddr = format!("{}:{}", args.host, args.port)
         .parse()
@@ -391,4 +403,40 @@ async fn serve(args: ServeArgs) -> anyhow::Result<()> {
         })
         .await?;
     Ok(())
+}
+
+fn load_token(
+    token: Option<String>,
+    token_file: Option<PathBuf>,
+    env_token: &str,
+    env_file: &str,
+) -> Option<String> {
+    if let Some(token) = token.filter(|value| !value.is_empty()) {
+        return Some(token);
+    }
+    if let Some(token) = std::env::var(env_token)
+        .ok()
+        .filter(|value| !value.is_empty())
+    {
+        return Some(token);
+    }
+    let path = token_file.or_else(|| std::env::var(env_file).ok().map(PathBuf::from))?;
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn env_usize(name: &str, default: usize) -> usize {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(default)
+}
+
+fn env_f64(name: &str, default: f64) -> f64 {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(default)
 }

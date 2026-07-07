@@ -1,9 +1,9 @@
 use constella::nvml::{
-    bytes_to_mib, compute_mode_label, milliwatts_to_watts, performance_state_label,
-    used_gpu_memory_mib,
+    architecture_label, bytes_to_mib, compute_mode_label, milliwatts_to_watts,
+    performance_state_label, used_gpu_memory_mib,
 };
 use nvml_wrapper::enum_wrappers::device::{ComputeMode, PerformanceState};
-use nvml_wrapper::enums::device::UsedGpuMemory;
+use nvml_wrapper::enums::device::{DeviceArchitecture, UsedGpuMemory};
 
 #[test]
 fn nvml_unit_conversions_match_snapshot_contract() {
@@ -26,4 +26,13 @@ fn nvml_labels_match_nvidia_smi_style_values() {
         compute_mode_label(ComputeMode::ExclusiveProcess),
         "Exclusive Process"
     );
+    assert_eq!(
+        architecture_label(DeviceArchitecture::Hopper).as_deref(),
+        Some("Hopper")
+    );
+    assert_eq!(
+        architecture_label(DeviceArchitecture::Blackwell).as_deref(),
+        Some("Blackwell")
+    );
+    assert_eq!(architecture_label(DeviceArchitecture::Unknown), None);
 }

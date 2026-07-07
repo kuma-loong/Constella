@@ -1,5 +1,10 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender, TrySendError};
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde_json::{json, Value};
@@ -14,6 +19,7 @@ pub const ROLLUP_1H: i64 = 3600;
 pub const ROLLUP_20S_RETENTION_SECONDS: f64 = 7.0 * 24.0 * 60.0 * 60.0;
 pub const ROLLUP_2M_RETENTION_SECONDS: f64 = 60.0 * 24.0 * 60.0 * 60.0;
 pub const ROLLUP_1H_RETENTION_SECONDS: f64 = 365.0 * 24.0 * 60.0 * 60.0;
+pub const SESSION_CLOSE_INTERVAL_SECONDS: f64 = 30.0 * 60.0;
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -33,6 +39,297 @@ pub enum DbError {
 pub struct SQLiteStore {
     path: PathBuf,
     connection: Option<Connection>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DbSinkConfig {
+    pub path: PathBuf,
+    pub queue_size: usize,
+    pub raw_snapshot_interval: f64,
+}
+
+impl DbSinkConfig {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            queue_size: 1024,
+            raw_snapshot_interval: 0.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AsyncDbSink {
+    path: Arc<PathBuf>,
+    sender: SyncSender<NodeSnapshot>,
+    dropped_samples: Arc<AtomicU64>,
+    write_errors: Arc<AtomicU64>,
+}
+
+impl AsyncDbSink {
+    pub fn start(config: DbSinkConfig) -> Result<Self, DbError> {
+        let mut store = SQLiteStore::new(config.path.clone());
+        store.open()?;
+        store.close();
+
+        let queue_size = config.queue_size.max(1);
+        let (sender, receiver) = sync_channel(queue_size);
+        let dropped_samples = Arc::new(AtomicU64::new(0));
+        let write_errors = Arc::new(AtomicU64::new(0));
+        let worker_errors = Arc::clone(&write_errors);
+        let path = Arc::new(config.path.clone());
+        let worker_path = Arc::clone(&path);
+        thread::Builder::new()
+            .name("constella-db-writer".to_string())
+            .spawn(move || {
+                let mut worker = DbWorker::new(config, receiver, worker_errors);
+                if let Err(error) = worker.run() {
+                    tracing::warn!(path = %worker_path.display(), error = %error, "db worker stopped");
+                }
+            })?;
+
+        Ok(Self {
+            path,
+            sender,
+            dropped_samples,
+            write_errors,
+        })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn submit_node_snapshot(&self, snapshot: &NodeSnapshot) -> bool {
+        match self.sender.try_send(snapshot.clone()) {
+            Ok(()) => true,
+            Err(TrySendError::Full(_)) => {
+                self.dropped_samples.fetch_add(1, Ordering::Relaxed);
+                false
+            }
+            Err(TrySendError::Disconnected(_)) => {
+                self.write_errors.fetch_add(1, Ordering::Relaxed);
+                false
+            }
+        }
+    }
+
+    pub fn dropped_samples(&self) -> u64 {
+        self.dropped_samples.load(Ordering::Relaxed)
+    }
+
+    pub fn write_errors(&self) -> u64 {
+        self.write_errors.load(Ordering::Relaxed)
+    }
+}
+
+#[derive(Debug)]
+struct DbWorker {
+    config: DbSinkConfig,
+    receiver: Receiver<NodeSnapshot>,
+    write_errors: Arc<AtomicU64>,
+    last_raw_at: f64,
+    last_20s_flush_at: f64,
+    last_2m_rollup_at: f64,
+    last_1h_rollup_at: f64,
+    last_prune_at: f64,
+    last_session_close_at: f64,
+    rollup_20s: HashMap<(i64, String, String), RollupBucket>,
+}
+
+impl DbWorker {
+    fn new(
+        config: DbSinkConfig,
+        receiver: Receiver<NodeSnapshot>,
+        write_errors: Arc<AtomicU64>,
+    ) -> Self {
+        Self {
+            config,
+            receiver,
+            write_errors,
+            last_raw_at: 0.0,
+            last_20s_flush_at: 0.0,
+            last_2m_rollup_at: 0.0,
+            last_1h_rollup_at: 0.0,
+            last_prune_at: 0.0,
+            last_session_close_at: 0.0,
+            rollup_20s: HashMap::new(),
+        }
+    }
+
+    fn run(&mut self) -> Result<(), DbError> {
+        let mut store = SQLiteStore::new(self.config.path.clone());
+        store.open()?;
+        loop {
+            match self.receiver.recv_timeout(Duration::from_secs(10)) {
+                Ok(snapshot) => {
+                    if let Err(error) = self.write_snapshot(&store, &snapshot) {
+                        self.write_errors.fetch_add(1, Ordering::Relaxed);
+                        tracing::warn!(error = %error, "failed to write node snapshot");
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    let now = unix_now();
+                    if let Err(error) = self.run_scheduled_maintenance(&store, now) {
+                        self.write_errors.fetch_add(1, Ordering::Relaxed);
+                        tracing::warn!(error = %error, "failed to run db maintenance");
+                    }
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    let _ = self.flush_rollups(&store, unix_now());
+                    store.close();
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    fn write_snapshot(
+        &mut self,
+        store: &SQLiteStore,
+        snapshot: &NodeSnapshot,
+    ) -> Result<(), DbError> {
+        let write_raw = self.should_write_raw(snapshot.sampled_at);
+        store.write_node_snapshot(snapshot, write_raw)?;
+        self.accumulate_snapshot(snapshot);
+        self.run_scheduled_maintenance(store, unix_now().max(snapshot.sampled_at))
+    }
+
+    fn should_write_raw(&mut self, sampled_at: f64) -> bool {
+        if self.config.raw_snapshot_interval <= 0.0 {
+            return false;
+        }
+        if sampled_at - self.last_raw_at >= self.config.raw_snapshot_interval {
+            self.last_raw_at = sampled_at;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn accumulate_snapshot(&mut self, snapshot: &NodeSnapshot) {
+        let bucket_start = ((snapshot.sampled_at / ROLLUP_20S as f64).floor() as i64) * ROLLUP_20S;
+        for gpu in &snapshot.gpus {
+            let key = (bucket_start, snapshot.node_id.clone(), gpu.uuid.clone());
+            self.rollup_20s
+                .entry(key)
+                .or_insert_with(|| {
+                    RollupBucket::new(bucket_start as f64, &snapshot.node_id, &gpu.uuid)
+                })
+                .add_gpu(gpu);
+        }
+    }
+
+    fn flush_rollups(&mut self, store: &SQLiteStore, now: f64) -> Result<usize, DbError> {
+        let ready_keys = self
+            .rollup_20s
+            .iter()
+            .filter_map(|(key, bucket)| {
+                if bucket.bucket_start + ROLLUP_20S as f64 <= now - ROLLUP_20S as f64 {
+                    Some(key.clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        let rows = ready_keys
+            .iter()
+            .filter_map(|key| self.rollup_20s.remove(key))
+            .map(|bucket| bucket.to_row(ROLLUP_20S))
+            .collect::<Vec<_>>();
+        store.upsert_gpu_metric_rollups(&rows)
+    }
+
+    fn run_scheduled_maintenance(&mut self, store: &SQLiteStore, now: f64) -> Result<(), DbError> {
+        if now - self.last_20s_flush_at >= 10.0 {
+            self.flush_rollups(store, now)?;
+            self.last_20s_flush_at = now;
+        }
+        if now - self.last_2m_rollup_at >= 120.0 {
+            store.rollup_gpu_metric_rollups(ROLLUP_20S, ROLLUP_2M, now)?;
+            self.last_2m_rollup_at = now;
+        }
+        if now - self.last_1h_rollup_at >= 3600.0 {
+            store.rollup_gpu_metric_rollups(ROLLUP_2M, ROLLUP_1H, now)?;
+            self.last_1h_rollup_at = now;
+        }
+        if now - self.last_prune_at >= 600.0 {
+            store.prune_rollups(now, None)?;
+            store.prune_raw_snapshots(now, RAW_SNAPSHOT_RETENTION_SECONDS)?;
+            self.last_prune_at = now;
+        }
+        if now - self.last_session_close_at >= SESSION_CLOSE_INTERVAL_SECONDS {
+            store.close_stale_sessions(now, 300.0)?;
+            self.last_session_close_at = now;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct RollupBucket {
+    bucket_start: f64,
+    node_id: String,
+    gpu_uuid: String,
+    sum_gpu_utilization: f64,
+    max_gpu_utilization: f64,
+    sum_memory_used_mb: f64,
+    max_memory_used_mb: i64,
+    sum_power_watts: f64,
+    max_power_watts: f64,
+    sum_temperature_c: f64,
+    max_temperature_c: i64,
+    sample_count: i64,
+}
+
+impl RollupBucket {
+    fn new(bucket_start: f64, node_id: &str, gpu_uuid: &str) -> Self {
+        Self {
+            bucket_start,
+            node_id: node_id.to_string(),
+            gpu_uuid: gpu_uuid.to_string(),
+            sum_gpu_utilization: 0.0,
+            max_gpu_utilization: 0.0,
+            sum_memory_used_mb: 0.0,
+            max_memory_used_mb: 0,
+            sum_power_watts: 0.0,
+            max_power_watts: 0.0,
+            sum_temperature_c: 0.0,
+            max_temperature_c: 0,
+            sample_count: 0,
+        }
+    }
+
+    fn add_gpu(&mut self, gpu: &crate::schema::GpuInfo) {
+        self.sample_count += 1;
+        self.sum_gpu_utilization += gpu.utilization_gpu as f64;
+        self.max_gpu_utilization = self.max_gpu_utilization.max(gpu.utilization_gpu as f64);
+        self.sum_memory_used_mb += gpu.memory_used_mb as f64;
+        self.max_memory_used_mb = self.max_memory_used_mb.max(gpu.memory_used_mb);
+        self.sum_power_watts += gpu.power_watts;
+        self.max_power_watts = self.max_power_watts.max(gpu.power_watts);
+        self.sum_temperature_c += gpu.temperature_c as f64;
+        self.max_temperature_c = self.max_temperature_c.max(gpu.temperature_c);
+    }
+
+    fn to_row(self, bucket_seconds: i64) -> RollupRow {
+        let count = self.sample_count.max(1) as f64;
+        RollupRow {
+            bucket_start: self.bucket_start,
+            bucket_seconds,
+            node_id: self.node_id,
+            gpu_uuid: self.gpu_uuid,
+            avg_gpu_utilization: self.sum_gpu_utilization / count,
+            max_gpu_utilization: self.max_gpu_utilization,
+            avg_memory_used_mb: self.sum_memory_used_mb / count,
+            max_memory_used_mb: self.max_memory_used_mb,
+            avg_power_watts: self.sum_power_watts / count,
+            max_power_watts: self.max_power_watts,
+            avg_temperature_c: self.sum_temperature_c / count,
+            max_temperature_c: self.max_temperature_c,
+            sample_count: self.sample_count,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -521,7 +818,7 @@ impl SQLiteStore {
     ) -> Result<Vec<Value>, DbError> {
         let bucket_seconds = match bucket_seconds {
             Some(bucket) => normalize_history_bucket(bucket)?,
-            None => ROLLUP_20S,
+            None => select_history_bucket(since, until),
         };
         let mut sql = String::from(
             r#"
@@ -662,6 +959,21 @@ fn normalize_history_bucket(bucket_seconds: i64) -> Result<i64, DbError> {
     }
 }
 
+fn select_history_bucket(since: Option<f64>, until: Option<f64>) -> i64 {
+    let Some(since) = since else {
+        return ROLLUP_20S;
+    };
+    let end = until.unwrap_or_else(unix_now);
+    let span = (end - since).max(0.0);
+    if span <= ROLLUP_20S_RETENTION_SECONDS {
+        ROLLUP_20S
+    } else if span <= ROLLUP_2M_RETENTION_SECONDS {
+        ROLLUP_2M
+    } else {
+        ROLLUP_1H
+    }
+}
+
 fn rollup_retention_seconds(bucket_seconds: i64) -> Option<f64> {
     match bucket_seconds {
         ROLLUP_20S => Some(ROLLUP_20S_RETENTION_SECONDS),
@@ -746,4 +1058,11 @@ fn task_row(row: &Row<'_>) -> rusqlite::Result<Value> {
         "status": row.get::<_, String>("status")?,
         "sample_count": row.get::<_, i64>("sample_count")?,
     }))
+}
+
+fn unix_now() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs_f64())
+        .unwrap_or(0.0)
 }

@@ -3,12 +3,16 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use nvml_wrapper::enum_wrappers::device::{
     Clock, ComputeMode, PerformanceState, TemperatureSensor,
 };
+use nvml_wrapper::enums::device::DeviceArchitecture;
 use nvml_wrapper::enums::device::UsedGpuMemory;
 use nvml_wrapper::error::NvmlError;
 use nvml_wrapper::Nvml;
 
 use crate::procfs;
-use crate::schema::{cmdline_fingerprint, infer_task_name, GpuInfo, GpuProcess, Snapshot};
+use crate::schema::{
+    cmdline_fingerprint, infer_task_name, GpuHardwareInfo, GpuInfo, GpuProcess, NodeHardware,
+    Snapshot,
+};
 
 #[derive(Debug)]
 pub struct NvmlSampler {
@@ -94,6 +98,27 @@ impl NvmlSampler {
             history: Default::default(),
         })
     }
+
+    pub fn hardware_inventory(&self) -> Result<NodeHardware, NvmlError> {
+        let count = self.nvml.device_count()?;
+        let mut gpus = Vec::with_capacity(count as usize);
+        for index in 0..count {
+            let device = self.nvml.device_by_index(index)?;
+            gpus.push(GpuHardwareInfo {
+                index: index as i64,
+                uuid: device.uuid().unwrap_or_else(|_| "unknown".to_string()),
+                name: device.name().unwrap_or_else(|_| "unknown".to_string()),
+                architecture: device.architecture().ok().and_then(architecture_label),
+            });
+        }
+        Ok(NodeHardware { gpus })
+    }
+}
+
+pub fn sample_hardware_inventory() -> Option<NodeHardware> {
+    NvmlSampler::new()
+        .and_then(|sampler| sampler.hardware_inventory())
+        .ok()
 }
 
 pub fn bytes_to_mib(value: u64) -> i64 {
@@ -142,6 +167,13 @@ pub fn compute_mode_label(value: ComputeMode) -> String {
         ComputeMode::ExclusiveProcess => "Exclusive Process",
     }
     .to_string()
+}
+
+pub fn architecture_label(value: DeviceArchitecture) -> Option<String> {
+    match value {
+        DeviceArchitecture::Unknown => None,
+        other => Some(other.to_string()),
+    }
 }
 
 fn nvml_processes(

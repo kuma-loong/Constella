@@ -61,6 +61,7 @@ fn agent_hello_matches_manager_contract() {
     assert_eq!(message["schema_version"], 1);
     assert_eq!(message["node_id"], "node-a");
     assert_eq!(message["agent_version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(message["capabilities"]["nvml"], true);
     assert_eq!(message["capabilities"]["nvidia_smi_fallback"], true);
     assert!(message.get("hardware").is_some());
 }
@@ -73,6 +74,16 @@ fn hardware_inventory_uses_snapshot_gpu_identity() {
     assert_eq!(hardware.gpus[0].index, 0);
     assert_eq!(hardware.gpus[0].uuid, "GPU-1");
     assert_eq!(hardware.gpus[0].name, "unknown");
+}
+
+#[test]
+fn fallback_hardware_inventory_infers_common_architecture_labels() {
+    let mut snapshot = snapshot();
+    snapshot.gpus[0].name = "NVIDIA H100 80GB HBM3".to_string();
+
+    let hardware = hardware_from_snapshot(&snapshot);
+
+    assert_eq!(hardware.gpus[0].architecture.as_deref(), Some("Hopper"));
 }
 
 #[test]

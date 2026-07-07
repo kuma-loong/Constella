@@ -259,7 +259,7 @@ pub fn agent_hello(config: &AgentConfig, hardware: Option<NodeHardware>) -> Valu
         "hostname": local_hostname(None),
         "agent_version": env!("CARGO_PKG_VERSION"),
         "capabilities": {
-            "nvml": false,
+            "nvml": true,
             "nvidia_smi_fallback": true,
             "process_cmdline": true
         }
@@ -271,11 +271,11 @@ pub fn agent_hello(config: &AgentConfig, hardware: Option<NodeHardware>) -> Valu
 }
 
 pub fn sample_hardware_inventory() -> Option<NodeHardware> {
-    nvml::NvmlSampler::new()
-        .and_then(|sampler| sampler.sample(false))
-        .or_else(|_| nvidia_smi::sample(false))
-        .ok()
-        .map(|snapshot| hardware_from_snapshot(&snapshot))
+    nvml::sample_hardware_inventory().or_else(|| {
+        nvidia_smi::sample(false)
+            .ok()
+            .map(|snapshot| hardware_from_snapshot(&snapshot))
+    })
 }
 
 pub fn hardware_from_snapshot(snapshot: &Snapshot) -> NodeHardware {
@@ -287,9 +287,28 @@ pub fn hardware_from_snapshot(snapshot: &Snapshot) -> NodeHardware {
                 index: gpu.index,
                 uuid: gpu.uuid.clone(),
                 name: gpu.name.clone(),
-                architecture: None,
+                architecture: architecture_from_name(&gpu.name),
             })
             .collect(),
+    }
+}
+
+fn architecture_from_name(name: &str) -> Option<String> {
+    let upper = name.to_ascii_uppercase();
+    if upper.contains("BLACKWELL") || upper.contains("B200") || upper.contains("GB200") {
+        Some("Blackwell".to_string())
+    } else if upper.contains("H100") || upper.contains("H200") || upper.contains("GH200") {
+        Some("Hopper".to_string())
+    } else if upper.contains("ADA") || upper.contains("L40") || upper.contains("RTX 4090") {
+        Some("Ada".to_string())
+    } else if upper.contains("A100")
+        || upper.contains("A800")
+        || upper.contains("A40")
+        || upper.contains("A30")
+    {
+        Some("Ampere".to_string())
+    } else {
+        None
     }
 }
 
