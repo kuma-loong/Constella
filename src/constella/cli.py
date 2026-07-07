@@ -17,8 +17,9 @@ from .collector import DEVICE_TYPES, validate_refresh_interval
 from .db import RAW_SNAPSHOT_RETENTION_SECONDS, SQLiteStore
 from .highres_sidecar import HighresSidecarConfig
 from .nvml import sample_with_fallback
+from .paths import default_build_root, default_project_root
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = default_project_root()
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -32,6 +33,12 @@ def main(argv: list[str] | None = None) -> None:
     serve.add_argument("--refresh", type=float, default=1.0)
     serve.add_argument("--process-refresh", type=float, default=5.0)
     serve.add_argument("--graceful-timeout", type=float, default=10.0)
+    serve.add_argument("--agent-token-file", type=Path)
+    serve.add_argument("--highres-token-file", type=Path)
+    serve.add_argument("--db-path", type=Path)
+    serve.add_argument("--db-queue-size", type=int)
+    serve.add_argument("--raw-snapshot-seconds", type=float)
+    serve.add_argument("--frontend-dir", type=Path)
     serve.add_argument("--log-level", default="info")
 
     highres_sidecar = subparsers.add_parser(
@@ -123,6 +130,18 @@ def main(argv: list[str] | None = None) -> None:
             parser.error(str(exc))
         os.environ["CONSTELLA_REFRESH_SECONDS"] = str(refresh)
         os.environ["CONSTELLA_PROCESS_SECONDS"] = str(args.process_refresh)
+        if args.agent_token_file is not None:
+            os.environ["CONSTELLA_AGENT_TOKEN_FILE"] = str(args.agent_token_file)
+        if args.highres_token_file is not None:
+            os.environ["CONSTELLA_HIGHRES_TOKEN_FILE"] = str(args.highres_token_file)
+        if args.db_path is not None:
+            os.environ["CONSTELLA_DB_PATH"] = str(args.db_path)
+        if args.db_queue_size is not None:
+            os.environ["CONSTELLA_DB_QUEUE_SIZE"] = str(args.db_queue_size)
+        if args.raw_snapshot_seconds is not None:
+            os.environ["CONSTELLA_RAW_SNAPSHOT_SECONDS"] = str(args.raw_snapshot_seconds)
+        if args.frontend_dir is not None:
+            os.environ["CONSTELLA_FRONTEND_DIST"] = str(args.frontend_dir)
         uvicorn.run(
             "constella.app:create_app",
             host=args.host,
@@ -199,6 +218,7 @@ def main(argv: list[str] | None = None) -> None:
         controller = ClusterController(
             config,
             project_root=PROJECT_ROOT,
+            build_root=default_build_root(),
             sync_source=not getattr(args, "no_sync", False),
         )
         if args.cluster_command == "start":

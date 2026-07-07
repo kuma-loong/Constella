@@ -25,10 +25,11 @@ from .highres import (
     job_curve,
     query_jobs,
 )
+from .paths import default_project_root, resolve_frontend_dist
 from .schema import local_node_id
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
+PROJECT_ROOT = default_project_root()
+FRONTEND_DIST = resolve_frontend_dist()
 
 
 class SettingsUpdate(BaseModel):
@@ -151,6 +152,7 @@ def create_app(
     manager_settings: ManagerSettings | None = None,
     highres_cache: HighresGpuCache | None = None,
     highres_broadcaster: HighresSampleBroadcaster | None = None,
+    frontend_dist: Path | None = None,
 ) -> FastAPI:
     if manager_settings is None:
         manager_settings = ManagerSettings.from_env(
@@ -164,6 +166,7 @@ def create_app(
     db_sink = db_sink if db_sink is not None else _load_db_sink()
     highres_cache = highres_cache if highres_cache is not None else HighresGpuCache()
     highres_broadcaster = highres_broadcaster or HighresSampleBroadcaster()
+    resolved_frontend_dist = resolve_frontend_dist(frontend_dist)
     agent_queues: set[asyncio.Queue[dict[str, object]]] = set()
 
     def broadcast_config() -> None:
@@ -466,18 +469,18 @@ def create_app(
         finally:
             app.state.highres_broadcaster.unsubscribe(queue)
 
-    if FRONTEND_DIST.exists():
-        assets_path = FRONTEND_DIST / "assets"
+    if resolved_frontend_dist is not None:
+        assets_path = resolved_frontend_dist / "assets"
         if assets_path.exists():
             app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
 
         @app.get("/{path:path}", include_in_schema=False)
         @app.head("/{path:path}", include_in_schema=False)
         async def frontend(path: str):
-            requested = FRONTEND_DIST / path
+            requested = resolved_frontend_dist / path
             if path and requested.exists() and requested.is_file():
                 return FileResponse(requested)
-            return FileResponse(FRONTEND_DIST / "index.html")
+            return FileResponse(resolved_frontend_dist / "index.html")
 
     return app
 

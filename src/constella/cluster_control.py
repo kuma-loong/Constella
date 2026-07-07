@@ -113,17 +113,23 @@ class ClusterController:
         config: ClusterConfig,
         *,
         project_root: Path,
+        build_root: Path | None = None,
         runner: CommandRunner | None = None,
         sync_source: bool = True,
     ):
         self.config = config
         self.project_root = project_root
+        self.build_root = build_root
         self.runner = runner or CommandRunner()
         self.sync_source = sync_source
 
     def start_all(self) -> list[NodeCommandResult]:
         token = self.config.agent_token_file.read_text(encoding="utf-8").strip()
-        runtime_dir = prepare_agent_runtime(self.project_root) if self.sync_source else None
+        runtime_dir = (
+            prepare_agent_runtime(self.project_root, build_root=self.build_root)
+            if self.sync_source
+            else None
+        )
         return self._parallel("start", lambda node: self.start_node(node, token, runtime_dir=runtime_dir))
 
     def status_all(self) -> list[NodeCommandResult]:
@@ -145,7 +151,10 @@ class ClusterController:
                 remote_mkdir_command(self.config.remote_base),
             )
             if self.sync_source:
-                runtime_dir = runtime_dir or prepare_agent_runtime(self.project_root)
+                runtime_dir = runtime_dir or prepare_agent_runtime(
+                    self.project_root,
+                    build_root=self.build_root,
+                )
                 self._sync_agent_runtime(node, runtime_dir)
             self._write_remote_file(
                 node,
@@ -250,14 +259,14 @@ class ClusterController:
             raise RuntimeError(result.stderr.strip() or f"failed to sync agent runtime to {node.id}")
 
 
-def prepare_agent_runtime(project_root: Path) -> Path:
-    runtime_dir = project_root / ".constella-build" / "agent-runtime"
+def prepare_agent_runtime(project_root: Path, *, build_root: Path | None = None) -> Path:
+    runtime_dir = (build_root or project_root / ".constella-build") / "agent-runtime"
     if runtime_dir.exists():
         shutil.rmtree(runtime_dir)
     package_dir = runtime_dir / "constella"
     package_dir.mkdir(parents=True)
 
-    source_dir = project_root / "src" / "constella"
+    source_dir = resolve_package_dir(project_root)
     for module in AGENT_RUNTIME_MODULES:
         shutil.copy2(source_dir / module, package_dir / module)
     _copy_package("websockets", runtime_dir)
@@ -267,6 +276,17 @@ def prepare_agent_runtime(project_root: Path) -> Path:
         encoding="utf-8",
     )
     return runtime_dir
+
+
+def resolve_package_dir(project_root: Path) -> Path:
+    candidates = (
+        project_root / "src" / "constella",
+        project_root,
+    )
+    for candidate in candidates:
+        if all((candidate / module).is_file() for module in AGENT_RUNTIME_MODULES):
+            return candidate
+    raise RuntimeError(f"cannot find Constella package modules under {project_root}")
 
 
 def _copy_package(name: str, target_root: Path) -> None:

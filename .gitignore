@@ -9,9 +9,11 @@ __pycache__/
 node_modules/
 frontend/dist/
 frontend/.vite/
+src/constella/frontend/dist/
 
 logs/
 run/
+dist/
 nodes.yaml
 *.log
 temp.md
