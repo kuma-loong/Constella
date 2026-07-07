@@ -349,7 +349,7 @@ def add_service_common_args(parser: argparse.ArgumentParser, *, include_runtime:
         parser.add_argument("--host", default="127.0.0.1")
         parser.add_argument("--port", type=int, default=8765)
         parser.add_argument("--refresh", type=float, default=1.0)
-        parser.add_argument("--process-refresh", type=float, default=3.0)
+        parser.add_argument("--process-refresh", type=float, default=5.0)
         parser.add_argument("--log-level", default="info")
     else:
         parser.add_argument("--host", default="127.0.0.1")
@@ -368,7 +368,7 @@ def service_config_from_args(args: argparse.Namespace) -> ServiceConfig:
         host=args.host,
         port=args.port,
         refresh=getattr(args, "refresh", 1.0),
-        process_refresh=getattr(args, "process_refresh", 3.0),
+        process_refresh=getattr(args, "process_refresh", 5.0),
         log_level=getattr(args, "log_level", "info"),
         run_dir=args.run_dir,
         log_dir=args.log_dir,

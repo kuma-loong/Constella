@@ -63,7 +63,7 @@ def test_cli_serve_sets_explicit_runtime_environment(tmp_path, monkeypatch) -> N
             "--refresh",
             "1.0",
             "--process-refresh",
-            "3.0",
+            "5.0",
             "--agent-token-file",
             str(token_file),
             "--highres-token-file",

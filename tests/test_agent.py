@@ -42,7 +42,7 @@ def test_agent_protocol_messages_include_required_fields() -> None:
         manager_url="ws://manager/api/agents/ws",
         token="secret",
         refresh_interval=1.0,
-        process_interval=3.0,
+        process_interval=5.0,
     )
     snapshot = Snapshot(
         ok=True,

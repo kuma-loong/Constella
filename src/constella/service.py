@@ -25,7 +25,7 @@ class ServiceConfig:
     host: str = "127.0.0.1"
     port: int = 8765
     refresh: float = 1.0
-    process_refresh: float = 3.0
+    process_refresh: float = 5.0
     log_level: str = "info"
     run_dir: Path = Path("run")
     log_dir: Path = Path("logs")

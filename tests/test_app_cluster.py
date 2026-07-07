@@ -42,7 +42,7 @@ def test_agent_websocket_updates_cluster_snapshot() -> None:
                 "seq": 1,
                 "sampled_at": 10.0,
                 "refresh_interval": 1.0,
-                "process_interval": 3.0,
+                "process_interval": 5.0,
                 "snapshot": {
                     "ok": True,
                     "source": "test",
@@ -110,7 +110,7 @@ def test_cluster_websocket_coalesces_updates_to_refresh_interval() -> None:
                         "seq": seq,
                         "sampled_at": 10.0 + seq,
                         "refresh_interval": 0.5,
-                        "process_interval": 3.0,
+                        "process_interval": 5.0,
                         "snapshot": {
                             "ok": True,
                             "source": "test",

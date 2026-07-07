@@ -7,7 +7,7 @@ from constella.schema import Snapshot
 
 
 def test_collector_accepts_allowed_refresh_intervals() -> None:
-    collector = SnapshotCollector(refresh_interval=1.0, process_interval=3.0)
+    collector = SnapshotCollector(refresh_interval=1.0, process_interval=5.0)
 
     for interval in ALLOWED_REFRESH_INTERVALS:
         settings = collector.set_refresh_interval(interval)
@@ -17,7 +17,7 @@ def test_collector_accepts_allowed_refresh_intervals() -> None:
 
 
 def test_collector_rejects_unsupported_refresh_intervals() -> None:
-    collector = SnapshotCollector(refresh_interval=1.0, process_interval=3.0)
+    collector = SnapshotCollector(refresh_interval=1.0, process_interval=5.0)
 
     for interval in (0.25, 3.0, 10.0):
         with pytest.raises(ValueError):
@@ -25,7 +25,7 @@ def test_collector_rejects_unsupported_refresh_intervals() -> None:
 
 
 def test_snapshot_uses_runtime_refresh_interval() -> None:
-    collector = SnapshotCollector(refresh_interval=1.0, process_interval=3.0)
+    collector = SnapshotCollector(refresh_interval=1.0, process_interval=5.0)
     collector.set_refresh_interval(2.0)
     snapshot = Snapshot(
         ok=True,

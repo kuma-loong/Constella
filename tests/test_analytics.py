@@ -67,7 +67,7 @@ def make_snapshot(
         sampled_at=sampled_at,
         received_at=sampled_at + 0.1,
         refresh_interval=1.0,
-        process_interval=3.0,
+        process_interval=5.0,
         status="online",
         source="test",
         gpus=gpus,

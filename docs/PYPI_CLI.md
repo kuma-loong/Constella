@@ -45,7 +45,7 @@ Starts the manager and optional helper processes.
 | `--host` | `127.0.0.1` | Manager bind host. Use `0.0.0.0` when remote agents must connect directly. |
 | `--port` | `8765` | Manager HTTP/WebSocket port. |
 | `--refresh` | `1.0` | GPU metric refresh interval. Must be one of the supported collector intervals. |
-| `--process-refresh` | `3.0` | Process sampling interval. |
+| `--process-refresh` | `5.0` | Process sampling interval. |
 | `--log-level` | `info` | Uvicorn log level for managed server processes. |
 | `--run-dir` | `run` | Directory for PID files, token files, local agent state, and the default database. |
 | `--log-dir` | `logs` | Directory for manager, local agent, and sidecar logs. |
@@ -129,7 +129,7 @@ manager_hostname: manager-node
 manager_url: ws://10.0.0.10:8765/api/agents/ws
 agent_token_file: run/agent-token
 refresh_interval: 1.0
-process_interval: 3.0
+process_interval: 5.0
 remote_base: $HOME/.constella
 nodes:
   - id: gpu-node-01
@@ -161,7 +161,7 @@ Runs only the manager web service.
 | `--host` | `127.0.0.1` | Bind host. |
 | `--port` | `8765` | HTTP/WebSocket port. |
 | `--refresh` | `1.0` | Manager refresh interval broadcast to agents. |
-| `--process-refresh` | `3.0` | Process refresh interval broadcast to agents. |
+| `--process-refresh` | `5.0` | Process refresh interval broadcast to agents. |
 | `--agent-token-file` | unset | Enables authenticated agent ingest. |
 | `--highres-token-file` | unset | Token file for high-resolution stream clients. |
 | `--db-path` | unset | Enables SQLite history and analytics. |

@@ -11,7 +11,7 @@ def sample_message(node_id: str, seq: int, util: int = 50) -> dict[str, object]:
         "seq": seq,
         "sampled_at": 100.0 + seq,
         "refresh_interval": 1.0,
-        "process_interval": 3.0,
+        "process_interval": 5.0,
         "snapshot": {
             "ok": True,
             "source": "test",

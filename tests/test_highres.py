@@ -77,7 +77,7 @@ def make_node_snapshot(
         sampled_at=sampled_at,
         received_at=sampled_at + 0.1,
         refresh_interval=1.0,
-        process_interval=3.0,
+        process_interval=5.0,
         status="online",
         source="test",
         gpus=gpus,
@@ -300,7 +300,7 @@ def test_manager_highres_stream_emits_light_gpu_sample() -> None:
                     "seq": 1,
                     "sampled_at": 10.0,
                     "refresh_interval": 0.5,
-                    "process_interval": 3.0,
+                    "process_interval": 5.0,
                     "snapshot": {
                         "ok": True,
                         "source": "test",
