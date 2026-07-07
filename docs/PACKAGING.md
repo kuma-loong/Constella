@@ -17,6 +17,8 @@ The script builds the frontend into `src/constella/frontend/dist`, then creates 
 
 ## Installed CLI Usage
 
+For a full command and parameter reference, see [PyPI CLI Usage](PYPI_CLI.md).
+
 One-command service start:
 
 ```bash
