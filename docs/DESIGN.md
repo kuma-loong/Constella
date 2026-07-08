@@ -8,19 +8,49 @@
 
 ```mermaid
 flowchart LR
-  L["Local GPU agent<br/>NVML + nvidia-smi fallback"] -->|"WS /api/agents/ws"| M["Manager<br/>FastAPI + ingest"]
-  R["Remote GPU agent<br/>NVML + nvidia-smi fallback"] -->|"WS /api/agents/ws"| M
-  M --> A["History accumulator<br/>120-point realtime cache"]
-  A --> S["Cluster state<br/>latest by node"]
-  S --> G["FastAPI HTTP<br/>/api/cluster/snapshot"]
-  S --> H["FastAPI WebSocket<br/>/ws/cluster"]
-  H --> F["Vite TypeScript UI"]
-  S -.optional bounded queue.-> DB["SQLite sink"]
+  subgraph GPU["GPU 节点"]
+    L["Local agent<br/>NVML + nvidia-smi fallback"]
+    R["Remote agents<br/>NVML + nvidia-smi fallback"]
+  end
+
+  subgraph Manager["Manager 进程"]
+    I["Agent ingest<br/>WS /api/agents/ws"]
+    A["HistoryAccumulator<br/>120 点实时短历史"]
+    S["ClusterState<br/>latest by node"]
+    B["Highres broadcaster<br/>WS /api/highres/stream"]
+    C["Highres in-process cache<br/>/api/highres/*"]
+    Q["AsyncDBSink<br/>bounded queue"]
+  end
+
+  subgraph Optional["可选持久化与分析"]
+    DB["SQLite<br/>rollups + sessions"]
+    AN["analytics.py<br/>overview + node history"]
+    HS["Highres sidecar<br/>memory ring buffer"]
+  end
+
+  subgraph UI["前端与外部访问"]
+    API["HTTP API<br/>/api/cluster/snapshot"]
+    WS["Realtime WebSocket<br/>/ws/cluster"]
+    FE["Vite TypeScript UI<br/>/overview /nodes /jobs"]
+  end
+
+  L -->|"hello / sample / heartbeat"| I
+  R -->|"hello / sample / heartbeat"| I
+  I --> A --> S
+  S --> API --> FE
+  S --> WS --> FE
+  S -.accepted samples.-> C
+  S -.accepted samples.-> B
+  B -.optional local stream.-> HS
+  S -.optional.-> Q --> DB
+  DB --> AN --> FE
+  DB --> C --> FE
+  DB --> HS --> FE
 ```
 
 manager 不直接采样本机 GPU。启用本机监控时，服务脚本会额外启动一个 local agent；这个 agent 和远端 agent 使用同一条 WebSocket ingest、ClusterState、DB sink 和前端 API 路径。浏览器连接数增加时，不会增加 NVML 调用次数，只会复用 manager 中的最新 `ClusterSnapshot`。
 
-manager 在 ingest 当前采样点后维护每张 GPU 的 120 点实时短历史，再把每个节点的 latest `NodeSnapshot` 聚合成 `ClusterSnapshot` 推给前端。SSH 只用于安装、写配置、启动、停止和状态查询，不作为实时数据通道；agent 主动通过 WebSocket 回连 manager，不开放入站 HTTP 服务。
+manager 在 ingest 当前采样点后维护每张 GPU 的 120 点实时短历史，再把每个节点的 latest `NodeSnapshot` 聚合成 `ClusterSnapshot` 推给前端。SQLite、分析 API 和高分辨率作业曲线都在接受样本之后走旁路，不阻塞实时 WebSocket 快照。SSH 只用于安装、写配置、启动、停止和状态查询，不作为实时数据通道；agent 主动通过 WebSocket 回连 manager，不开放入站 HTTP 服务。
 
 ## 数据路径
 

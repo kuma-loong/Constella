@@ -4,13 +4,13 @@
 
 <h1 align="center">Constella</h1>
 
-<div align="center">
-  <blockquote>
-    <em>如同星座中的群星，<strong>Constella</strong> 将独立的 GPU 节点汇聚成一个可观测的集群。</em>
-  </blockquote>
-</div>
+<p align="center">
+  <strong>轻量级 GPU 集群监控与任务历史追踪</strong>
+</p>
 
-<br>
+<p align="center">
+  今天监控，明天复盘。
+</p>
 
 <div align="center" id="constella-badges">
 
@@ -22,17 +22,160 @@
 
 <p align="center"><a href="README.md">English</a> | 简体中文</p>
 
-一个普通用户级的 NVIDIA GPU 实时监控服务，支持本机和轻量集群模式。所有 GPU 节点，包括启用本机监控时的 manager 主机，都走同一条 agent 路径：NVML 优先、`nvidia-smi` 兜底、WebSocket 上报到 manager。
+<div align="center">
+  <blockquote>
+    <em>如同星座中的群星，<strong>Constella</strong> 将独立的 GPU 节点汇聚成一个可观测的集群。</em>
+  </blockquote>
+</div>
+
+Constella 是一个面向实验室、AI 团队和个人 GPU 服务器的轻量级 GPU 监控平台。
+
+不同于只能查看当前状态的终端工具，Constella 会自动记录 GPU 任务历史，方便在训练或推理结束后回看 GPU 曲线。它支持单机和小型 GPU 集群，不需要先部署一整套 Prometheus/Grafana 监控系统。
+
+## 截图
+
+<table>
+  <tr>
+    <th>集群总览</th>
+    <th>GPU 与进程详情</th>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/01-overview-realtime-cluster.png" alt="Constella 集群总览"></td>
+    <td><img src="docs/assets/02-node-gpu-process-detail.png" alt="Constella GPU 进程详情"></td>
+  </tr>
+</table>
+
+**任务曲线**
+
+<p align="center">
+  <img src="docs/assets/05-job-curve-interaction.gif" alt="Constella 任务曲线交互">
+</p>
 
 ## 功能
 
-- 面向单机或小型集群的 NVIDIA GPU 实时监控，采用模块化架构，功能可按需启用。
-- 低开销采样：每个 GPU 节点只有一个常驻采样器，agent 只上报当前采样点，短历史由 manager 维护，浏览器共享 manager 内存快照。
-- 完整 GPU 与进程指标：利用率、显存、功耗、温度、时钟、P-state、ECC、MIG、进程显存、运行时间、用户、PID 和命令指纹。
-- 稳定 agent 采样路径：NVML 优先、`nvidia-smi` 兜底，支持可选刷新率，并用低频进程采样降低抖动。
-- 普通用户级部署：无需 sudo 或 system service；需要持久化指标时可启用 SQLite 历史库。
-- 可选分析看板：加权 GPU hours、作业排行、异常低利用率占用、非工作时段活动、节点趋势曲线和按时间窗自适应的热力图。
-- 提供标准 API，便于接入自定义前端、看板或自动化系统。
+**任务历史追踪**
+
+- 自动记录已完成任务的 GPU 曲线。
+- 回看最近 7 天内的训练和推理任务。
+- 短任务优先使用高分辨率内存缓存，持久化历史由 SQLite rollup 提供。
+
+**GPU 监控**
+
+- 在一个 Web UI 中监控单机或小型 GPU 集群。
+- 查看 GPU 利用率、显存、功耗、温度、时钟、进程、用户、PID 和命令指纹。
+- 优先使用 NVML 采样，必要时使用 `nvidia-smi` 兜底。
+
+**多用户分析**
+
+- 查看用户 GPU 使用排行、作业用时排行、节点趋势和按时间窗自适应的热力图。
+- 检测低利用率占用和非工作时段活动。
+- 即使不启用历史分析，实时监控也可以正常工作。
+
+**轻量部署**
+
+- 不需要 root 权限、system service、Prometheus 或 Grafana。
+- 一个 manager 进程接收本机和远端 GPU agent 的数据。
+- 远端 GPU 节点只需要 Python、NVIDIA 驱动和 SSH 访问权限。
+
+## 为什么是 Constella？
+
+| 能力 | nvitop | Prometheus/Grafana | Constella |
+| --- | --- | --- | --- |
+| 实时 GPU 状态 | 支持 | 支持 | 支持 |
+| 任务历史追踪 | 不支持 | 需要配置 | 内置 |
+| 小型集群视图 | 有限 | 支持 | 支持 |
+| 轻量部署 | 支持 | 不轻量 | 支持 |
+| Web UI | 不支持 | 支持 | 支持 |
+| 用户/作业分析 | 不支持 | 需要自定义看板 | 内置 |
+
+Constella 介于终端监控和完整可观测性系统之间：比 `nvitop` 更适合历史追踪和多人共享，又比 Prometheus/Grafana 更适合小实验室快速部署。
+
+## 快速开始
+
+启动 manager 和本机 GPU agent：
+
+```bash
+cd Constella
+./scripts/service/setup.sh
+./scripts/service/start.sh
+```
+
+打开：
+
+```text
+http://127.0.0.1:8765/overview
+```
+
+如果服务运行在远端服务器，在本地电脑转发端口：
+
+```bash
+ssh -N -L 8765:127.0.0.1:8765 <user>@<server>
+```
+
+需要任务历史和分析看板时启用 SQLite：
+
+```bash
+DB_PATH=run/constella.db ./scripts/service/start.sh
+```
+
+## 集群模式
+
+准备远端节点清单：
+
+```bash
+cp docs/nodes.example.yaml nodes.yaml
+```
+
+编辑 `manager_url`、`manager_hostname` 和 GPU 节点，并配置 manager 到各 GPU 节点的 SSH 免密访问。
+
+```mermaid
+flowchart LR
+  M["Manager<br/>FastAPI + Web UI"] -->|"SSH 安装/控制"| A["gpu-node-a<br/>agent"]
+  M -->|"SSH 安装/控制"| B["gpu-node-b<br/>agent"]
+  M -->|"SSH 安装/控制"| C["gpu-node-c<br/>agent"]
+  A -->|"WebSocket 采样数据"| M
+  B -->|"WebSocket 采样数据"| M
+  C -->|"WebSocket 采样数据"| M
+```
+
+启动远端 GPU agents：
+
+```bash
+./scripts/cluster/start.sh
+```
+
+- `scripts/service/start.sh` 首次启动本机 agent 时会自动创建 `run/agent-token`，`scripts/cluster/start.sh` 使用同一个 token 配置远端 agent。
+- 如果 manager 主机不采集本机 GPU，启动时加 `LOCAL_AGENT=0`。
+- 远端节点不需要安装 `uv`，manager 会同步最小 agent runtime。
+
+## 架构
+
+```mermaid
+flowchart LR
+  LA["本机 agent<br/>NVML / nvidia-smi"] -->|"WS /api/agents/ws"| M["Manager<br/>FastAPI ingest"]
+  RA["远端 agents<br/>NVML / nvidia-smi"] -->|"WS /api/agents/ws"| M
+  M --> S["ClusterState<br/>latest snapshots + 120 点短历史"]
+  S --> API["HTTP /api/cluster/snapshot"]
+  S --> WS["WebSocket /ws/cluster"]
+  S -.可选.-> DB["SQLite<br/>rollups + sessions"]
+  DB -.可选.-> AN["Analytics + job curves"]
+  S -.可选.-> HR["Highres cache / sidecar"]
+  API --> UI["Vite TypeScript UI"]
+  WS --> UI
+  AN --> UI
+  HR --> UI
+```
+
+manager 不直接采样 GPU；本机节点和远端节点都通过同一条 agent WebSocket 路径上报当前采样点。SQLite、分析 API 和高分辨率作业曲线都是可选旁路，不阻塞实时快照。完整设计见 [设计说明](docs/DESIGN.md)。
+
+## 文档
+
+- [设计说明](docs/DESIGN.md)：架构、数据路径、低开销策略和数据契约。
+- [运维手册](docs/OPERATIONS.md)：启动、访问、集群 agent 管理、状态和验证命令。
+- [SQLite 历史库](docs/HISTORY.md)：持久化、rollup、维护和作业曲线。
+- [Cloudflare Tunnel](docs/CLOUD_TUNNEL.md)：无入站端口的域名访问方案。
+- [节点清单示例](docs/nodes.example.yaml)：远端 agent 的 `nodes.yaml` 模板。
+- [脚本说明](scripts/README.md)：service、cluster、tunnel、maintenance、dev 脚本入口。
 
 ## 项目结构
 
@@ -44,79 +187,25 @@ docs/                   设计和运维文档
 tests/                  单元测试
 ```
 
-## 快速部署
+## 开发
 
 ```bash
-cd Constella
-./scripts/service/setup.sh
-./scripts/service/start.sh
+uv sync
+uv run pytest
+
+cd frontend
+npm install
+npm run build
 ```
 
-默认会同时启动 manager 和本机 GPU agent。manager 监听 `127.0.0.1:8765`，本机 agent 连接 `ws://127.0.0.1:8765/api/agents/ws`。在本地电脑执行：
+前端开发模式：
 
 ```bash
-ssh -N -L 8765:127.0.0.1:8765 <user>@<server>
+cd frontend
+npm run dev
 ```
 
-然后打开 `http://127.0.0.1:8765/overview`。
-
-如果这台机器只作为 manager，不采集本机 GPU：
-
-```bash
-LOCAL_AGENT=0 ./scripts/service/start.sh
-```
-
-## 集群模式
-
-本机 agent 开启时，`scripts/service/start.sh` 会自动创建 `run/agent-token`。如需使用指定 token 文件：
-
-```bash
-mkdir -p run
-umask 077
-printf '%s\n' 'replace-with-a-random-token' > run/agent-token
-chmod 600 run/agent-token
-AGENT_TOKEN_FILE=run/agent-token ./scripts/service/start.sh
-```
-
-复制示例节点清单并编辑主机名和用户：
-
-```bash
-cp docs/nodes.example.yaml nodes.yaml
-```
-
-`manager_hostname` 用来配置 manager 主机本机 agent 在页面上的显示名。`scripts/service/start.sh` 会把它作为默认 `LOCAL_AGENT_NODE_ID`。
-
-启动、查看和停止远端 agent：
-
-```bash
-./scripts/cluster/start.sh
-./scripts/cluster/status.sh
-./scripts/cluster/stop.sh
-```
-
-`constella cluster start` 只把 SSH 用作安装、写配置和启停控制。agent token 通过 stdin 写入远端 `~/.constella/run/agent.env`，权限为 `600`，不会出现在远端命令行参数中。
-
-远端 GPU 节点不需要安装 `uv`。manager 会在本地构建最小 agent runtime，只同步 agent 侧需要的 Constella 模块和 `websockets`，远端启动脚本使用 `python3 -m constella.agent_main` 运行。升级 manager 后需要重启所有 agent，确保全部节点使用只上报当前点的新协议。
-
-## 可选组件
-
-- SQLite 历史库默认关闭，只在需要持久化 GPU/任务历史和分析看板时启用。配置和维护见 [SQLite 历史库](docs/HISTORY.md)。
-- Cloudflare Tunnel 是可选部署方式，用于在不开放服务器入站端口的情况下绑定域名访问。配置见 [Cloudflare Tunnel](docs/CLOUD_TUNNEL.md)。
-
-## 常用命令
-
-```bash
-./scripts/service/status.sh
-./scripts/service/stop.sh
-HOST=127.0.0.1 PORT=8765 REFRESH=1.0 PROCESS_REFRESH=3.0 ./scripts/service/start.sh
-LOCAL_AGENT=0 ./scripts/service/start.sh
-uv run constella probe --pretty
-uv run constella agent
-uv run constella cluster start --nodes nodes.yaml
-uv run constella cluster status --nodes nodes.yaml
-uv run constella cluster stop --nodes nodes.yaml
-COUNT=20 ./scripts/dev/bench_probe.sh
-```
+生产服务依赖 `frontend/dist`，执行 `npm run build` 后由 FastAPI 直接托管。
 
 ## API
 
@@ -138,28 +227,6 @@ COUNT=20 ./scripts/dev/bench_probe.sh
 - `GET /api/docs`：FastAPI OpenAPI 文档。
 
 未启用 SQLite 时，历史、分析和作业曲线搜索 API 返回 `enabled:false`；实时集群监控仍然通过 `/api/cluster/snapshot` 和 `/ws/cluster` 工作。
-
-旧单机接口不再作为兼容层维护：`GET /api/snapshot` 返回 `410 Gone`，`WS /ws/gpu` 会立即关闭。本机和远端节点都统一使用 cluster API。
-
-## 开发
-
-```bash
-uv sync
-uv run pytest
-
-cd frontend
-npm install
-npm run build
-```
-
-前端开发模式：
-
-```bash
-cd frontend
-npm run dev
-```
-
-生产服务依赖 `frontend/dist`，执行 `npm run build` 后由 FastAPI 直接托管。
 
 ## License
 

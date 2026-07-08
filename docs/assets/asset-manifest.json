@@ -1,0 +1,48 @@
+{
+  "generated_at": "2026-07-06T12:57:05.909Z",
+  "base_url": "http://127.0.0.1:8876",
+  "viewport_css_px": "1920x1400",
+  "device_scale_factor": 2,
+  "files": [
+    {
+      "file": "01-overview-realtime-cluster.png",
+      "bytes": 892724
+    },
+    {
+      "file": "02-node-gpu-process-detail.png",
+      "bytes": 1132406
+    },
+    {
+      "file": "03-node-history-curves.png",
+      "bytes": 1121035
+    },
+    {
+      "file": "04-highres-job-curves.png",
+      "bytes": 692234
+    },
+    {
+      "file": "05-job-curve-interaction.gif",
+      "bytes": 1169330
+    },
+    {
+      "file": "light-01-overview-realtime-cluster.png",
+      "bytes": 909607
+    },
+    {
+      "file": "light-02-node-gpu-process-detail.png",
+      "bytes": 1094695
+    },
+    {
+      "file": "light-03-node-history-curves.png",
+      "bytes": 1112300
+    },
+    {
+      "file": "light-04-highres-job-curves.png",
+      "bytes": 720209
+    },
+    {
+      "file": "light-05-job-curve-interaction.gif",
+      "bytes": 1178702
+    }
+  ]
+}

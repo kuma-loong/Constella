@@ -1,0 +1,77 @@
+{
+  "ok": true,
+  "missing": [],
+  "forbidden_text_hits": [],
+  "assets": [
+    {
+      "file": "01-overview-realtime-cluster.png",
+      "width": 3810,
+      "height": 3462,
+      "bytes": 892724,
+      "high_resolution": true
+    },
+    {
+      "file": "02-node-gpu-process-detail.png",
+      "width": 3810,
+      "height": 4080,
+      "bytes": 1132406,
+      "high_resolution": true
+    },
+    {
+      "file": "03-node-history-curves.png",
+      "width": 3840,
+      "height": 4080,
+      "bytes": 1121035,
+      "high_resolution": true
+    },
+    {
+      "file": "04-highres-job-curves.png",
+      "width": 3840,
+      "height": 2800,
+      "bytes": 692234,
+      "high_resolution": true
+    },
+    {
+      "file": "05-job-curve-interaction.gif",
+      "width": 1920,
+      "height": 1400,
+      "bytes": 1169330,
+      "high_resolution": true
+    },
+    {
+      "file": "light-01-overview-realtime-cluster.png",
+      "width": 3810,
+      "height": 3462,
+      "bytes": 909607,
+      "high_resolution": true
+    },
+    {
+      "file": "light-02-node-gpu-process-detail.png",
+      "width": 3810,
+      "height": 4080,
+      "bytes": 1094695,
+      "high_resolution": true
+    },
+    {
+      "file": "light-03-node-history-curves.png",
+      "width": 3840,
+      "height": 4080,
+      "bytes": 1112300,
+      "high_resolution": true
+    },
+    {
+      "file": "light-04-highres-job-curves.png",
+      "width": 3840,
+      "height": 2800,
+      "bytes": 720209,
+      "high_resolution": true
+    },
+    {
+      "file": "light-05-job-curve-interaction.gif",
+      "width": 1920,
+      "height": 1400,
+      "bytes": 1178702,
+      "high_resolution": true
+    }
+  ]
+}

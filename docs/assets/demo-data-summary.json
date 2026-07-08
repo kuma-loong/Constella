@@ -1,0 +1,63 @@
+{
+  "dataset": "synthetic Constella promo demo",
+  "privacy": {
+    "real_users": false,
+    "real_hostnames": false,
+    "real_gpu_models": false,
+    "real_commands": false
+  },
+  "cluster": {
+    "node_count": 3,
+    "online_node_count": 3,
+    "gpu_count": 10,
+    "active_processes": 10,
+    "nodes": [
+      "node-a",
+      "node-b",
+      "node-c"
+    ],
+    "gpu_models": [
+      "GPU Type 1 Accelerator",
+      "GPU Type 2 Accelerator",
+      "GPU Type 3 Accelerator"
+    ]
+  },
+  "history": {
+    "node": "node-a",
+    "range": "24h",
+    "bucket_seconds": 160,
+    "series_points_per_gpu": {
+      "GPU-DEMO-a-0": 539,
+      "GPU-DEMO-a-1": 539,
+      "GPU-DEMO-a-2": 539,
+      "GPU-DEMO-a-3": 539
+    },
+    "heatmap_buckets_per_gpu": {
+      "GPU-DEMO-a-0": 25,
+      "GPU-DEMO-a-1": 25,
+      "GPU-DEMO-a-2": 25,
+      "GPU-DEMO-a-3": 25
+    }
+  },
+  "users": [
+    "user1",
+    "user2",
+    "user3",
+    "user4"
+  ],
+  "tasks": [
+    "batch_infer.py",
+    "evaluate.py",
+    "interactive_tune.py",
+    "train_model.py"
+  ],
+  "features_shown": [
+    "realtime cluster status",
+    "GPU utilization, memory, power, and thermals",
+    "process and user attribution",
+    "full-range 24h node history curves",
+    "GPU utilization heatmap",
+    "job search and high-resolution job curves",
+    "dark and light theme promotional variants"
+  ]
+}
