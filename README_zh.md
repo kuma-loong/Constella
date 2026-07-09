@@ -118,6 +118,14 @@ ssh -N -L 8765:127.0.0.1:8765 <user>@<server>
 DB_PATH=run/constella.db ./scripts/service/start.sh
 ```
 
+如果希望把短作业高分辨率曲线缓存拆到独立进程，启动 highres sidecar：
+
+```bash
+DB_PATH=run/constella.db HIGHRES_SIDECAR=1 ./scripts/service/start.sh
+```
+
+sidecar 默认监听 `127.0.0.1:8766`，订阅 manager 的 `ws://127.0.0.1:8765/api/highres/stream`。普通部署可以先不启用 sidecar，manager 进程内置的 `/api/highres/*` 接口仍可工作。
+
 ## 集群模式
 
 准备远端节点清单：

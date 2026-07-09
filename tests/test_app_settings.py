@@ -6,6 +6,12 @@ from constella.app import ManagerSettings, create_app
 from constella.cluster import ClusterState
 
 
+def test_manager_settings_default_process_interval_is_five_seconds() -> None:
+    settings = ManagerSettings.from_env()
+
+    assert settings.process_interval == 5.0
+
+
 def test_settings_api_get_and_patch() -> None:
     settings = ManagerSettings(refresh_interval=1.0, _process_interval=3.0)
     client = TestClient(create_app(manager_settings=settings))

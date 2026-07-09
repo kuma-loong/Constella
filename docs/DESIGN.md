@@ -56,7 +56,7 @@ manager 在 ingest 当前采样点后维护每张 GPU 的 120 点实时短历史
 
 1. 每个 GPU 节点 agent 启动时初始化 `NVMLSampler`，加载 `libnvidia-ml.so`。
 2. 按全局刷新率读取 GPU 名称、UUID、显存、利用率、温度、功耗、时钟、P-state、Compute Mode、ECC 和 MIG；刷新率可在 Web 端切换为 0.5 秒、1 秒、2 秒或 5 秒。
-3. 进程枚举默认每 3 秒执行一次并缓存，实际间隔不低于当前核心刷新率，降低多用户进程查询带来的抖动。
+3. 进程枚举默认每 5 秒执行一次并缓存，实际间隔不低于当前核心刷新率，降低多用户进程查询带来的抖动。
 4. 如果 NVML 初始化或单次采样失败，关闭当前 NVML 句柄并执行 `nvidia-smi --query-gpu=... --format=csv,noheader,nounits`。
 5. agent 内部 collector 给快照补充序号和当前刷新间隔；WebSocket sample 只携带当前采样点，不携带短历史数组。
 6. agent 通过 `WS /api/agents/ws` 发送 `hello`、`sample` 和 `heartbeat`。

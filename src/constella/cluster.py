@@ -130,7 +130,7 @@ class ClusterState:
                 sampled_at=seen_at,
                 received_at=seen_at,
                 refresh_interval=1.0,
-                process_interval=3.0,
+                process_interval=5.0,
                 status="online",
                 source="none",
                 agent_version=hello.agent_version,
@@ -317,7 +317,7 @@ def node_snapshot_from_agent_sample(
     gpus = [_gpu_from_dict(node_id, item) for item in payload.get("gpus", []) if isinstance(item, dict)]
     sampled_at = float(message.get("sampled_at") or payload.get("timestamp") or received_at)
     refresh_interval = float(message.get("refresh_interval") or payload.get("refresh_interval") or 1.0)
-    process_interval = float(message.get("process_interval") or payload.get("process_interval") or 3.0)
+    process_interval = float(message.get("process_interval") or payload.get("process_interval") or 5.0)
     return NodeSnapshot(
         node_id=node_id,
         hostname=str(payload.get("hostname") or hostname or node_id),
@@ -418,4 +418,3 @@ def _process_from_dict(data: dict[str, Any]) -> GpuProcess:
         detail_status=str(data.get("detail_status") or "unknown"),
         detail_error=data.get("detail_error"),
     )
-

@@ -319,7 +319,7 @@ def sample_hardware_inventory() -> NodeHardware | None:
 
 
 class NVMLSampler:
-    def __init__(self, own_user: str | None = None, process_interval: float = 3.0):
+    def __init__(self, own_user: str | None = None, process_interval: float = 5.0):
         self.own_user = own_user or os.environ.get("USER")
         self.process_interval = max(1.0, process_interval)
         self._lib = _load_library()

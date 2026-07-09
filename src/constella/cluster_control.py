@@ -42,7 +42,7 @@ class ClusterConfig:
     agent_token_file: Path
     nodes: list[ClusterNode]
     refresh_interval: float = 1.0
-    process_interval: float = 3.0
+    process_interval: float = 5.0
     remote_base: str = "$HOME/.constella"
     manager_hostname: str | None = None
 
@@ -309,7 +309,7 @@ def load_cluster_config(path: Path) -> ClusterConfig:
         nodes=[parse_node(item) for item in nodes_raw],
         manager_hostname=parse_optional_string(raw.get("manager_hostname")),
         refresh_interval=float(raw.get("refresh_interval", 1.0)),
-        process_interval=float(raw.get("process_interval", 3.0)),
+        process_interval=float(raw.get("process_interval", 5.0)),
         remote_base=str(raw.get("remote_base", "$HOME/.constella")),
     )
 

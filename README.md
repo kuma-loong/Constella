@@ -118,6 +118,14 @@ Enable SQLite history when workload history and analytics are needed:
 DB_PATH=run/constella.db ./scripts/service/start.sh
 ```
 
+Start the high-resolution sidecar when short-job curve cache should run outside the manager process:
+
+```bash
+DB_PATH=run/constella.db HIGHRES_SIDECAR=1 ./scripts/service/start.sh
+```
+
+The sidecar listens on `127.0.0.1:8766` by default and subscribes to the manager stream at `ws://127.0.0.1:8765/api/highres/stream`. Simple deployments can skip the sidecar; the manager still exposes the built-in `/api/highres/*` endpoints.
+
 ## Cluster Mode
 
 Prepare the remote node manifest:

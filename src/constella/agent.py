@@ -31,7 +31,7 @@ class AgentConfig:
     manager_url: str
     token: str
     refresh_interval: float = 1.0
-    process_interval: float = 3.0
+    process_interval: float = 5.0
     state_file: Path = Path.home() / ".constella" / "run" / "agent-state.json"
     heartbeat_seconds: float = 10.0
 
@@ -66,7 +66,7 @@ class AgentConfig:
         process = (
             float(process_interval)
             if process_interval is not None
-            else float(os.environ.get("CONSTELLA_PROCESS_SECONDS", "3.0"))
+            else float(os.environ.get("CONSTELLA_PROCESS_SECONDS", "5.0"))
         )
         resolved_state_file = Path(
             state_file

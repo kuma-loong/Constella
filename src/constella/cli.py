@@ -30,7 +30,7 @@ def main(argv: list[str] | None = None) -> None:
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
     serve.add_argument("--refresh", type=float, default=1.0)
-    serve.add_argument("--process-refresh", type=float, default=3.0)
+    serve.add_argument("--process-refresh", type=float, default=5.0)
     serve.add_argument("--log-level", default="info")
 
     highres_sidecar = subparsers.add_parser(

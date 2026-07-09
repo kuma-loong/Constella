@@ -30,6 +30,7 @@ def test_agent_config_reads_env_and_token_file(tmp_path, monkeypatch) -> None:
     assert config.node_id == "node-a"
     assert config.manager_url == "ws://manager/api/agents/ws"
     assert config.token == "secret"
+    assert config.process_interval == 5.0
     assert config.state_file == state_file
 
 

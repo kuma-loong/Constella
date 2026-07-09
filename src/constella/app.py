@@ -56,7 +56,7 @@ class ManagerSettings:
         process = (
             process_interval
             if process_interval is not None
-            else float(os.environ.get("CONSTELLA_PROCESS_SECONDS", "3.0"))
+            else float(os.environ.get("CONSTELLA_PROCESS_SECONDS", "5.0"))
         )
         return cls(
             refresh_interval=validate_refresh_interval(refresh),

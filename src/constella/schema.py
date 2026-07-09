@@ -355,7 +355,7 @@ def snapshot_to_node_snapshot(
     node_id: str | None = None,
     hostname: str | None = None,
     received_at: float | None = None,
-    process_interval: float = 3.0,
+    process_interval: float = 5.0,
     status: str | None = None,
     agent_version: str | None = None,
 ) -> NodeSnapshot:
