@@ -199,14 +199,20 @@ def create_app(
     @app.get("/api/health")
     async def health() -> dict[str, object]:
         snapshot = cluster_state.snapshot()
+        database = (
+            db_sink.status()
+            if db_sink is not None
+            else {"enabled": False, "healthy": True}
+        )
         return {
-            "ok": True,
+            "ok": bool(database["healthy"]),
             "seq": snapshot.seq,
             "source": "manager",
             "agent_ingest_enabled": expected_agent_token is not None,
             "node_count": snapshot.totals.node_count,
             "online_node_count": snapshot.totals.online_node_count,
             "gpu_count": snapshot.totals.gpu_count,
+            "database": database,
         }
 
     @app.get("/api/snapshot")

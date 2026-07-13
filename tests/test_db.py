@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+
 from fastapi.testclient import TestClient
 
 from constella.app import create_app
@@ -124,6 +127,71 @@ def test_sqlite_sink_flushes_20s_rollup_and_raw_retention(tmp_path) -> None:
         sink.store.close()
 
 
+def test_sqlite_sink_keeps_rollups_when_flush_fails(tmp_path, monkeypatch) -> None:
+    sink = AsyncDBSink(SQLiteSinkConfig(path=tmp_path / "constella.db"))
+    sink.store.open()
+    sink._accumulate_snapshot(make_node_snapshot(100.0, gpu_util=20))
+    original_upsert = sink.store.upsert_gpu_metric_rollups
+
+    def fail_upsert(rows) -> int:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(sink.store, "upsert_gpu_metric_rollups", fail_upsert)
+    try:
+        try:
+            sink.flush_rollups(now=140.0)
+        except OSError as exc:
+            assert str(exc) == "disk full"
+        else:
+            raise AssertionError("flush should fail")
+
+        assert len(sink._rollup_20s) == 2
+
+        monkeypatch.setattr(sink.store, "upsert_gpu_metric_rollups", original_upsert)
+        assert sink.flush_rollups(now=140.0) == 2
+        assert sink._rollup_20s == {}
+    finally:
+        sink.store.close()
+
+
+def test_sqlite_worker_logs_errors_reports_health_and_recovers(
+    tmp_path, monkeypatch, caplog
+) -> None:
+    async def exercise() -> None:
+        sink = AsyncDBSink(SQLiteSinkConfig(path=tmp_path / "constella.db"))
+        original_write = sink.store.write_node_snapshot
+
+        def fail_write(snapshot, *, write_raw=False) -> None:
+            raise OSError("disk full")
+
+        await sink.start()
+        monkeypatch.setattr(sink.store, "write_node_snapshot", fail_write)
+        sink.submit_node_snapshot(make_node_snapshot(100.0))
+        await sink.queue.join()
+
+        failed = sink.status()
+        assert failed["healthy"] is False
+        assert failed["write_errors"] == 1
+        assert failed["consecutive_errors"] == 1
+        assert failed["last_error_operation"] == "write_node_snapshot"
+        assert failed["last_error"] == "OSError: disk full"
+        assert failed["pending_rollup_buckets"] == 2
+        assert "SQLite sink operation failed" in caplog.text
+
+        monkeypatch.setattr(sink.store, "write_node_snapshot", original_write)
+        sink.submit_node_snapshot(make_node_snapshot(105.0))
+        await sink.queue.join()
+
+        recovered = sink.status()
+        assert recovered["healthy"] is True
+        assert recovered["consecutive_errors"] == 0
+        assert recovered["last_success_at"] is not None
+        await sink.stop()
+
+    with caplog.at_level(logging.INFO, logger="constella.db"):
+        asyncio.run(exercise())
+
+
 def test_sqlite_sink_closes_stale_sessions_during_scheduled_maintenance(tmp_path) -> None:
     sink = AsyncDBSink(SQLiteSinkConfig(path=tmp_path / "constella.db"))
     sink.store.open()
@@ -211,6 +279,25 @@ def test_db_history_api_returns_disabled_without_sink() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"enabled": False, "items": []}
+
+
+def test_health_api_exposes_database_status(tmp_path) -> None:
+    sink = AsyncDBSink(SQLiteSinkConfig(path=tmp_path / "constella.db"))
+    sink.store.open()
+    client = TestClient(
+        create_app(cluster_state=ClusterState(local_node_id="local"), db_sink=sink)
+    )
+
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["database"]["enabled"] is True
+    assert payload["database"]["healthy"] is True
+    assert payload["database"]["queue_depth"] == 0
+    assert payload["database"]["write_errors"] == 0
+    sink.store.close()
 
 
 def test_db_history_api_reads_sink(tmp_path) -> None:

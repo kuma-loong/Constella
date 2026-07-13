@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -10,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from .schema import GpuInfo, GpuProcess, NodeSnapshot, process_session_id
+
+logger = logging.getLogger(__name__)
 
 RAW_SNAPSHOT_RETENTION_SECONDS = 12 * 60 * 60
 SESSION_CLOSE_INTERVAL_SECONDS = 30 * 60
@@ -696,6 +699,15 @@ class AsyncDBSink:
         self._rollup_20s: dict[tuple[float, str, str], RollupBucket] = {}
         self.dropped_samples = 0
         self.write_errors = 0
+        self.consecutive_errors = 0
+        self.last_success_at: float | None = None
+        self.last_write_at: float | None = None
+        self.last_error_at: float | None = None
+        self.last_error_operation: str | None = None
+        self.last_error: str | None = None
+        self._last_error_log_at = 0.0
+        self._suppressed_error_logs = 0
+        self._last_queue_warning_at = 0.0
 
     async def start(self) -> None:
         if self.store.connection is None:
@@ -723,15 +735,56 @@ class AsyncDBSink:
             return True
         except asyncio.QueueFull:
             self.dropped_samples += 1
+            now = time.time()
+            if now - self._last_queue_warning_at >= 60.0:
+                logger.warning(
+                    "SQLite queue is full; dropping snapshot (depth=%d capacity=%d dropped=%d)",
+                    self.queue.qsize(),
+                    self.queue.maxsize,
+                    self.dropped_samples,
+                )
+                self._last_queue_warning_at = now
             return False
 
     def flush_rollups(self, *, now: float) -> int:
-        ready: list[dict[str, Any]] = []
+        ready: list[tuple[tuple[float, str, str], RollupBucket]] = []
         for key, bucket in list(self._rollup_20s.items()):
             if bucket.bucket_start + ROLLUP_20S <= now - ROLLUP_20S:
-                ready.append(bucket.to_row(ROLLUP_20S))
+                ready.append((key, bucket))
+
+        written = self.store.upsert_gpu_metric_rollups(
+            [bucket.to_row(ROLLUP_20S) for _, bucket in ready]
+        )
+        for key, bucket in ready:
+            if self._rollup_20s.get(key) is bucket:
                 del self._rollup_20s[key]
-        return self.store.upsert_gpu_metric_rollups(ready)
+        return written
+
+    def status(self) -> dict[str, Any]:
+        worker_running = self._task is not None and not self._task.done()
+        worker_failed = self._task is not None and self._task.done() and not self._task.cancelled()
+        queue_depth = self.queue.qsize()
+        return {
+            "enabled": True,
+            "healthy": (
+                self.store.connection is not None
+                and not worker_failed
+                and self.consecutive_errors == 0
+                and queue_depth < self.queue.maxsize
+            ),
+            "worker_running": worker_running,
+            "queue_depth": queue_depth,
+            "queue_capacity": self.queue.maxsize,
+            "pending_rollup_buckets": len(self._rollup_20s),
+            "dropped_samples": self.dropped_samples,
+            "write_errors": self.write_errors,
+            "consecutive_errors": self.consecutive_errors,
+            "last_success_at": self.last_success_at,
+            "last_write_at": self.last_write_at,
+            "last_error_at": self.last_error_at,
+            "last_error_operation": self.last_error_operation,
+            "last_error": self.last_error,
+        }
 
     async def _worker(self) -> None:
         while True:
@@ -740,17 +793,57 @@ class AsyncDBSink:
             except asyncio.TimeoutError:
                 try:
                     self._run_scheduled_maintenance(now=time.time())
-                except Exception:
-                    self.write_errors += 1
+                    self._record_success()
+                except Exception as exc:
+                    self._record_error("idle_maintenance", exc)
                 continue
+            operation = "accumulate_snapshot"
             try:
-                self.store.write_node_snapshot(snapshot, write_raw=write_raw)
                 self._accumulate_snapshot(snapshot)
+                operation = "write_node_snapshot"
+                self.store.write_node_snapshot(snapshot, write_raw=write_raw)
+                self.last_write_at = time.time()
+                operation = "scheduled_maintenance"
                 self._run_scheduled_maintenance(now=max(time.time(), snapshot.sampled_at))
-            except Exception:
-                self.write_errors += 1
+                self._record_success()
+            except Exception as exc:
+                self._record_error(operation, exc)
             finally:
                 self.queue.task_done()
+
+    def _record_success(self) -> None:
+        now = time.time()
+        if self.consecutive_errors:
+            logger.info(
+                "SQLite sink recovered after %d consecutive errors (last_operation=%s)",
+                self.consecutive_errors,
+                self.last_error_operation,
+            )
+        self.consecutive_errors = 0
+        self.last_success_at = now
+
+    def _record_error(self, operation: str, exc: Exception) -> None:
+        now = time.time()
+        self.write_errors += 1
+        self.consecutive_errors += 1
+        self.last_error_at = now
+        self.last_error_operation = operation
+        self.last_error = f"{type(exc).__name__}: {exc}"
+        if now - self._last_error_log_at >= 60.0:
+            logger.exception(
+                "SQLite sink operation failed (operation=%s errors=%d consecutive=%d "
+                "suppressed_since_last_log=%d queue_depth=%d pending_rollups=%d)",
+                operation,
+                self.write_errors,
+                self.consecutive_errors,
+                self._suppressed_error_logs,
+                self.queue.qsize(),
+                len(self._rollup_20s),
+            )
+            self._last_error_log_at = now
+            self._suppressed_error_logs = 0
+        else:
+            self._suppressed_error_logs += 1
 
     def _accumulate_snapshot(self, snapshot: NodeSnapshot) -> None:
         bucket_start = float(int(snapshot.sampled_at // ROLLUP_20S) * ROLLUP_20S)
