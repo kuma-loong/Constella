@@ -31,6 +31,7 @@ def main(argv: list[str] | None = None) -> None:
     serve.add_argument("--port", type=int, default=8765)
     serve.add_argument("--refresh", type=float, default=1.0)
     serve.add_argument("--process-refresh", type=float, default=5.0)
+    serve.add_argument("--graceful-timeout", type=float, default=10.0)
     serve.add_argument("--log-level", default="info")
 
     highres_sidecar = subparsers.add_parser(
@@ -46,6 +47,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     highres_sidecar.add_argument("--token-file", type=Path)
     highres_sidecar.add_argument("--retention-seconds", type=float)
+    highres_sidecar.add_argument("--graceful-timeout", type=float, default=10.0)
     highres_sidecar.add_argument("--log-level", default="info")
 
     probe = subparsers.add_parser("probe", help="print one JSON GPU snapshot")
@@ -127,6 +129,7 @@ def main(argv: list[str] | None = None) -> None:
             factory=True,
             log_level=args.log_level,
             lifespan="on",
+            timeout_graceful_shutdown=max(0.0, args.graceful_timeout),
         )
         return
 
@@ -152,6 +155,7 @@ def main(argv: list[str] | None = None) -> None:
             factory=True,
             log_level=args.log_level,
             lifespan="on",
+            timeout_graceful_shutdown=max(0.0, args.graceful_timeout),
         )
         return
 
