@@ -144,7 +144,10 @@ class SnapshotCollector:
                 self._sampler.close()
                 self._sampler = None
             try:
-                return self._sample_with_nvidia_smi()
+                snapshot = self._sample_with_nvidia_smi()
+                if not snapshot.gpus:
+                    raise RuntimeError("nvidia-smi returned no devices")
+                return snapshot
             except Exception as fallback_exc:
                 try:
                     if self._npu_sampler is None:

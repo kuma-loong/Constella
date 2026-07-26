@@ -16,6 +16,7 @@ def test_parse_npu_smi_inventory_and_processes() -> None:
     assert gpus[0].name == "910B2C"
     assert gpus[0].memory_used_mb == 20701
     assert gpus[0].memory_total_mb == 65536
+    assert gpus[0].power_limit_watts == 420.0
     assert gpus[0].processes[0].pid == 124528
     assert gpus[0].processes[0].gpu_memory_mb == 17400
 
@@ -30,3 +31,20 @@ def test_parse_npu_smi_supports_devices_without_hbm() -> None:
     assert gpus[0].memory_used_mb == 3628
     assert gpus[0].memory_total_mb == 15609
     assert gpus[0].error == "Alarm"
+
+
+def test_parse_npu_smi_supports_na_power_and_multi_chip_devices() -> None:
+    output = """
+| npu-smi 24.1.0.1 Version: 24.1.0.1 |
+| 1 310P3 | OK | NA 62 |
+| 0 0 | 0000:01:00.0 | 0 16302/ 44280 |
+| 1 310P3 | OK | NA 62 |
+| 1 1 | 0000:01:00.0 | 0 15543/ 43693 |
+| NPU Chip | Process id | Process name | Process memory(MB) |
+| 1 0 | 3277562 | mindie_llm_back | 14513 |
+| 1 1 | 3277565 | mindie_llm_back | 14513 |
+"""
+    gpus, _ = parse_npu_smi(output)
+    assert len(gpus) == 2
+    assert [gpu.memory_used_mb for gpu in gpus] == [16302, 15543]
+    assert [process.pid for gpu in gpus for process in gpu.processes] == [3277562, 3277565]

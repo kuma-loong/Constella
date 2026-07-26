@@ -15,9 +15,19 @@ class NPUUnavailable(RuntimeError):
 
 _VERSION_RE = re.compile(r"npu-smi\s+(\S+).*?Version:\s*(\S+)", re.IGNORECASE)
 _DEVICE_RE = re.compile(
-    r"^\|\s*(\d+)\s+(\S+)\s*\|\s*(\S+)\s*\|\s*([\d.]+|-)\s+(\d+|-).*\|$"
+    r"^\|\s*(\d+)\s+(\S+)\s*\|\s*(\S+)\s*\|\s*([\d.]+|-|NA)\s+(\d+|-).*\|$"
 )
 _MEMORY_RE = re.compile(r"([\d.]+)\s*/\s*([\d.]+)")
+_POWER_LIMIT_WATTS = {
+    "310P1": 90.0,
+    "310P3": 72.0,
+    "910A": 310.0,
+    "910B": 265.0,
+    "910B1": 430.0,
+    "910B2": 420.0,
+    "910B3": 350.0,
+    "910C": 350.0,
+}
 
 
 def _number(value: str, default: float = 0.0) -> float:
@@ -25,6 +35,13 @@ def _number(value: str, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _power_limit(name: str) -> float:
+    for model in sorted(_POWER_LIMIT_WATTS, key=len, reverse=True):
+        if model in name:
+            return _POWER_LIMIT_WATTS[model]
+    return 0.0
 
 
 def parse_npu_smi(text: str) -> tuple[list[GpuInfo], str | None]:
@@ -81,7 +98,7 @@ def parse_npu_smi(text: str) -> tuple[list[GpuInfo], str | None]:
             memory_free_mb=max(0, (memory_total - memory_used) // (1024 * 1024)),
             temperature_c=int(_number(temperature)),
             power_watts=_number(power),
-            power_limit_watts=0.0,
+            power_limit_watts=_power_limit(name),
             error=None if health.upper() in {"OK", "NORMAL"} else health,
         )
         devices[physical_id] = device

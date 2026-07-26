@@ -39,3 +39,35 @@ def test_snapshot_uses_runtime_refresh_interval() -> None:
 
     assert snapshot.refresh_interval == 2.0
     assert collector.snapshot is snapshot
+
+
+def test_collector_falls_back_to_ascend_npu(monkeypatch: pytest.MonkeyPatch) -> None:
+    expected = Snapshot(
+        ok=True,
+        source="npu-smi",
+        hostname="npu-node",
+        timestamp=1.0,
+        elapsed_ms=1.0,
+        gpus=[],
+    )
+
+    class FailingNvml:
+        def __init__(self, **_: object) -> None:
+            raise RuntimeError("no NVML")
+
+    class FailingNvidiaSmi:
+        def __call__(self, **_: object) -> Snapshot:
+            raise RuntimeError("no nvidia-smi")
+
+    class FakeNpu:
+        def __init__(self) -> None:
+            pass
+
+        def sample(self) -> Snapshot:
+            return expected
+
+    monkeypatch.setattr("constella.collector.NVMLSampler", FailingNvml)
+    monkeypatch.setattr("constella.collector.nvidia_smi.sample", FailingNvidiaSmi())
+    monkeypatch.setattr("constella.collector.NPUSampler", FakeNpu)
+
+    assert SnapshotCollector()._sample_once() is expected
