@@ -15,7 +15,7 @@ import {
   tempClass,
 } from "./cluster-utils";
 import { fmtDuration, fmtGiB, fmtPct } from "./format";
-import type { ClusterSnapshot, GpuInfo, LiveState, NodeSnapshot, NodeTotals, ThemeMode } from "./types";
+import type { ClusterSnapshot, GpuInfo, LiveState, NodeSnapshot, ThemeMode } from "./types";
 
 export type HeaderProps = {
   snapshot: ClusterSnapshot | null;
@@ -186,7 +186,7 @@ export function Summary({
     return (
       <>
         <SkeletonMetric label="Nodes" value="waiting" meta="cluster snapshot" />
-        <SkeletonMetric label="Accelerator Avg" value="waiting" meta="realtime stream" />
+        <SkeletonMetric label="GPU Avg" value="waiting" meta="realtime stream" />
         <SkeletonMetric label="Memory" value="waiting" meta="aggregate usage" />
         <SkeletonMetric label="Power" value="waiting" meta="cluster draw" />
         <SkeletonMetric label="Tasks" value="waiting" meta="active workloads" />
@@ -209,9 +209,9 @@ export function Summary({
       />
       <MetricCard
         iconName="activity"
-        label="Accelerator Avg"
+        label={snapshot.nodes.some(isNpuNode) ? "Accelerator Avg" : "GPU Avg"}
         value={fmtPct(totals.avg_gpu_utilization)}
-        meta={acceleratorMeta(totals)}
+        meta={clusterAcceleratorMeta(snapshot)}
         percent={totals.avg_gpu_utilization}
         tone="cyan"
       />
@@ -248,7 +248,7 @@ export function NodeSummary({ nodeId, node }: { nodeId: string; node: NodeSnapsh
     return (
       <>
         <MetricCard iconName="server" label="Node" value={nodeId} meta="not found" percent={0} tone="red" />
-        <MetricCard iconName="activity" label="Accelerator Avg" value="n/a" meta="0 devices" percent={0} tone="cyan" />
+        <MetricCard iconName="activity" label="GPU Avg" value="n/a" meta="0 GPUs" percent={0} tone="cyan" />
         <MetricCard iconName="database" label="Memory Used" value="n/a" meta="n/a" percent={0} tone="violet" />
         <MetricCard iconName="zap" label="Power" value="n/a" meta="n/a" percent={0} tone="amber" />
         <MetricCard iconName="users" label="Tasks" value="0" meta="no active tasks" percent={0} tone="red" />
@@ -256,6 +256,7 @@ export function NodeSummary({ nodeId, node }: { nodeId: string; node: NodeSnapsh
     );
   }
   const totals = node.totals;
+  const accelerator = node.source === "dcmi" || node.source === "npu-smi" ? "NPU" : "GPU";
   return (
     <>
       <MetricCard
@@ -268,9 +269,9 @@ export function NodeSummary({ nodeId, node }: { nodeId: string; node: NodeSnapsh
       />
       <MetricCard
         iconName="activity"
-        label="Accelerator Avg"
+        label={`${accelerator} Avg`}
         value={fmtPct(totals.avg_gpu_utilization)}
-        meta={acceleratorMeta(totals)}
+        meta={nodeAcceleratorMeta(node)}
         percent={totals.avg_gpu_utilization}
         tone="cyan"
       />
@@ -377,7 +378,7 @@ export function Fabric({ snapshot }: { snapshot: ClusterSnapshot }) {
           <span>
             {snapshot.totals.online_node_count}/{snapshot.totals.node_count} online
           </span>
-          <span>{acceleratorMeta(snapshot.totals)}</span>
+          <span>{clusterAcceleratorMeta(snapshot)}</span>
           <span>{fmtGiB(snapshot.totals.memory_total_mb)} Memory total</span>
         </div>
       </div>
@@ -407,13 +408,13 @@ export function FabricNodeCard({ node }: { node: NodeSnapshot }) {
         <em>{node.status}</em>
       </div>
       <div class="fabric-node-meta">
-        {acceleratorMeta(node.totals)} / {fmtPct(node.totals.avg_gpu_utilization)} avg / {fmtLatency(node)}
+        {nodeAcceleratorMeta(node)} / {fmtPct(node.totals.avg_gpu_utilization)} avg / {fmtLatency(node)}
       </div>
       <div class="fabric-node-gpus">
         {node.gpus.length ? (
           node.gpus.map((gpu) => (
             <div class={`fabric-chip ${statusClass(gpu.utilization_gpu)}`} title={`${node.node_id} GPU${gpu.index}`} key={gpu.uuid}>
-              <span>{gpu.device_type === "ascend" ? `C${gpu.card_id}/D${gpu.die_id}` : `GPU${gpu.index}`}</span>
+              <span>{deviceLabel(node, gpu)}</span>
               <strong>{Math.round(gpu.utilization_gpu)}%</strong>
               <small>{fmtGiB(gpu.memory_used_mb)}</small>
             </div>
@@ -446,8 +447,10 @@ export function GpuCard({
   history: Record<string, number[]>;
 }) {
   const accelerator = node.source === "dcmi" || node.source === "npu-smi" ? "NPU" : "GPU";
-  const isAscendDie = gpu.device_type === "ascend" && gpu.card_id !== null && gpu.card_id !== undefined;
-  const cardDevices = isAscendDie ? node.gpus.filter((item) => item.device_type === "ascend" && item.card_id === gpu.card_id) : [gpu];
+  const cardDevices = gpu.device_type === "ascend" && gpu.card_id != null
+    ? node.gpus.filter((item) => item.device_type === "ascend" && item.card_id === gpu.card_id)
+    : [gpu];
+  const isDualDie = cardDevices.length > 1;
   const cardPower = cardDevices.reduce((sum, item) => sum + item.power_watts, 0);
   const cardPowerLimit = cardDevices.reduce((sum, item) => sum + item.power_limit_watts, 0);
   const cardPowerPercent = cardPowerLimit ? (cardPower / cardPowerLimit) * 100 : 0;
@@ -468,7 +471,7 @@ export function GpuCard({
       <div class="gpu-head">
         <div>
           <span class="gpu-index" title={gpu.uuid}>
-            {isAscendDie ? `Card ${gpu.card_id} · Die ${gpu.die_id ?? gpu.index}` : `${accelerator}${gpu.index}`}
+            {isDualDie ? `Card ${gpu.card_id} · Die ${gpu.die_id ?? gpu.index}` : `${accelerator}${gpu.index}`}
           </span>
           <h3>{compactGpuName(gpu.name)}</h3>
           <p>{subtitle || gpu.uuid}</p>
@@ -489,9 +492,9 @@ export function GpuCard({
           tone="cyan"
         />
         <Bar
-          label={isAscendDie ? "Card Power" : "Power"}
-          value={isAscendDie ? cardPowerPercent : gpu.power_percent}
-          meta={`${(isAscendDie ? cardPower : gpu.power_watts).toFixed(0)} / ${(isAscendDie ? cardPowerLimit : gpu.power_limit_watts).toFixed(0)} W`}
+          label={isDualDie ? "Card Power" : "Power"}
+          value={isDualDie ? cardPowerPercent : gpu.power_percent}
+          meta={`${(isDualDie ? cardPower : gpu.power_watts).toFixed(0)} / ${(isDualDie ? cardPowerLimit : gpu.power_limit_watts).toFixed(0)} W`}
           tone="amber"
         />
       </div>
@@ -641,24 +644,15 @@ export type ProcessRow = {
 };
 
 export function processRows(node: NodeSnapshot | null) {
-  const rows = new Map<string, ProcessRow>();
+  const rows: ProcessRow[] = [];
   if (!node) {
     return [];
   }
   for (const gpu of node.gpus) {
     for (const process of gpu.processes || []) {
-      const key = `${node.node_id}:${process.pid}`;
-      const device = gpu.device_type === "ascend" ? `C${gpu.card_id}/D${gpu.die_id}` : `GPU${gpu.index}`;
-      const existing = rows.get(key);
-      if (existing) {
-        existing.device = `${existing.device} + ${device}`;
-        existing.memory += process.gpu_memory_mb;
-        existing.runtime = Math.max(existing.runtime || 0, process.runtime_seconds || 0) || null;
-        continue;
-      }
-      rows.set(key, {
+      rows.push({
         node: node.node_id,
-        device,
+        device: deviceLabel(node, gpu),
         user: process.user || "unknown",
         pid: String(process.pid),
         task: process.task_name || process.name,
@@ -669,9 +663,9 @@ export function processRows(node: NodeSnapshot | null) {
       });
     }
     for (const other of gpu.other_users || []) {
-      rows.set(`${node.node_id}:${gpu.index}:aggregate:${other.user}`, {
+      rows.push({
         node: node.node_id,
-        device: gpu.device_type === "ascend" ? `C${gpu.card_id}/D${gpu.die_id}` : `GPU${gpu.index}`,
+        device: deviceLabel(node, gpu),
         user: other.user,
         pid: `${other.process_count} procs`,
         task: "aggregate workload",
@@ -682,7 +676,7 @@ export function processRows(node: NodeSnapshot | null) {
       });
     }
   }
-  return [...rows.values()].sort(
+  return rows.sort(
     (a, b) => a.node.localeCompare(b.node) || a.device.localeCompare(b.device) || b.memory - a.memory || (b.runtime || 0) - (a.runtime || 0),
   );
 }
@@ -698,16 +692,46 @@ function headerLine(snapshot: ClusterSnapshot | null, route: Route, selectedNode
   const totals = snapshot.totals;
   if (route.kind === "node") {
     return selectedNode
-      ? `${selectedNode.node_id} / ${selectedNode.status} / ${acceleratorMeta(selectedNode.totals)} / ${fmtLatency(selectedNode)} / seq ${selectedNode.seq}`
+      ? `${selectedNode.node_id} / ${selectedNode.status} / ${nodeAcceleratorMeta(selectedNode)} / ${fmtLatency(selectedNode)} / seq ${selectedNode.seq}`
       : `${route.nodeId} / node not found / ${totals.node_count} nodes`;
   }
   const latency = maxClusterLatency(snapshot);
   const latencyText = latency === null ? "latency n/a" : `${latency.toFixed(0)} ms max`;
-  return `${totals.node_count} nodes / ${totals.online_node_count} online / ${acceleratorMeta(totals)} / ${latencyText} / seq ${snapshot.seq}`;
+  return `${totals.node_count} nodes / ${totals.online_node_count} online / ${clusterAcceleratorMeta(snapshot)} / ${latencyText} / seq ${snapshot.seq}`;
 }
 
-function acceleratorMeta(totals: NodeTotals): string {
-  const cards = totals.card_count ?? totals.gpu_count;
-  const devices = totals.accelerator_count ?? totals.gpu_count;
-  return cards === devices ? `${cards} accelerators` : `${cards} cards / ${devices} dies`;
+function clusterAcceleratorMeta(snapshot: ClusterSnapshot): string {
+  const cards = snapshot.totals.card_count ?? snapshot.totals.gpu_count;
+  const devices = snapshot.totals.accelerator_count ?? snapshot.totals.gpu_count;
+  if (cards < devices) {
+    return `${cards} cards / ${devices} dies`;
+  }
+  return `${devices} ${snapshot.nodes.some(isNpuNode) ? "accelerators" : "GPUs"}`;
+}
+
+function nodeAcceleratorMeta(node: NodeSnapshot): string {
+  const cards = node.totals.card_count ?? node.totals.gpu_count;
+  const devices = node.totals.accelerator_count ?? node.totals.gpu_count;
+  if (cards < devices) {
+    return `${cards} cards / ${devices} dies`;
+  }
+  const label = node.source === "dcmi" || node.source === "npu-smi" ? "NPUs" : "GPUs";
+  return `${devices} ${label}`;
+}
+
+function isNpuNode(node: NodeSnapshot): boolean {
+  return node.source === "dcmi" || node.source === "npu-smi";
+}
+
+function deviceLabel(node: NodeSnapshot, gpu: GpuInfo): string {
+  if (gpu.device_type === "ascend" && gpu.card_id != null) {
+    const dieCount = node.gpus.filter(
+      (item) => item.device_type === "ascend" && item.card_id === gpu.card_id,
+    ).length;
+    if (dieCount > 1) {
+      return `C${gpu.card_id}/D${gpu.die_id ?? gpu.index}`;
+    }
+    return `NPU${gpu.index}`;
+  }
+  return `GPU${gpu.index}`;
 }
