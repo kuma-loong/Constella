@@ -121,6 +121,9 @@ class SQLiteStore:
               gpu_index INTEGER NOT NULL,
               pci_bus_id TEXT,
               name TEXT NOT NULL,
+              device_type TEXT NOT NULL DEFAULT 'nvidia',
+              card_id TEXT,
+              die_id INTEGER,
               memory_total_mb INTEGER NOT NULL,
               first_seen_at REAL NOT NULL,
               last_seen_at REAL NOT NULL
@@ -210,7 +213,16 @@ class SQLiteStore:
             );
             """
         )
+        self._ensure_column("gpus", "device_type", "TEXT NOT NULL DEFAULT 'nvidia'")
+        self._ensure_column("gpus", "card_id", "TEXT")
+        self._ensure_column("gpus", "die_id", "INTEGER")
         con.commit()
+
+    def _ensure_column(self, table: str, column: str, definition: str) -> None:
+        con = self._con()
+        columns = {row[1] for row in con.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def write_node_snapshot(self, snapshot: NodeSnapshot, *, write_raw: bool = False) -> None:
         con = self._con()
@@ -244,13 +256,17 @@ class SQLiteStore:
                     """
                     INSERT INTO gpus (
                       gpu_id, node_id, uuid, gpu_index, pci_bus_id, name,
+                      device_type, card_id, die_id,
                       memory_total_mb, first_seen_at, last_seen_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(gpu_id) DO UPDATE SET
                       gpu_index=excluded.gpu_index,
                       pci_bus_id=excluded.pci_bus_id,
                       name=excluded.name,
+                      device_type=excluded.device_type,
+                      card_id=excluded.card_id,
+                      die_id=excluded.die_id,
                       memory_total_mb=excluded.memory_total_mb,
                       last_seen_at=excluded.last_seen_at
                     """,
@@ -261,6 +277,9 @@ class SQLiteStore:
                         gpu.index,
                         gpu.pci_bus_id,
                         gpu.name,
+                        gpu.device_type,
+                        gpu.card_id,
+                        gpu.die_id,
                         gpu.memory_total_mb,
                         sampled_at,
                         sampled_at,

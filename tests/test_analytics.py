@@ -99,6 +99,51 @@ def seed_rollups(store: SQLiteStore, *, base: float = 0.0) -> None:
     store.upsert_gpu_metric_rollups(rows)
 
 
+def test_dual_die_gpu_hours_count_one_physical_card(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "constella.db")
+    store.open()
+    try:
+        for sampled_at in (1000.0, 4600.0):
+            snapshot = make_snapshot(sampled_at)
+            for die_id, gpu in enumerate(snapshot.gpus):
+                gpu.device_type = "ascend"
+                gpu.card_id = "2"
+                gpu.die_id = die_id
+                gpu.name = "Ascend910"
+            store.write_node_snapshot(snapshot)
+
+        payload = overview_analytics(store, range_name="7d", now=5000.0)
+
+        assert payload["user_gpu_hours"][0]["gpu_hours"] == 1.0
+        assert payload["job_rankings"][0]["gpu_hours"] == 1.0
+        assert payload["job_rankings"][0]["gpu_count"] == 1
+    finally:
+        store.close()
+
+
+def test_dual_die_gpu_hours_count_each_session_on_the_same_card(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "constella.db")
+    store.open()
+    try:
+        for sampled_at, pid in ((1000.0, 111), (4600.0, 111), (5000.0, 222), (8600.0, 222)):
+            snapshot = make_snapshot(sampled_at, pid=pid)
+            for die_id, gpu in enumerate(snapshot.gpus):
+                gpu.device_type = "ascend"
+                gpu.card_id = "2"
+                gpu.die_id = die_id
+                gpu.name = "Ascend910"
+            store.write_node_snapshot(snapshot)
+
+        payload = overview_analytics(store, range_name="7d", now=9000.0)
+
+        assert payload["user_gpu_hours"][0]["gpu_hours"] == 2.0
+        assert payload["job_rankings"][0]["gpu_hours"] == 2.0
+        assert payload["job_rankings"][0]["gpu_count"] == 1
+        assert payload["job_rankings"][0]["session_count"] == 2
+    finally:
+        store.close()
+
+
 def test_overlap_gpu_weight_and_job_key_helpers() -> None:
     assert overlap_seconds(10, 30, 20, 40) == 10
     assert overlap_seconds(10, 30, 40, 50) == 0

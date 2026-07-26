@@ -51,6 +51,7 @@ class JobUsage:
     sessions: set[str] = field(default_factory=set)
     gpu_uuids: set[str] = field(default_factory=set)
     gpu_indices: set[int] = field(default_factory=set)
+    card_keys: set[str] = field(default_factory=set)
     pids: set[int] = field(default_factory=set)
     memory_seconds: float = 0.0
     usage_seconds: float = 0.0
@@ -168,6 +169,12 @@ def overlap_seconds(first_seen_at: float, last_seen_at: float, range_start: floa
     return max(0.0, min(last_seen_at, range_end) - max(first_seen_at, range_start))
 
 
+def _physical_card_key(row: sqlite3.Row | dict[str, Any]) -> str:
+    if _value(row, "device_type") == "ascend" and _value(row, "card_id") is not None:
+        return f"{_value(row, 'node_id')}:ascend:{_value(row, 'card_id')}"
+    return f"{_value(row, 'node_id')}:{_value(row, 'gpu_uuid')}"
+
+
 def _usage_rows(store: SQLiteStore, *, range_start: float, range_end: float) -> list[sqlite3.Row]:
     return store.connection.execute(
         """
@@ -176,7 +183,7 @@ def _usage_rows(store: SQLiteStore, *, range_start: float, range_end: float) -> 
           s.user, s.task_name, s.process_name, s.first_seen_at AS session_first_seen_at,
           s.last_seen_at AS session_last_seen_at, s.duration_seconds, s.status,
           u.gpu_uuid, u.first_seen_at, u.last_seen_at, u.avg_memory_mb, u.max_memory_mb,
-          g.name AS gpu_name, g.gpu_index
+          g.name AS gpu_name, g.gpu_index, g.device_type, g.card_id, g.die_id
         FROM process_gpu_usages u
         JOIN process_sessions s ON s.session_id = u.session_id
         LEFT JOIN gpus g ON g.node_id = u.node_id AND g.uuid = u.gpu_uuid
@@ -194,6 +201,8 @@ def _roll_up_usage(
 ) -> tuple[dict[str, UserUsage], dict[str, JobUsage]]:
     users: dict[str, UserUsage] = {}
     jobs: dict[str, JobUsage] = {}
+    counted_card_usage: set[tuple[str, str]] = set()
+    counted_job_card_usage: set[tuple[str, str, str]] = set()
     for row in rows:
         seconds = overlap_seconds(row["first_seen_at"], row["last_seen_at"], range_start, range_end)
         if seconds <= 0:
@@ -202,12 +211,16 @@ def _roll_up_usage(
         user = row["user"] or "unknown"
         key = job_key(row)
         user_usage = users.setdefault(user, UserUsage(user=user))
-        user_usage.gpu_hours += seconds / 3600
-        user_usage.weighted_gpu_hours += seconds * weight / 3600
+        card_key = _physical_card_key(row)
+        usage_key = (row["session_id"], card_key)
+        if usage_key not in counted_card_usage:
+            counted_card_usage.add(usage_key)
+            user_usage.gpu_hours += seconds / 3600
+            user_usage.weighted_gpu_hours += seconds * weight / 3600
+            user_usage.gpu_model_seconds[compact_gpu_name(row["gpu_name"])] += seconds
         user_usage.sessions.add(row["session_id"])
         user_usage.jobs.add(key)
         user_usage.last_seen_at = max(user_usage.last_seen_at, row["last_seen_at"])
-        user_usage.gpu_model_seconds[compact_gpu_name(row["gpu_name"])] += seconds
 
         job = jobs.get(key)
         if job is None:
@@ -225,8 +238,12 @@ def _roll_up_usage(
         job.last_seen_at = max(job.last_seen_at, row["session_last_seen_at"])
         if row["status"] == "running":
             job.status = "running"
-        job.gpu_hours += seconds / 3600
-        job.weighted_gpu_hours += seconds * weight / 3600
+        job_usage_key = (key, row["session_id"], card_key)
+        if job_usage_key not in counted_job_card_usage:
+            counted_job_card_usage.add(job_usage_key)
+            job.gpu_hours += seconds / 3600
+            job.weighted_gpu_hours += seconds * weight / 3600
+        job.card_keys.add(card_key)
         job.sessions.add(row["session_id"])
         job.gpu_uuids.add(row["gpu_uuid"])
         if row["gpu_index"] is not None:
@@ -326,19 +343,32 @@ def _off_hours(rows: list[sqlite3.Row], *, range_start: float, range_end: float)
     user_counts: Counter[str] = Counter()
     night_gpu_seconds = 0.0
     weekend_gpu_seconds = 0.0
+    night_usage: set[tuple[str, str]] = set()
+    weekend_usage: set[tuple[str, str]] = set()
+    counted_night_users: set[tuple[str, str]] = set()
+    counted_weekend_users: set[tuple[str, str]] = set()
     for row in rows:
         started_at = max(row["session_first_seen_at"], range_start)
         started = datetime.fromtimestamp(started_at, tz=tz)
         seconds = overlap_seconds(row["first_seen_at"], row["last_seen_at"], range_start, range_end)
         user = row["user"] or "unknown"
+        usage_key = (row["session_id"], _physical_card_key(row))
         if 0 <= started.hour < 6:
             night_sessions.add(row["session_id"])
-            user_counts[user] += 1
-            night_gpu_seconds += seconds
+            if (user, row["session_id"]) not in counted_night_users:
+                counted_night_users.add((user, row["session_id"]))
+                user_counts[user] += 1
+            if usage_key not in night_usage:
+                night_usage.add(usage_key)
+                night_gpu_seconds += seconds
         if started.weekday() >= 5:
             weekend_sessions.add(row["session_id"])
-            user_counts[user] += 1
-            weekend_gpu_seconds += seconds
+            if (user, row["session_id"]) not in counted_weekend_users:
+                counted_weekend_users.add((user, row["session_id"]))
+                user_counts[user] += 1
+            if usage_key not in weekend_usage:
+                weekend_usage.add(usage_key)
+                weekend_gpu_seconds += seconds
     return {
         "night_job_count": len(night_sessions),
         "weekend_job_count": len(weekend_sessions),
@@ -545,7 +575,7 @@ def _job_payload(item: JobUsage) -> dict[str, Any]:
         "started_at": item.started_at,
         "last_seen_at": item.last_seen_at,
         "duration_seconds": max(0.0, item.last_seen_at - item.started_at),
-        "gpu_count": len(item.gpu_uuids),
+        "gpu_count": len(item.card_keys or item.gpu_uuids),
         "session_count": len(item.sessions),
         "gpu_hours": round(item.gpu_hours, 2),
         "weighted_gpu_hours": round(item.weighted_gpu_hours, 2),

@@ -100,6 +100,12 @@ cd Constella
 ./scripts/service/start.sh
 ```
 
+For an Ascend host, select the hardware backend explicitly:
+
+```bash
+./scripts/service/start.sh --device ascend
+```
+
 Open:
 
 ```text
@@ -134,7 +140,8 @@ Prepare the remote node manifest:
 cp docs/nodes.example.yaml nodes.yaml
 ```
 
-Edit `manager_url`, `manager_hostname`, and the GPU nodes, then configure passwordless SSH from the manager host to each GPU node.
+Edit `manager_url`, `manager_hostname`, and each node's `device` (`nvidia` or
+`ascend`), then configure passwordless SSH from the manager host to each node.
 
 ```mermaid
 flowchart LR
@@ -156,12 +163,26 @@ Start remote GPU agents:
 - If the manager host should not monitor local GPUs, start with `LOCAL_AGENT=0`.
 - Remote nodes do not need `uv`; the manager syncs a minimal agent runtime.
 
+## Ascend NPU support
+
+Constella uses independent, explicitly selected hardware chains:
+
+- `nvidia`: NVML, then `nvidia-smi` fallback.
+- `ascend`: DCMI (`libdcmi.so`), then `npu-smi` fallback.
+
+The DCMI backend exposes AICore and HBM utilization, memory, temperature,
+power, PCI identity, driver/DCMI versions, and running-process memory.
+Multi-die cards remain visible as one device card per die. The API includes
+`card_id`, `die_id`, `card_count`, and `accelerator_count`; rated power and live
+power are counted once per physical card, while duplicate PIDs across dies are
+counted as one active process.
+
 ## Architecture
 
 ```mermaid
 flowchart LR
-  LA["Local agent<br/>NVML / nvidia-smi"] -->|"WS /api/agents/ws"| M["Manager<br/>FastAPI ingest"]
-  RA["Remote agents<br/>NVML / nvidia-smi"] -->|"WS /api/agents/ws"| M
+  LA["Local agent<br/>selected device chain"] -->|"WS /api/agents/ws"| M["Manager<br/>FastAPI ingest"]
+  RA["Remote agents<br/>NVML→nvidia-smi or DCMI→npu-smi"] -->|"WS /api/agents/ws"| M
   M --> S["ClusterState<br/>latest snapshots + 120-point history"]
   S --> API["HTTP /api/cluster/snapshot"]
   S --> WS["WebSocket /ws/cluster"]

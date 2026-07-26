@@ -7,12 +7,15 @@ from collections import defaultdict, deque
 from typing import Any
 
 from . import nvidia_smi
+from .dcmi import DCMISampler
+from .npu import NPUSampler
 from .nvml import NVMLSampler
 from .schema import GpuProcess, Snapshot
 
 logger = logging.getLogger(__name__)
 
 ALLOWED_REFRESH_INTERVALS = (0.5, 1.0, 2.0, 5.0)
+DEVICE_TYPES = ("nvidia", "ascend")
 
 
 def validate_refresh_interval(seconds: float) -> float:
@@ -24,13 +27,22 @@ def validate_refresh_interval(seconds: float) -> float:
     raise ValueError(f"refresh_interval must be one of: {allowed_values}")
 
 
+def validate_device_type(device_type: str) -> str:
+    value = str(device_type).strip().lower()
+    if value not in DEVICE_TYPES:
+        raise ValueError(f"device_type must be one of: {', '.join(DEVICE_TYPES)}")
+    return value
+
+
 class SnapshotCollector:
     def __init__(
         self,
         refresh_interval: float = 1.0,
         process_interval: float = 5.0,
         history_size: int = 120,
+        device_type: str = "nvidia",
     ):
+        self.device_type = validate_device_type(device_type)
         self.refresh_interval = validate_refresh_interval(refresh_interval)
         self._process_interval = max(1.0, process_interval)
         self.history_size = history_size
@@ -47,7 +59,8 @@ class SnapshotCollector:
                 "temperature": deque(maxlen=history_size),
             }
         )
-        self._sampler: NVMLSampler | None = None
+        self._sampler: NVMLSampler | DCMISampler | None = None
+        self._npu_smi_sampler: NPUSampler | None = None
         self._next_fallback_process_at = 0.0
         self._fallback_processes_by_uuid: dict[str, list[GpuProcess]] = {}
 
@@ -64,6 +77,7 @@ class SnapshotCollector:
             "refresh_interval": self.refresh_interval,
             "allowed_refresh_intervals": list(ALLOWED_REFRESH_INTERVALS),
             "process_interval": self.process_interval,
+            "device_type": self.device_type,
         }
 
     def set_refresh_interval(self, seconds: float) -> dict[str, Any]:
@@ -96,6 +110,7 @@ class SnapshotCollector:
         if self._sampler:
             self._sampler.close()
             self._sampler = None
+        self._npu_smi_sampler = None
 
     async def wait_for_update(self, last_seq: int, timeout: float = 30.0) -> Snapshot | None:
         deadline = asyncio.get_running_loop().time() + timeout
@@ -129,6 +144,11 @@ class SnapshotCollector:
                     pass
 
     def _sample_once(self) -> Snapshot:
+        if self.device_type == "ascend":
+            return self._sample_ascend()
+        return self._sample_nvidia()
+
+    def _sample_nvidia(self) -> Snapshot:
         try:
             if self._sampler is None:
                 self._sampler = NVMLSampler(process_interval=self.process_interval)
@@ -141,10 +161,35 @@ class SnapshotCollector:
                 self._sampler.close()
                 self._sampler = None
             try:
-                return self._sample_with_nvidia_smi()
+                snapshot = self._sample_with_nvidia_smi()
+                if not snapshot.gpus:
+                    raise RuntimeError("nvidia-smi returned no devices")
+                return snapshot
             except Exception as fallback_exc:
                 return nvidia_smi.error_snapshot(
                     f"NVML failed: {exc}; nvidia-smi failed: {fallback_exc}",
+                    source="none",
+                )
+
+    def _sample_ascend(self) -> Snapshot:
+        try:
+            if self._sampler is None:
+                self._sampler = DCMISampler(process_interval=self.process_interval)
+            else:
+                self._sampler.set_process_interval(self.process_interval)
+            return self._sampler.sample()
+        except Exception as exc:
+            logger.warning("DCMI sample failed, falling back to npu-smi: %s", exc)
+            if self._sampler is not None:
+                self._sampler.close()
+                self._sampler = None
+            try:
+                if self._npu_smi_sampler is None:
+                    self._npu_smi_sampler = NPUSampler()
+                return self._npu_smi_sampler.sample()
+            except Exception as fallback_exc:
+                return nvidia_smi.error_snapshot(
+                    f"DCMI failed: {exc}; npu-smi failed: {fallback_exc}",
                     source="none",
                 )
 

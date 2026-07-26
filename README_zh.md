@@ -100,6 +100,12 @@ cd Constella
 ./scripts/service/start.sh
 ```
 
+Ascend 主机需要显式选择硬件后端：
+
+```bash
+./scripts/service/start.sh --device ascend
+```
+
 打开：
 
 ```text
@@ -134,7 +140,8 @@ sidecar 默认监听 `127.0.0.1:8766`，订阅 manager 的 `ws://127.0.0.1:8765/
 cp docs/nodes.example.yaml nodes.yaml
 ```
 
-编辑 `manager_url`、`manager_hostname` 和 GPU 节点，并配置 manager 到各 GPU 节点的 SSH 免密访问。
+编辑 `manager_url`、`manager_hostname` 以及每个节点的 `device`（`nvidia` 或
+`ascend`），并配置 manager 到各节点的 SSH 免密访问。
 
 ```mermaid
 flowchart LR
@@ -156,12 +163,25 @@ flowchart LR
 - 如果 manager 主机不采集本机 GPU，启动时加 `LOCAL_AGENT=0`。
 - 远端节点不需要安装 `uv`，manager 会同步最小 agent runtime。
 
+## Ascend NPU 支持
+
+Constella 使用两条显式选择、互不串行回退的硬件链路：
+
+- `nvidia`：NVML，失败后回退 `nvidia-smi`。
+- `ascend`：DCMI（`libdcmi.so`），失败后回退 `npu-smi`。
+
+DCMI 后端采集 AICore/HBM 利用率、内存、温度、功耗、PCI 标识、驱动/DCMI
+版本和进程显存。
+双 Die 设备仍按每个 Die 一个卡片展示。API 增加 `card_id`、`die_id`、
+`card_count` 和 `accelerator_count`；实时功耗和额定功耗按物理卡只统计一次，
+跨 Die 的相同 PID 按一个活跃进程统计。
+
 ## 架构
 
 ```mermaid
 flowchart LR
-  LA["本机 agent<br/>NVML / nvidia-smi"] -->|"WS /api/agents/ws"| M["Manager<br/>FastAPI ingest"]
-  RA["远端 agents<br/>NVML / nvidia-smi"] -->|"WS /api/agents/ws"| M
+  LA["本机 agent<br/>显式选择设备链路"] -->|"WS /api/agents/ws"| M["Manager<br/>FastAPI ingest"]
+  RA["远端 agents<br/>NVML→nvidia-smi 或 DCMI→npu-smi"] -->|"WS /api/agents/ws"| M
   M --> S["ClusterState<br/>latest snapshots + 120 点短历史"]
   S --> API["HTTP /api/cluster/snapshot"]
   S --> WS["WebSocket /ws/cluster"]

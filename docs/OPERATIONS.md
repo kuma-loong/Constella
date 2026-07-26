@@ -90,6 +90,24 @@ MANAGER_HOSTNAME=H100 ./scripts/service/start.sh
 LOCAL_AGENT_NODE_ID=H100 ./scripts/service/start.sh
 ```
 
+本机 Ascend agent 使用 DCMI，并在 DCMI 不可用时回退 `npu-smi`：
+
+```bash
+./scripts/service/start.sh --device ascend
+```
+
+集群中的硬件类型按节点配置：
+
+```yaml
+nodes:
+  - id: gpu-node
+    host: gpu-node
+    device: nvidia
+  - id: npu-node
+    host: npu-node
+    device: ascend
+```
+
 启动、状态、停止：
 
 ```bash

@@ -61,6 +61,9 @@ class GpuInfo:
     index: int
     node_id: str | None = None
     gpu_id: str | None = None
+    device_type: str = "nvidia"
+    card_id: str | None = None
+    die_id: int | None = None
     uuid: str = "unknown"
     name: str = "unknown"
     pci_bus_id: str | None = None
@@ -120,31 +123,7 @@ class Snapshot:
     history: dict[str, dict[str, list[float]]] = field(default_factory=dict)
 
     def totals(self) -> dict[str, Any]:
-        total_memory = sum(g.memory_total_mb for g in self.gpus)
-        used_memory = sum(g.memory_used_mb for g in self.gpus)
-        total_power_limit = sum(g.power_limit_watts for g in self.gpus)
-        total_power = sum(g.power_watts for g in self.gpus)
-        active_processes = sum(len(g.processes) for g in self.gpus)
-        active_processes += sum(o.process_count for g in self.gpus for o in g.other_users)
-        gpu_count = len(self.gpus)
-
-        return {
-            "gpu_count": gpu_count,
-            "avg_gpu_utilization": round(
-                sum(g.utilization_gpu for g in self.gpus) / gpu_count, 1
-            )
-            if gpu_count
-            else 0.0,
-            "avg_memory_utilization": round((used_memory / total_memory) * 100.0, 1)
-            if total_memory
-            else 0.0,
-            "memory_used_mb": used_memory,
-            "memory_total_mb": total_memory,
-            "power_watts": round(total_power, 1),
-            "power_limit_watts": round(total_power_limit, 1),
-            "max_temperature_c": max((g.temperature_c for g in self.gpus), default=0),
-            "active_processes": active_processes,
-        }
+        return node_totals_from_gpus(self.gpus).to_dict()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -168,6 +147,8 @@ class Snapshot:
 @dataclass(slots=True)
 class NodeTotals:
     gpu_count: int = 0
+    accelerator_count: int = 0
+    card_count: int = 0
     active_processes: int = 0
     avg_gpu_utilization: float = 0.0
     avg_memory_utilization: float = 0.0
@@ -326,14 +307,28 @@ def local_hostname(default: str | None = None) -> str:
 
 def node_totals_from_gpus(gpus: list[GpuInfo]) -> NodeTotals:
     gpu_count = len(gpus)
+    card_count = len(
+        {
+            (gpu.node_id, gpu.device_type, gpu.card_id or gpu.uuid)
+            for gpu in gpus
+        }
+    )
     memory_total = sum(gpu.memory_total_mb for gpu in gpus)
     memory_used = sum(gpu.memory_used_mb for gpu in gpus)
     power_limit = sum(gpu.power_limit_watts for gpu in gpus)
     power_used = sum(gpu.power_watts for gpu in gpus)
-    active_processes = sum(len(gpu.processes) for gpu in gpus)
+    active_processes = len(
+        {
+            (gpu.node_id, process.pid)
+            for gpu in gpus
+            for process in gpu.processes
+        }
+    )
     active_processes += sum(other.process_count for gpu in gpus for other in gpu.other_users)
     return NodeTotals(
         gpu_count=gpu_count,
+        accelerator_count=gpu_count,
+        card_count=card_count,
         active_processes=active_processes,
         avg_gpu_utilization=round(sum(gpu.utilization_gpu for gpu in gpus) / gpu_count, 1)
         if gpu_count
@@ -398,6 +393,8 @@ def cluster_totals_from_nodes(nodes: list[NodeSnapshot]) -> ClusterTotals:
     totals = node_totals_from_gpus(gpus)
     return ClusterTotals(
         gpu_count=totals.gpu_count,
+        accelerator_count=totals.accelerator_count,
+        card_count=totals.card_count,
         active_processes=totals.active_processes,
         avg_gpu_utilization=totals.avg_gpu_utilization,
         avg_memory_utilization=totals.avg_memory_utilization,

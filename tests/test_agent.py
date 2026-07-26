@@ -24,6 +24,7 @@ def test_agent_config_reads_env_and_token_file(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("CONSTELLA_MANAGER_URL", "ws://manager/api/agents/ws")
     monkeypatch.setenv("CONSTELLA_AGENT_TOKEN_FILE", str(token_file))
     monkeypatch.setenv("CONSTELLA_AGENT_STATE_FILE", str(state_file))
+    monkeypatch.setenv("CONSTELLA_DEVICE_TYPE", "ascend")
 
     config = AgentConfig.from_env()
 
@@ -32,6 +33,7 @@ def test_agent_config_reads_env_and_token_file(tmp_path, monkeypatch) -> None:
     assert config.token == "secret"
     assert config.process_interval == 5.0
     assert config.state_file == state_file
+    assert config.device_type == "ascend"
 
 
 def test_agent_protocol_messages_include_required_fields() -> None:
@@ -71,6 +73,7 @@ def test_agent_protocol_messages_include_required_fields() -> None:
     assert hello["type"] == "hello"
     assert hello["node_id"] == "node-a"
     assert hello["capabilities"]["nvidia_smi_fallback"] is True
+    assert hello["capabilities"]["device_type"] == "nvidia"
     assert hello["hardware"]["gpus"][0]["architecture"] == "Hopper"
     assert sample["type"] == "sample"
     assert sample["seq"] == 7

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sqlite3
 
 from fastapi.testclient import TestClient
 
@@ -9,6 +10,30 @@ from constella.app import create_app
 from constella.cluster import ClusterState
 from constella.db import AsyncDBSink, ROLLUP_20S, ROLLUP_2M, SQLiteSinkConfig, SQLiteStore
 from constella.schema import GpuInfo, GpuProcess, NodeSnapshot, node_totals_from_gpus
+
+
+def test_store_migrates_existing_gpu_inventory_columns(tmp_path) -> None:
+    path = tmp_path / "legacy.db"
+    connection = sqlite3.connect(path)
+    connection.execute(
+        """
+        CREATE TABLE gpus (
+          gpu_id TEXT PRIMARY KEY, node_id TEXT NOT NULL, uuid TEXT NOT NULL,
+          gpu_index INTEGER NOT NULL, pci_bus_id TEXT, name TEXT NOT NULL,
+          memory_total_mb INTEGER NOT NULL, first_seen_at REAL NOT NULL,
+          last_seen_at REAL NOT NULL
+        )
+        """
+    )
+    connection.close()
+
+    store = SQLiteStore(path)
+    store.open()
+    try:
+        columns = {row[1] for row in store.connection.execute("PRAGMA table_info(gpus)")}
+        assert {"device_type", "card_id", "die_id"} <= columns
+    finally:
+        store.close()
 
 
 def make_node_snapshot(sampled_at: float, *, gpu_util: int = 50) -> NodeSnapshot:
@@ -82,6 +107,8 @@ def test_sqlite_store_writes_sessions_and_multi_gpu_usage(tmp_path) -> None:
         assert con is not None
         assert con.execute("SELECT COUNT(*) FROM nodes").fetchone()[0] == 1
         assert con.execute("SELECT COUNT(*) FROM gpus").fetchone()[0] == 2
+        columns = {row[1] for row in con.execute("PRAGMA table_info(gpus)")}
+        assert {"device_type", "card_id", "die_id"} <= columns
         assert con.execute("SELECT COUNT(*) FROM gpu_metric_samples").fetchone()[0] == 0
         assert con.execute("SELECT COUNT(*) FROM process_sessions").fetchone()[0] == 1
         assert con.execute("SELECT COUNT(*) FROM process_gpu_usages").fetchone()[0] == 2
