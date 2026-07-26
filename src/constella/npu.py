@@ -89,6 +89,9 @@ def parse_npu_smi(text: str) -> tuple[list[GpuInfo], str | None]:
                     memory_total = int(_number(memory.group(2)) * 1024 * 1024)
         device = GpuInfo(
             index=len(devices),
+            device_type="ascend",
+            card_id=str(logical),
+            die_id=chip_id,
             uuid=f"ascend-{physical_id}",
             name=name,
             pci_bus_id=bus_id,

@@ -7,6 +7,7 @@ from constella.dcmi import (
     DCMIHbmInfo,
     DCMIMemoryInfo,
     DCMIPcieInfo,
+    DCMIPowerInfo,
     DCMIProcessInfo,
     DCMISampler,
 )
@@ -60,6 +61,13 @@ class FakeDCMI:
         ctypes.cast(value_ptr, ctypes.POINTER(ctypes.c_int)).contents.value = 1540
         return 0
 
+    def dcmi_get_device_info(
+        self, _card_id: int, _device_id: int, _main: int, _sub: int, info_ptr, _size_ptr
+    ) -> int:
+        info = ctypes.cast(info_ptr, ctypes.POINTER(DCMIPowerInfo)).contents
+        info.soc_rated_power_mw = 949200
+        return 0
+
     def dcmi_get_device_resource_info(self, _card_id: int, _device_id: int, items, count_ptr) -> int:
         items[0] = DCMIProcessInfo(pid=4321, memory_bytes=2 * 1024 * 1024 * 1024)
         ctypes.cast(count_ptr, ctypes.POINTER(ctypes.c_int)).contents.value = 1
@@ -96,6 +104,9 @@ def test_dcmi_sampler_maps_metrics_and_processes(monkeypatch) -> None:
     assert snapshot.gpus[0].memory_used_mb == 16384
     assert snapshot.gpus[0].temperature_c == 48
     assert snapshot.gpus[0].power_watts == 154.0
+    assert snapshot.gpus[0].power_limit_watts == 949.2
+    assert snapshot.gpus[0].card_id == "2"
+    assert snapshot.gpus[0].die_id == 0
     assert snapshot.gpus[0].processes[0].gpu_memory_mb == 2048
 
 

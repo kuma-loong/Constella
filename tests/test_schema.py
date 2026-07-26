@@ -48,6 +48,44 @@ def test_snapshot_totals() -> None:
     assert totals["max_temperature_c"] == 60
 
 
+def test_dual_die_totals_count_one_card_and_one_process() -> None:
+    process = GpuProcess(pid=123, name="python", gpu_memory_mb=1024)
+    snapshot = Snapshot(
+        ok=True,
+        source="dcmi",
+        hostname="npu-node",
+        timestamp=1.0,
+        elapsed_ms=1.0,
+        gpus=[
+            GpuInfo(
+                index=0,
+                device_type="ascend",
+                card_id="2",
+                die_id=0,
+                uuid="ascend-a",
+                power_watts=150,
+                power_limit_watts=950,
+                processes=[process],
+            ),
+            GpuInfo(
+                index=1,
+                device_type="ascend",
+                card_id="2",
+                die_id=1,
+                uuid="ascend-b",
+                processes=[process],
+            ),
+        ],
+    )
+
+    totals = snapshot.totals()
+    assert totals["card_count"] == 1
+    assert totals["accelerator_count"] == 2
+    assert totals["active_processes"] == 1
+    assert totals["power_watts"] == 150
+    assert totals["power_limit_watts"] == 950
+
+
 def test_snapshot_wraps_to_node_snapshot_with_stable_gpu_ids() -> None:
     snapshot = Snapshot(
         ok=True,

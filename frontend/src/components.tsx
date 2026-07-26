@@ -15,7 +15,7 @@ import {
   tempClass,
 } from "./cluster-utils";
 import { fmtDuration, fmtGiB, fmtPct } from "./format";
-import type { ClusterSnapshot, GpuInfo, LiveState, NodeSnapshot, ThemeMode } from "./types";
+import type { ClusterSnapshot, GpuInfo, LiveState, NodeSnapshot, NodeTotals, ThemeMode } from "./types";
 
 export type HeaderProps = {
   snapshot: ClusterSnapshot | null;
@@ -186,7 +186,7 @@ export function Summary({
     return (
       <>
         <SkeletonMetric label="Nodes" value="waiting" meta="cluster snapshot" />
-        <SkeletonMetric label="GPU Avg" value="waiting" meta="realtime stream" />
+        <SkeletonMetric label="Accelerator Avg" value="waiting" meta="realtime stream" />
         <SkeletonMetric label="Memory" value="waiting" meta="aggregate usage" />
         <SkeletonMetric label="Power" value="waiting" meta="cluster draw" />
         <SkeletonMetric label="Tasks" value="waiting" meta="active workloads" />
@@ -209,9 +209,9 @@ export function Summary({
       />
       <MetricCard
         iconName="activity"
-        label="GPU Avg"
+        label="Accelerator Avg"
         value={fmtPct(totals.avg_gpu_utilization)}
-        meta={`${totals.gpu_count} GPUs`}
+        meta={acceleratorMeta(totals)}
         percent={totals.avg_gpu_utilization}
         tone="cyan"
       />
@@ -248,7 +248,7 @@ export function NodeSummary({ nodeId, node }: { nodeId: string; node: NodeSnapsh
     return (
       <>
         <MetricCard iconName="server" label="Node" value={nodeId} meta="not found" percent={0} tone="red" />
-        <MetricCard iconName="activity" label="GPU Avg" value="n/a" meta="0 GPUs" percent={0} tone="cyan" />
+        <MetricCard iconName="activity" label="Accelerator Avg" value="n/a" meta="0 devices" percent={0} tone="cyan" />
         <MetricCard iconName="database" label="Memory Used" value="n/a" meta="n/a" percent={0} tone="violet" />
         <MetricCard iconName="zap" label="Power" value="n/a" meta="n/a" percent={0} tone="amber" />
         <MetricCard iconName="users" label="Tasks" value="0" meta="no active tasks" percent={0} tone="red" />
@@ -268,9 +268,9 @@ export function NodeSummary({ nodeId, node }: { nodeId: string; node: NodeSnapsh
       />
       <MetricCard
         iconName="activity"
-        label="GPU Avg"
+        label="Accelerator Avg"
         value={fmtPct(totals.avg_gpu_utilization)}
-        meta={`${totals.gpu_count} GPUs`}
+        meta={acceleratorMeta(totals)}
         percent={totals.avg_gpu_utilization}
         tone="cyan"
       />
@@ -377,7 +377,7 @@ export function Fabric({ snapshot }: { snapshot: ClusterSnapshot }) {
           <span>
             {snapshot.totals.online_node_count}/{snapshot.totals.node_count} online
           </span>
-          <span>{snapshot.totals.gpu_count} GPUs</span>
+          <span>{acceleratorMeta(snapshot.totals)}</span>
           <span>{fmtGiB(snapshot.totals.memory_total_mb)} Memory total</span>
         </div>
       </div>
@@ -407,19 +407,19 @@ export function FabricNodeCard({ node }: { node: NodeSnapshot }) {
         <em>{node.status}</em>
       </div>
       <div class="fabric-node-meta">
-        {node.totals.gpu_count} GPUs / {fmtPct(node.totals.avg_gpu_utilization)} avg / {fmtLatency(node)}
+        {acceleratorMeta(node.totals)} / {fmtPct(node.totals.avg_gpu_utilization)} avg / {fmtLatency(node)}
       </div>
       <div class="fabric-node-gpus">
         {node.gpus.length ? (
           node.gpus.map((gpu) => (
             <div class={`fabric-chip ${statusClass(gpu.utilization_gpu)}`} title={`${node.node_id} GPU${gpu.index}`} key={gpu.uuid}>
-              <span>GPU{gpu.index}</span>
+              <span>{gpu.device_type === "ascend" ? `C${gpu.card_id}/D${gpu.die_id}` : `GPU${gpu.index}`}</span>
               <strong>{Math.round(gpu.utilization_gpu)}%</strong>
               <small>{fmtGiB(gpu.memory_used_mb)}</small>
             </div>
           ))
         ) : (
-          <span class="fabric-empty">no GPUs</span>
+          <span class="fabric-empty">no accelerators</span>
         )}
       </div>
     </a>
@@ -433,18 +433,7 @@ export function GpuGrid({ nodeId, node }: { nodeId: string; node: NodeSnapshot |
   if (!node.gpus.length) {
     return <div class="empty-panel">{node.error || "No GPU snapshot available"}</div>;
   }
-  return (
-    <>
-      {node.gpus.map((gpu) => (
-        <GpuCard
-          key={gpu.uuid}
-          node={node}
-          gpu={gpu}
-          history={node.history[gpu.gpu_id || `${node.node_id}:${gpu.uuid}`] || {}}
-        />
-      ))}
-    </>
-  );
+  return <>{node.gpus.map((gpu) => <GpuCard key={gpu.uuid} node={node} gpu={gpu} history={node.history[gpu.gpu_id || `${node.node_id}:${gpu.uuid}`] || {}} />)}</>;
 }
 
 export function GpuCard({
@@ -457,8 +446,14 @@ export function GpuCard({
   history: Record<string, number[]>;
 }) {
   const accelerator = node.source === "dcmi" || node.source === "npu-smi" ? "NPU" : "GPU";
+  const isAscendDie = gpu.device_type === "ascend" && gpu.card_id !== null && gpu.card_id !== undefined;
+  const cardDevices = isAscendDie ? node.gpus.filter((item) => item.device_type === "ascend" && item.card_id === gpu.card_id) : [gpu];
+  const cardPower = cardDevices.reduce((sum, item) => sum + item.power_watts, 0);
+  const cardPowerLimit = cardDevices.reduce((sum, item) => sum + item.power_limit_watts, 0);
+  const cardPowerPercent = cardPowerLimit ? (cardPower / cardPowerLimit) * 100 : 0;
   const subtitle = [
     node.node_id,
+    gpu.pci_bus_id,
     gpu.pstate,
     gpu.compute_mode,
     gpu.mig_mode ? `MIG ${gpu.mig_mode}` : null,
@@ -473,7 +468,7 @@ export function GpuCard({
       <div class="gpu-head">
         <div>
           <span class="gpu-index" title={gpu.uuid}>
-            {accelerator}{gpu.index}
+            {isAscendDie ? `Card ${gpu.card_id} · Die ${gpu.die_id ?? gpu.index}` : `${accelerator}${gpu.index}`}
           </span>
           <h3>{compactGpuName(gpu.name)}</h3>
           <p>{subtitle || gpu.uuid}</p>
@@ -494,9 +489,9 @@ export function GpuCard({
           tone="cyan"
         />
         <Bar
-          label="Power"
-          value={gpu.power_percent}
-          meta={`${gpu.power_watts.toFixed(0)} / ${gpu.power_limit_watts.toFixed(0)} W`}
+          label={isAscendDie ? "Card Power" : "Power"}
+          value={isAscendDie ? cardPowerPercent : gpu.power_percent}
+          meta={`${(isAscendDie ? cardPower : gpu.power_watts).toFixed(0)} / ${(isAscendDie ? cardPowerLimit : gpu.power_limit_watts).toFixed(0)} W`}
           tone="amber"
         />
       </div>
@@ -574,7 +569,7 @@ export function ProcessSection({
     >
       <div class="section-head">
         <div>
-          <h2>Active GPU tasks</h2>
+          <h2>Active accelerator tasks</h2>
           <span>
             {node?.node_id || nodeId} / {rows.length} active
           </span>
@@ -594,7 +589,7 @@ export function ProcessSection({
           <thead>
             <tr>
               <th>Node</th>
-              <th>GPU</th>
+              <th>Device</th>
               <th>User</th>
               <th>PID</th>
               <th>Task</th>
@@ -606,10 +601,10 @@ export function ProcessSection({
           <tbody>
             {rows.length ? (
               rows.slice(0, 80).map((row) => (
-                <tr title={row.title} key={`${row.node}:${row.gpu}:${row.pid}:${row.task}`}>
+                <tr title={row.title} key={`${row.node}:${row.device}:${row.pid}:${row.task}`}>
                   <td>{row.node}</td>
                   <td>
-                    <span class="gpu-pill">GPU{row.gpu}</span>
+                    <span class="gpu-pill">{row.device}</span>
                   </td>
                   <td>{row.user}</td>
                   <td>{row.pid}</td>
@@ -622,7 +617,7 @@ export function ProcessSection({
             ) : (
               <tr>
                 <td colspan={8} class="empty">
-                  no active GPU tasks
+                  no active accelerator tasks
                 </td>
               </tr>
             )}
@@ -635,7 +630,7 @@ export function ProcessSection({
 
 export type ProcessRow = {
   node: string;
-  gpu: number;
+  device: string;
   user: string;
   pid: string;
   task: string;
@@ -646,15 +641,24 @@ export type ProcessRow = {
 };
 
 export function processRows(node: NodeSnapshot | null) {
-  const rows: ProcessRow[] = [];
+  const rows = new Map<string, ProcessRow>();
   if (!node) {
-    return rows;
+    return [];
   }
   for (const gpu of node.gpus) {
     for (const process of gpu.processes || []) {
-      rows.push({
+      const key = `${node.node_id}:${process.pid}`;
+      const device = gpu.device_type === "ascend" ? `C${gpu.card_id}/D${gpu.die_id}` : `GPU${gpu.index}`;
+      const existing = rows.get(key);
+      if (existing) {
+        existing.device = `${existing.device} + ${device}`;
+        existing.memory += process.gpu_memory_mb;
+        existing.runtime = Math.max(existing.runtime || 0, process.runtime_seconds || 0) || null;
+        continue;
+      }
+      rows.set(key, {
         node: node.node_id,
-        gpu: gpu.index,
+        device,
         user: process.user || "unknown",
         pid: String(process.pid),
         task: process.task_name || process.name,
@@ -665,9 +669,9 @@ export function processRows(node: NodeSnapshot | null) {
       });
     }
     for (const other of gpu.other_users || []) {
-      rows.push({
+      rows.set(`${node.node_id}:${gpu.index}:aggregate:${other.user}`, {
         node: node.node_id,
-        gpu: gpu.index,
+        device: gpu.device_type === "ascend" ? `C${gpu.card_id}/D${gpu.die_id}` : `GPU${gpu.index}`,
         user: other.user,
         pid: `${other.process_count} procs`,
         task: "aggregate workload",
@@ -678,8 +682,8 @@ export function processRows(node: NodeSnapshot | null) {
       });
     }
   }
-  return rows.sort(
-    (a, b) => a.node.localeCompare(b.node) || a.gpu - b.gpu || b.memory - a.memory || (b.runtime || 0) - (a.runtime || 0),
+  return [...rows.values()].sort(
+    (a, b) => a.node.localeCompare(b.node) || a.device.localeCompare(b.device) || b.memory - a.memory || (b.runtime || 0) - (a.runtime || 0),
   );
 }
 
@@ -694,10 +698,16 @@ function headerLine(snapshot: ClusterSnapshot | null, route: Route, selectedNode
   const totals = snapshot.totals;
   if (route.kind === "node") {
     return selectedNode
-      ? `${selectedNode.node_id} / ${selectedNode.status} / ${selectedNode.totals.gpu_count} GPUs / ${fmtLatency(selectedNode)} / seq ${selectedNode.seq}`
+      ? `${selectedNode.node_id} / ${selectedNode.status} / ${acceleratorMeta(selectedNode.totals)} / ${fmtLatency(selectedNode)} / seq ${selectedNode.seq}`
       : `${route.nodeId} / node not found / ${totals.node_count} nodes`;
   }
   const latency = maxClusterLatency(snapshot);
   const latencyText = latency === null ? "latency n/a" : `${latency.toFixed(0)} ms max`;
-  return `${totals.node_count} nodes / ${totals.online_node_count} online / ${totals.gpu_count} GPUs / ${latencyText} / seq ${snapshot.seq}`;
+  return `${totals.node_count} nodes / ${totals.online_node_count} online / ${acceleratorMeta(totals)} / ${latencyText} / seq ${snapshot.seq}`;
+}
+
+function acceleratorMeta(totals: NodeTotals): string {
+  const cards = totals.card_count ?? totals.gpu_count;
+  const devices = totals.accelerator_count ?? totals.gpu_count;
+  return cards === devices ? `${cards} accelerators` : `${cards} cards / ${devices} dies`;
 }

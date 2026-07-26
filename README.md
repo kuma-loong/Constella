@@ -172,6 +172,10 @@ Constella uses independent, explicitly selected hardware chains:
 
 The DCMI backend exposes AICore and HBM utilization, memory, temperature,
 power, PCI identity, driver/DCMI versions, and running-process memory.
+Multi-die cards remain visible as one device card per die. The API includes
+`card_id`, `die_id`, `card_count`, and `accelerator_count`; rated power and live
+power are counted once per physical card, while duplicate PIDs across dies are
+counted as one active process.
 
 ## Architecture
 

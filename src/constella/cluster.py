@@ -373,6 +373,9 @@ def _gpu_from_dict(node_id: str, data: dict[str, Any]) -> GpuInfo:
     gpu = GpuInfo(
         index=int(data.get("index") or 0),
         node_id=node_id,
+        device_type=str(data.get("device_type") or "nvidia"),
+        card_id=str(data["card_id"]) if data.get("card_id") is not None else None,
+        die_id=int(data["die_id"]) if data.get("die_id") is not None else None,
         uuid=str(data.get("uuid") or "unknown"),
         name=str(data.get("name") or "unknown"),
         pci_bus_id=data.get("pci_bus_id"),

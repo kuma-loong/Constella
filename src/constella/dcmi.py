@@ -20,6 +20,8 @@ DCMI_MAX_CHIP_NAME_LEN = 32
 DCMI_MAX_PROCESS_NUM = 1024
 DCMI_UTILIZATION_RATE_AICORE = 2
 DCMI_UTILIZATION_RATE_HBM = 6
+DCMI_MAIN_CMD_LP = 8
+DCMI_LP_SUB_CMD_GET_POWER_INFO = 10
 
 
 class DCMIUnavailable(RuntimeError):
@@ -75,6 +77,10 @@ class DCMIPcieInfo(ctypes.Structure):
 
 class DCMIProcessInfo(ctypes.Structure):
     _fields_ = [("pid", ctypes.c_int), ("memory_bytes", ctypes.c_ulong)]
+
+
+class DCMIPowerInfo(ctypes.Structure):
+    _fields_ = [("soc_rated_power_mw", ctypes.c_uint), ("reserved", ctypes.c_ubyte * 32)]
 
 
 def _load_library() -> ctypes.CDLL:
@@ -155,6 +161,15 @@ def _setup(lib: ctypes.CDLL) -> None:
         ctypes.POINTER(ctypes.c_int),
     ]
     lib.dcmi_get_device_resource_info.restype = ctypes.c_int
+    lib.dcmi_get_device_info.argtypes = [
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_uint,
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_uint),
+    ]
+    lib.dcmi_get_device_info.restype = ctypes.c_int
     for name in ("dcmi_get_driver_version", "dcmi_get_dcmi_version"):
         func = getattr(lib, name)
         func.argtypes = [ctypes.c_char_p, ctypes.c_uint]
@@ -274,6 +289,9 @@ class DCMISampler:
         uuid = f"ascend-{pci_bus_id or f'{card_id}-{device_id}'}"
         gpu = GpuInfo(
             index=index,
+            device_type="ascend",
+            card_id=str(card_id),
+            die_id=device_id,
             uuid=uuid,
             name=_decode(chip.chip_name) or "Ascend NPU",
             pci_bus_id=pci_bus_id,
@@ -288,6 +306,9 @@ class DCMISampler:
                 if device_id == 0
                 else 0.0
             ),
+            power_limit_watts=(
+                self._rated_power_watts(card_id, device_id) if device_id == 0 else 0.0
+            ),
             clock_mem_mhz=memory_frequency or None,
         )
         if collect_processes:
@@ -296,6 +317,21 @@ class DCMISampler:
         else:
             gpu.processes = self._process_snapshot.get(uuid, [])
         return gpu
+
+    def _rated_power_watts(self, card_id: int, device_id: int) -> float:
+        info = DCMIPowerInfo()
+        size = ctypes.c_uint(ctypes.sizeof(info))
+        rc = self._lib.dcmi_get_device_info(
+            card_id,
+            device_id,
+            DCMI_MAIN_CMD_LP,
+            DCMI_LP_SUB_CMD_GET_POWER_INFO,
+            ctypes.byref(info),
+            ctypes.byref(size),
+        )
+        if rc != DCMI_SUCCESS:
+            return 0.0
+        return round(info.soc_rated_power_mw / 1000.0, 1)
 
     def _memory_values(
         self,

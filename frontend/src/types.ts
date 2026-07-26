@@ -38,6 +38,9 @@ export type GpuInfo = {
   index: number;
   node_id?: string | null;
   gpu_id?: string | null;
+  device_type?: "nvidia" | "ascend" | string;
+  card_id?: string | null;
+  die_id?: number | null;
   uuid: string;
   name: string;
   pci_bus_id?: string | null;
@@ -66,6 +69,8 @@ export type GpuInfo = {
 
 export type NodeTotals = {
   gpu_count: number;
+  accelerator_count: number;
+  card_count: number;
   avg_gpu_utilization: number;
   avg_memory_utilization: number;
   memory_used_mb: number;

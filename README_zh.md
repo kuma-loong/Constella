@@ -172,6 +172,9 @@ Constella 使用两条显式选择、互不串行回退的硬件链路：
 
 DCMI 后端采集 AICore/HBM 利用率、内存、温度、功耗、PCI 标识、驱动/DCMI
 版本和进程显存。
+双 Die 设备仍按每个 Die 一个卡片展示。API 增加 `card_id`、`die_id`、
+`card_count` 和 `accelerator_count`；实时功耗和额定功耗按物理卡只统计一次，
+跨 Die 的相同 PID 按一个活跃进程统计。
 
 ## 架构
 
