@@ -51,13 +51,9 @@ def test_collector_falls_back_to_ascend_npu(monkeypatch: pytest.MonkeyPatch) -> 
         gpus=[],
     )
 
-    class FailingNvml:
+    class FailingDcmi:
         def __init__(self, **_: object) -> None:
-            raise RuntimeError("no NVML")
-
-    class FailingNvidiaSmi:
-        def __call__(self, **_: object) -> Snapshot:
-            raise RuntimeError("no nvidia-smi")
+            raise RuntimeError("no DCMI")
 
     class FakeNpu:
         def __init__(self) -> None:
@@ -66,8 +62,28 @@ def test_collector_falls_back_to_ascend_npu(monkeypatch: pytest.MonkeyPatch) -> 
         def sample(self) -> Snapshot:
             return expected
 
-    monkeypatch.setattr("constella.collector.NVMLSampler", FailingNvml)
-    monkeypatch.setattr("constella.collector.nvidia_smi.sample", FailingNvidiaSmi())
+    monkeypatch.setattr("constella.collector.DCMISampler", FailingDcmi)
     monkeypatch.setattr("constella.collector.NPUSampler", FakeNpu)
 
-    assert SnapshotCollector()._sample_once() is expected
+    assert SnapshotCollector(device_type="ascend")._sample_once() is expected
+
+
+def test_nvidia_collector_does_not_fall_back_to_npu(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FailingNvml:
+        def __init__(self, **_: object) -> None:
+            raise RuntimeError("no NVML")
+
+    def fail_nvidia_smi(**_: object) -> Snapshot:
+        raise RuntimeError("no nvidia-smi")
+
+    class UnexpectedNpu:
+        def __init__(self) -> None:
+            raise AssertionError("NPU backend must not run for an NVIDIA collector")
+
+    monkeypatch.setattr("constella.collector.NVMLSampler", FailingNvml)
+    monkeypatch.setattr("constella.collector.nvidia_smi.sample", fail_nvidia_smi)
+    monkeypatch.setattr("constella.collector.NPUSampler", UnexpectedNpu)
+
+    snapshot = SnapshotCollector(device_type="nvidia")._sample_once()
+    assert not snapshot.ok
+    assert "npu-smi" not in (snapshot.error or "")

@@ -13,7 +13,7 @@ import uvicorn
 from . import __version__
 from .agent import AgentConfig, run_agent
 from .cluster_control import ClusterController, format_results, load_cluster_config
-from .collector import validate_refresh_interval
+from .collector import DEVICE_TYPES, validate_refresh_interval
 from .db import RAW_SNAPSHOT_RETENTION_SECONDS, SQLiteStore
 from .highres_sidecar import HighresSidecarConfig
 from .nvml import sample_with_fallback
@@ -60,6 +60,7 @@ def main(argv: list[str] | None = None) -> None:
     agent.add_argument("--refresh", type=float)
     agent.add_argument("--process-refresh", type=float)
     agent.add_argument("--state-file", type=Path)
+    agent.add_argument("--device", choices=DEVICE_TYPES)
 
     cluster = subparsers.add_parser("cluster", help="manage remote GPU node agents")
     cluster_subparsers = cluster.add_subparsers(dest="cluster_command")
@@ -180,6 +181,7 @@ def main(argv: list[str] | None = None) -> None:
                 refresh_interval=args.refresh,
                 process_interval=args.process_refresh,
                 state_file=args.state_file,
+                device_type=args.device,
             )
         except (OSError, ValueError) as exc:
             parser.error(str(exc))

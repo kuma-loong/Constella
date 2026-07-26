@@ -14,6 +14,7 @@ PROCESS_REFRESH="${PROCESS_REFRESH:-5.0}"
 AGENT_TOKEN_FILE="${AGENT_TOKEN_FILE:-}"
 MANAGER_HOSTNAME="${MANAGER_HOSTNAME:-}"
 LOCAL_AGENT="${LOCAL_AGENT:-1}"
+DEVICE="${DEVICE:-nvidia}"
 LOCAL_AGENT_NODE_ID="${LOCAL_AGENT_NODE_ID:-}"
 LOCAL_AGENT_MANAGER_URL="${LOCAL_AGENT_MANAGER_URL:-ws://127.0.0.1:$PORT/api/agents/ws}"
 NODES_CONFIG="${NODES_CONFIG:-nodes.yaml}"
@@ -34,6 +35,25 @@ LOG_FILE="$LOG_DIR/constella.log"
 AGENT_LOG_FILE="$LOG_DIR/local-agent.log"
 HIGHRES_LOG_FILE="$LOG_DIR/highres-sidecar.log"
 AGENT_STATE_FILE="$RUN_DIR/local-agent-state.json"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --device)
+      [[ $# -ge 2 ]] || { echo "--device requires nvidia or ascend" >&2; exit 2; }
+      DEVICE="$2"
+      shift 2
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ "$DEVICE" != "nvidia" && "$DEVICE" != "ascend" ]]; then
+  echo "device must be one of: nvidia, ascend" >&2
+  exit 2
+fi
 
 mkdir -p "$LOG_DIR" "$RUN_DIR"
 
@@ -207,6 +227,7 @@ AGENT_CMD=(
   --refresh "$REFRESH"
   --process-refresh "$PROCESS_REFRESH"
   --state-file "$AGENT_STATE_FILE"
+  --device "$DEVICE"
 )
 
 if [[ -n "$LOCAL_AGENT_NODE_ID" ]]; then

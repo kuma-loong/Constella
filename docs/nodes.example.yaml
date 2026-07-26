@@ -8,6 +8,8 @@ nodes:
   - id: gpu-node-01
     host: gpu-node-01
     user: alice
+    device: nvidia
   - id: gpu-node-02
     host: gpu-node-02
     user: alice
+    device: ascend

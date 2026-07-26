@@ -16,8 +16,9 @@ import websockets
 
 from . import __version__
 from .cluster import SCHEMA_VERSION
-from .collector import SnapshotCollector, validate_refresh_interval
-from .nvml import sample_hardware_inventory
+from .collector import SnapshotCollector, validate_device_type, validate_refresh_interval
+from .dcmi import sample_hardware_inventory as sample_dcmi_hardware_inventory
+from .nvml import sample_hardware_inventory as sample_nvml_hardware_inventory
 from .schema import NodeHardware, Snapshot, local_node_id
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ class AgentConfig:
     process_interval: float = 5.0
     state_file: Path = Path.home() / ".constella" / "run" / "agent-state.json"
     heartbeat_seconds: float = 10.0
+    device_type: str = "nvidia"
 
     @classmethod
     def from_env(
@@ -46,6 +48,7 @@ class AgentConfig:
         refresh_interval: float | None = None,
         process_interval: float | None = None,
         state_file: str | Path | None = None,
+        device_type: str | None = None,
     ) -> AgentConfig:
         resolved_token = token or os.environ.get("CONSTELLA_AGENT_TOKEN")
         resolved_token_file = token_file or os.environ.get("CONSTELLA_AGENT_TOKEN_FILE")
@@ -73,6 +76,9 @@ class AgentConfig:
             or os.environ.get("CONSTELLA_AGENT_STATE_FILE", "")
             or Path.home() / ".constella" / "run" / "agent-state.json"
         )
+        resolved_device_type = validate_device_type(
+            device_type or os.environ.get("CONSTELLA_DEVICE_TYPE", "nvidia")
+        )
         return cls(
             node_id=node_id or local_node_id(),
             manager_url=resolved_url,
@@ -80,6 +86,7 @@ class AgentConfig:
             refresh_interval=validate_refresh_interval(refresh),
             process_interval=max(1.0, process),
             state_file=resolved_state_file,
+            device_type=resolved_device_type,
         )
 
 
@@ -108,10 +115,16 @@ async def run_agent(config: AgentConfig, *, collector: SnapshotCollector | None 
     collector = collector or SnapshotCollector(
         refresh_interval=config.refresh_interval,
         process_interval=config.process_interval,
+        device_type=config.device_type,
     )
     status = AgentStatus(node_id=config.node_id, pid=os.getpid())
     writer_task = asyncio.create_task(_state_writer(config.state_file, status), name="agent-state-writer")
-    hardware = await asyncio.to_thread(sample_hardware_inventory)
+    inventory_sampler = (
+        sample_dcmi_hardware_inventory
+        if config.device_type == "ascend"
+        else sample_nvml_hardware_inventory
+    )
+    hardware = await asyncio.to_thread(inventory_sampler)
     await collector.start()
     try:
         await _connection_loop(config, collector, status, hardware)
@@ -251,8 +264,11 @@ def agent_hello(config: AgentConfig, *, hardware: NodeHardware | None = None) ->
         "hostname": socket.gethostname(),
         "agent_version": __version__,
         "capabilities": {
-            "nvml": True,
-            "nvidia_smi_fallback": True,
+            "device_type": config.device_type,
+            "dcmi": config.device_type == "ascend",
+            "npu_smi_fallback": config.device_type == "ascend",
+            "nvml": config.device_type == "nvidia",
+            "nvidia_smi_fallback": config.device_type == "nvidia",
             "process_cmdline": True,
         },
     }

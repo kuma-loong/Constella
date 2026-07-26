@@ -17,6 +17,8 @@ AGENT_RUNTIME_MODULES = (
     "agent_main.py",
     "cluster.py",
     "collector.py",
+    "dcmi.py",
+    "npu.py",
     "nvml.py",
     "nvidia_smi.py",
     "procfs.py",
@@ -30,6 +32,7 @@ class ClusterNode:
     host: str
     user: str | None = None
     port: int | None = None
+    device_type: str = "nvidia"
 
     @property
     def target(self) -> str:
@@ -341,7 +344,15 @@ def parse_node(item: Any) -> ClusterNode:
         host=host,
         user=item.get("user"),
         port=int(port) if port is not None else None,
+        device_type=parse_device_type(item.get("device", "nvidia")),
     )
+
+
+def parse_device_type(value: Any) -> str:
+    device_type = str(value).strip().lower()
+    if device_type not in {"nvidia", "ascend"}:
+        raise ValueError("node device must be one of: nvidia, ascend")
+    return device_type
 
 
 def render_agent_env(config: ClusterConfig, node: ClusterNode, token: str) -> str:
@@ -351,6 +362,7 @@ def render_agent_env(config: ClusterConfig, node: ClusterNode, token: str) -> st
         "CONSTELLA_AGENT_TOKEN": token,
         "CONSTELLA_REFRESH_SECONDS": str(config.refresh_interval),
         "CONSTELLA_PROCESS_SECONDS": str(config.process_interval),
+        "CONSTELLA_DEVICE_TYPE": node.device_type,
         "CONSTELLA_AGENT_STATE_FILE": remote_join(config.remote_base, "run", "agent-state.json"),
     }
     lines = [
@@ -359,6 +371,7 @@ def render_agent_env(config: ClusterConfig, node: ClusterNode, token: str) -> st
         f"CONSTELLA_AGENT_TOKEN={shlex.quote(values['CONSTELLA_AGENT_TOKEN'])}",
         f"CONSTELLA_REFRESH_SECONDS={shlex.quote(values['CONSTELLA_REFRESH_SECONDS'])}",
         f"CONSTELLA_PROCESS_SECONDS={shlex.quote(values['CONSTELLA_PROCESS_SECONDS'])}",
+        f"CONSTELLA_DEVICE_TYPE={shlex.quote(values['CONSTELLA_DEVICE_TYPE'])}",
         f"CONSTELLA_AGENT_STATE_FILE={shell_path(values['CONSTELLA_AGENT_STATE_FILE'])}",
     ]
     return "\n".join(lines) + "\n"

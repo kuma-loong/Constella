@@ -456,7 +456,7 @@ export function GpuCard({
   gpu: GpuInfo;
   history: Record<string, number[]>;
 }) {
-  const accelerator = node.source === "npu-smi" ? "NPU" : "GPU";
+  const accelerator = node.source === "dcmi" || node.source === "npu-smi" ? "NPU" : "GPU";
   const subtitle = [
     node.node_id,
     gpu.pstate,

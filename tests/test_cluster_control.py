@@ -64,6 +64,7 @@ nodes:
     host: gpu-node-01
     user: alice
     port: 2222
+    device: ascend
 """,
         encoding="utf-8",
     )
@@ -75,7 +76,13 @@ nodes:
     assert config.manager_hostname == "H100"
     assert config.refresh_interval == 2.0
     assert config.process_interval == 5.0
-    assert config.nodes[0] == ClusterNode(id="gpu-node-01", host="gpu-node-01", user="alice", port=2222)
+    assert config.nodes[0] == ClusterNode(
+        id="gpu-node-01",
+        host="gpu-node-01",
+        user="alice",
+        port=2222,
+        device_type="ascend",
+    )
     assert load_manager_hostname(nodes_file) == "H100"
 
 
@@ -115,6 +122,7 @@ def test_render_agent_env_and_start_script_use_home_expansion(tmp_path) -> None:
     script = render_start_script(config.remote_base)
 
     assert "CONSTELLA_AGENT_STATE_FILE=$HOME/.constella/run/agent-state.json" in env
+    assert "CONSTELLA_DEVICE_TYPE=nvidia" in env
     assert "BASE=$HOME/.constella" in script
     assert "$HOME/miniconda3/bin/python3" in script
     assert "python >= 3.10 not found" in script
