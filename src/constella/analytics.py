@@ -202,6 +202,7 @@ def _roll_up_usage(
     users: dict[str, UserUsage] = {}
     jobs: dict[str, JobUsage] = {}
     counted_card_usage: set[tuple[str, str]] = set()
+    counted_job_card_usage: set[tuple[str, str, str]] = set()
     for row in rows:
         seconds = overlap_seconds(row["first_seen_at"], row["last_seen_at"], range_start, range_end)
         if seconds <= 0:
@@ -237,7 +238,9 @@ def _roll_up_usage(
         job.last_seen_at = max(job.last_seen_at, row["session_last_seen_at"])
         if row["status"] == "running":
             job.status = "running"
-        if usage_key in counted_card_usage and card_key not in job.card_keys:
+        job_usage_key = (key, row["session_id"], card_key)
+        if job_usage_key not in counted_job_card_usage:
+            counted_job_card_usage.add(job_usage_key)
             job.gpu_hours += seconds / 3600
             job.weighted_gpu_hours += seconds * weight / 3600
         job.card_keys.add(card_key)
