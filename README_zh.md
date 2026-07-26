@@ -156,6 +156,12 @@ flowchart LR
 - 如果 manager 主机不采集本机 GPU，启动时加 `LOCAL_AGENT=0`。
 - 远端节点不需要安装 `uv`，manager 会同步最小 agent runtime。
 
+## Ascend NPU 支持
+
+安装 Ascend 驱动并提供 `npu-smi` 后，Constella 会自动执行 `npu-smi info`，
+采集 AICore 利用率、内存、温度、功耗、驱动版本和运行进程，并复用现有快照
+接口。NVIDIA 后端优先；NVIDIA 不可用时自动启用 NPU 后端。
+
 ## 架构
 
 ```mermaid

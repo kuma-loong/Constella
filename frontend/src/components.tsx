@@ -456,6 +456,7 @@ export function GpuCard({
   gpu: GpuInfo;
   history: Record<string, number[]>;
 }) {
+  const accelerator = node.source === "npu-smi" ? "NPU" : "GPU";
   const subtitle = [
     node.node_id,
     gpu.pstate,
@@ -472,7 +473,7 @@ export function GpuCard({
       <div class="gpu-head">
         <div>
           <span class="gpu-index" title={gpu.uuid}>
-            GPU{gpu.index}
+            {accelerator}{gpu.index}
           </span>
           <h3>{compactGpuName(gpu.name)}</h3>
           <p>{subtitle || gpu.uuid}</p>
@@ -485,7 +486,7 @@ export function GpuCard({
       </div>
 
       <div class="bar-stack">
-        <Bar label="GPU" value={gpu.utilization_gpu} meta={fmtPct(gpu.utilization_gpu)} tone="green" />
+        <Bar label={accelerator} value={gpu.utilization_gpu} meta={fmtPct(gpu.utilization_gpu)} tone="green" />
         <Bar
           label="Memory"
           value={gpu.memory_percent}

@@ -156,6 +156,14 @@ Start remote GPU agents:
 - If the manager host should not monitor local GPUs, start with `LOCAL_AGENT=0`.
 - Remote nodes do not need `uv`; the manager syncs a minimal agent runtime.
 
+## Ascend NPU support
+
+When the Ascend driver provides `npu-smi`, Constella automatically samples
+`npu-smi info` and exposes AICore utilization, memory, temperature, power,
+driver version, and running processes through the existing snapshot API.
+NVIDIA remains the preferred backend; Ascend is selected when NVIDIA sampling
+is unavailable.
+
 ## Architecture
 
 ```mermaid

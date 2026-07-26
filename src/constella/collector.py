@@ -7,6 +7,7 @@ from collections import defaultdict, deque
 from typing import Any
 
 from . import nvidia_smi
+from .npu import NPUSampler
 from .nvml import NVMLSampler
 from .schema import GpuProcess, Snapshot
 
@@ -48,6 +49,7 @@ class SnapshotCollector:
             }
         )
         self._sampler: NVMLSampler | None = None
+        self._npu_sampler: NPUSampler | None = None
         self._next_fallback_process_at = 0.0
         self._fallback_processes_by_uuid: dict[str, list[GpuProcess]] = {}
 
@@ -96,6 +98,7 @@ class SnapshotCollector:
         if self._sampler:
             self._sampler.close()
             self._sampler = None
+        self._npu_sampler = None
 
     async def wait_for_update(self, last_seq: int, timeout: float = 30.0) -> Snapshot | None:
         deadline = asyncio.get_running_loop().time() + timeout
@@ -143,10 +146,17 @@ class SnapshotCollector:
             try:
                 return self._sample_with_nvidia_smi()
             except Exception as fallback_exc:
-                return nvidia_smi.error_snapshot(
-                    f"NVML failed: {exc}; nvidia-smi failed: {fallback_exc}",
-                    source="none",
-                )
+                try:
+                    if self._npu_sampler is None:
+                        self._npu_sampler = NPUSampler()
+                    return self._npu_sampler.sample()
+                except Exception as npu_exc:
+                    return nvidia_smi.error_snapshot(
+                        "NVML failed: "
+                        f"{exc}; nvidia-smi failed: {fallback_exc}; "
+                        f"npu-smi failed: {npu_exc}",
+                        source="none",
+                    )
 
     def _sample_with_nvidia_smi(self) -> Snapshot:
         now = time.monotonic()
