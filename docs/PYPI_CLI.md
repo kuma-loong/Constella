@@ -1,6 +1,9 @@
 # PyPI CLI Usage
 
-This document covers the CLI intended for `pip install constella-gpu` users. Source deployments can keep using `scripts/service/*`.
+This document covers the CLI installed by any Constella distribution. The
+`constella-gpu-backend` package provides the command; the full, Web, and TUI
+distributions include that backend dependency. Source deployments can keep
+using `scripts/service/*`.
 
 ## Recommended One-Command Service
 
@@ -66,7 +69,7 @@ Use `1`–`4` to switch between Overview, Cluster, Rankings, and History. `n` an
 `g` move to the next node or GPU, `[` and `]` change analytics range, `r`
 reconnects, and `?` opens keyboard help. Rankings and historical charts require
 SQLite (enabled by `constella service start` unless `--no-db` is set). See
-[`tui/README.md`](../tui/README.md) for the complete TUI notes.
+[`packages/tui/README.md`](../packages/tui/README.md) for the complete TUI notes.
 
 ## `constella service start`
 

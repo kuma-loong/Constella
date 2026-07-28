@@ -19,6 +19,16 @@ def source_project_root() -> Path | None:
     return None
 
 
+def source_repository_root() -> Path | None:
+    """Return the checkout root when running from the workspace backend package."""
+    for candidate in PACKAGE_DIR.parents:
+        if (candidate / "frontend" / "package.json").is_file() and (
+            candidate / "packages" / "backend" / "src" / "constella"
+        ).resolve() == PACKAGE_DIR:
+            return candidate
+    return None
+
+
 def default_project_root() -> Path:
     return source_project_root() or package_dir()
 
@@ -42,7 +52,15 @@ def resolve_frontend_dist(override: Path | None = None) -> Path | None:
         root = source_project_root()
         if root is not None:
             candidates.append(root / "frontend" / "dist")
-        candidates.append(package_dir() / "frontend" / "dist")
+        repository_root = source_repository_root()
+        if repository_root is not None:
+            candidates.append(repository_root / "frontend" / "dist")
+        try:
+            from constella_web import frontend_dist
+        except ImportError:
+            pass
+        else:
+            candidates.append(frontend_dist())
 
     for candidate in candidates:
         resolved = candidate.expanduser()

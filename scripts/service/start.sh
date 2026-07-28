@@ -76,7 +76,7 @@ fi
 
 if [[ -z "$MANAGER_HOSTNAME" && -f "$NODES_CONFIG" ]]; then
   MANAGER_HOSTNAME="$(
-    PYTHONPATH="$ROOT_DIR/src" "$ROOT_DIR/.venv/bin/python" - "$NODES_CONFIG" <<'PY'
+    PYTHONPATH="$ROOT_DIR/packages/backend/src" "$ROOT_DIR/.venv/bin/python" - "$NODES_CONFIG" <<'PY'
 from pathlib import Path
 import sys
 

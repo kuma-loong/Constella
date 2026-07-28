@@ -1,12 +1,12 @@
 {
   "name": "constella-frontend",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173",
     "build": "tsc && vite build",
-    "build:package": "tsc && CONSTELLA_FRONTEND_OUT_DIR=../src/constella/frontend/dist vite build",
+    "build:package": "tsc && CONSTELLA_FRONTEND_OUT_DIR=../packages/web/src/constella_web/dist vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173"
   },
   "dependencies": {

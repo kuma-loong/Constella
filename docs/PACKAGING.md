@@ -1,118 +1,92 @@
 # Packaging Constella for PyPI
 
-This project supports two deployment modes:
+Constella 0.1.2 is published as four composable distributions. Each feature is
+owned by exactly one wheel, so installing variants together never overwrites a
+shared Python package.
 
-- Source deployment from a checkout with `scripts/service/*`.
-- Installed CLI deployment from a wheel or PyPI package with the `constella` command.
+| Distribution | Backend/API | Web UI | TUI |
+| --- | :---: | :---: | :---: |
+| `constella-gpu` | Yes | Yes | Yes |
+| `constella-gpu-web` | Yes | Yes | No |
+| `constella-gpu-tui` | Yes | No | Yes |
+| `constella-gpu-backend` | Yes | No | No |
 
-Do not upload artifacts as part of the local packaging flow. Build locally, install locally, test locally, then upload only from an explicit release process.
+Package ownership:
 
-## Build
+- `constella-gpu-backend` owns the `constella` module and `constella` command.
+- `constella-gpu-web` owns only the `constella_web` static-asset package and
+  depends on the backend.
+- `constella-gpu-tui` owns `constella_tui` and `constella-tui`, and depends on
+  the backend.
+- `constella-gpu` is the full meta distribution and depends on Web and TUI.
+
+The backend discovers installed Web assets at runtime. If the Web distribution
+is absent, API routes remain available and browser frontend routes are not
+mounted. The `constella tui` subcommand is similarly registered only when the
+TUI distribution is installed.
+
+## Build all distributions
 
 ```bash
 ./scripts/package/build.sh
 ```
 
-The script builds the frontend into `src/constella/frontend/dist`, then creates `dist/*.whl` and `dist/*.tar.gz`. The generated frontend directory and `dist/` are ignored by git, but included in local build artifacts.
+The script runs the frontend build into
+`packages/web/src/constella_web/dist`, then uses the uv workspace to build four
+wheels and four source distributions under `dist/`. Generated Web assets and
+`dist/` are ignored by Git.
 
-## Installed CLI Usage
-
-For a full command and parameter reference, see [PyPI CLI Usage](PYPI_CLI.md).
-
-One-command service start:
+Before upload, verify the artifact set and metadata:
 
 ```bash
+ls -1 dist/
+uvx twine check dist/*
+```
+
+## Installed usage
+
+Full installation:
+
+```bash
+pip install constella-gpu
+constella service start
+constella tui
+```
+
+Web-only frontend installation:
+
+```bash
+pip install constella-gpu-web
 constella service start
 ```
 
-By default this starts the manager, creates `run/agent-token`, enables SQLite at `run/constella.db`, and starts a local NVIDIA agent. On an Ascend host, select the packaged DCMI/`npu-smi` backend with `--device ascend`. Use explicit paths when running outside a project checkout:
+TUI-focused installation:
 
 ```bash
-constella service start \
-  --host 0.0.0.0 \
-  --port 8765 \
-  --run-dir ~/.constella/run \
-  --log-dir ~/.constella/logs
+pip install constella-gpu-tui
+constella service start
+constella-tui
 ```
 
-Stop or inspect that local service stack:
+Backend/API-only installation:
 
 ```bash
-constella service status
-constella service stop
-```
-
-The wheel includes the Textual client and both terminal entry points:
-
-```bash
-constella tui --url http://127.0.0.1:8765
-constella-tui --url http://127.0.0.1:8765
-```
-
-Optional service flags:
-
-```bash
+pip install constella-gpu-backend
 constella service start --no-local-agent
-constella service start --device ascend
-constella service start --db-path /data/constella.db
-constella service start --no-db
-constella service start --highres-sidecar --highres-port 8766
-constella service start --cluster-nodes nodes.yaml
-constella service stop --cluster-nodes nodes.yaml --stop-cluster
 ```
 
-The lower-level commands remain available for manual process managers, custom supervisors, and debugging:
+For the complete command reference, see [PyPI CLI Usage](PYPI_CLI.md).
 
-```bash
-constella serve --host 127.0.0.1 --port 8765 --db-path run/constella.db
-constella agent --device ascend --manager-url ws://127.0.0.1:8765/api/agents/ws --token-file run/agent-token
-constella probe --device ascend --pretty
-constella highres-sidecar \
-  --host 127.0.0.1 \
-  --port 8766 \
-  --db-path run/constella.db \
-  --manager-stream-url ws://127.0.0.1:8765/api/highres/stream
-```
+## Source deployment
 
-SQLite maintenance:
+Source deployment remains available through `scripts/service/*`. The source
+scripts build and serve `frontend/dist`. `CONSTELLA_FRONTEND_DIST` or
+`constella serve --frontend-dir` can override frontend discovery.
 
-```bash
-constella db maintain --path run/constella.db
-```
+## Safe smoke testing
 
-Cluster agent control remains available through:
-
-```bash
-constella cluster start --nodes nodes.yaml
-constella cluster status --nodes nodes.yaml
-constella cluster stop --nodes nodes.yaml
-```
-
-When installed from a wheel, `cluster start` builds the remote agent runtime from the installed package and writes temporary build files under the user cache directory. The runtime bundle includes `dcmi.py` and `npu.py`, so `device: ascend` nodes do not need a separate Constella source checkout.
-
-## Source Deployment
-
-Source deployment remains unchanged:
-
-```bash
-./scripts/service/setup.sh
-./scripts/service/start.sh
-./scripts/service/status.sh
-./scripts/service/stop.sh
-```
-
-The source scripts build and serve `frontend/dist`. Installed packages serve the packaged frontend assets. `CONSTELLA_FRONTEND_DIST` or `constella serve --frontend-dir` can override the frontend directory for tests or custom deployments.
-
-## Safe Local Smoke Test
-
-Never reuse a production port or database during packaging validation. If `8765` is already serving Constella, use a different port and a temporary database:
-
-```bash
-python3 -m venv /tmp/constella-wheel-test
-/tmp/constella-wheel-test/bin/pip install dist/constella_gpu-*.whl
-/tmp/constella-wheel-test/bin/constella service start \
-  --host 127.0.0.1 \
-  --port 18875 \
-  --run-dir /tmp/constella-smoke/run \
-  --log-dir /tmp/constella-smoke/logs
-```
+Never reuse a production port, runtime directory, or database. Build, create a
+temporary virtual environment for each distribution, install from `dist/` with
+`uv pip`, and use temporary ports and paths for service tests. Backend and TUI
+tests should confirm that no Web route is mounted; Web and full tests should
+confirm that `/overview` serves the packaged frontend.

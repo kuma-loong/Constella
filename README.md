@@ -5,7 +5,7 @@
 <h1 align="center">Constella</h1>
 
 <p align="center">
-  <strong>Lightweight GPU Cluster Monitoring & Workload History</strong>
+  <strong>Lightweight Heterogeneous Accelerator Monitoring & Workload History</strong>
 </p>
 
 <p align="center">
@@ -24,13 +24,18 @@
 
 <div align="center">
   <blockquote>
-    <em>Like stars in a constellation, <strong>Constella</strong> gathers independent GPU nodes into one observable cluster.</em>
+    <em>Like stars in a constellation, <strong>Constella</strong> gathers independent accelerator nodes into one observable cluster.</em>
   </blockquote>
 </div>
 
-Constella is a lightweight GPU monitoring platform for labs, AI teams, and personal GPU servers.
+Constella is a lightweight accelerator monitoring platform for labs, AI teams,
+and personal compute servers. It natively supports heterogeneous clusters;
+version 0.1.2 supports NVIDIA GPUs and Ascend NPUs.
 
-Unlike terminal tools that only show the current state, Constella automatically records GPU workload history, making it easy to review completed training and inference jobs. It supports standalone servers and small GPU clusters without requiring a heavyweight Prometheus/Grafana stack.
+Unlike terminal tools that only show the current state, Constella automatically
+records accelerator workload history, making it easy to review completed
+training and inference jobs. It supports standalone servers and small clusters
+without requiring a heavyweight Prometheus/Grafana stack.
 
 ## Screenshots
 
@@ -59,11 +64,12 @@ Unlike terminal tools that only show the current state, Constella automatically 
 - Review training and inference jobs from the last 7 days.
 - Prefer high-resolution memory cache for recent short jobs, with SQLite rollups for persisted history.
 
-**GPU Monitoring**
+**Accelerator Monitoring**
 
 - Monitor a standalone server or a small GPU cluster from one Web UI.
 - Track GPU utilization, memory, power, temperature, clocks, processes, users, PIDs, and command fingerprints.
-- Use NVML first and fall back to `nvidia-smi` when needed.
+- Use NVML with `nvidia-smi` fallback for NVIDIA, and DCMI with `npu-smi`
+  fallback for Ascend.
 
 **Multi-User Analytics**
 
@@ -74,8 +80,8 @@ Unlike terminal tools that only show the current state, Constella automatically 
 **Lightweight Deployment**
 
 - No root privileges, system service, Prometheus, or Grafana required.
-- One manager process receives data from local and remote GPU agents.
-- Remote GPU nodes only need Python, NVIDIA drivers, and SSH access.
+- One manager process receives data from local and remote accelerator agents.
+- Remote nodes only need Python, their vendor driver/runtime, and SSH access.
 
 ## Why Constella?
 
@@ -98,6 +104,11 @@ Install the PyPI distribution and start the managed local stack:
 pip install constella-gpu
 constella service start
 ```
+
+`constella-gpu` is the full installation with backend, Web UI, and TUI. Smaller
+deployments can install `constella-gpu-web`, `constella-gpu-tui`, or
+`constella-gpu-backend`; see [Packaging](docs/PACKAGING.md) for the feature
+matrix.
 
 On an Ascend host, use `constella service start --device ascend`.
 
@@ -230,9 +241,11 @@ The manager does not sample GPUs directly. Local and remote nodes both report cu
 ## Project Layout
 
 ```text
-src/constella/          Python backend, agents, cluster manager, NVML/DCMI samplers, API/WebSocket
+packages/backend/       Python backend, agents, cluster manager, samplers, API/WebSocket
+packages/web/           Installable production Web assets
+packages/tui/           Textual terminal client, theme, and usage notes
+src/constella_gpu/      Full-distribution metadata package
 frontend/               Vite + TypeScript frontend
-tui/                    Textual terminal client, theme, and usage notes
 scripts/                categorized service, cluster, tunnel, maintenance, and dev scripts
 docs/                   design and operations notes
 tests/                  unit tests
@@ -256,7 +269,8 @@ cd frontend
 npm run dev
 ```
 
-For production, build `frontend/dist`; FastAPI serves the static frontend directly.
+For a release build, `scripts/package/build.sh` builds the frontend into the Web
+distribution and produces all four wheel/source-distribution pairs.
 
 ## API
 

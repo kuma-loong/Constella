@@ -5,7 +5,7 @@
 <h1 align="center">Constella</h1>
 
 <p align="center">
-  <strong>轻量级 GPU 集群监控与任务历史追踪</strong>
+  <strong>轻量级异构加速器集群监控与任务历史追踪</strong>
 </p>
 
 <p align="center">
@@ -24,13 +24,16 @@
 
 <div align="center">
   <blockquote>
-    <em>如同星座中的群星，<strong>Constella</strong> 将独立的 GPU 节点汇聚成一个可观测的集群。</em>
+    <em>如同星座中的群星，<strong>Constella</strong> 将独立的加速器节点汇聚成一个可观测的集群。</em>
   </blockquote>
 </div>
 
-Constella 是一个面向实验室、AI 团队和个人 GPU 服务器的轻量级 GPU 监控平台。
+Constella 是一个面向实验室、AI 团队和个人计算服务器的轻量级加速器监控平台，
+原生支持多种硬件组成的异构集群；0.1.2 版本支持 NVIDIA GPU 与 Ascend NPU。
 
-不同于只能查看当前状态的终端工具，Constella 会自动记录 GPU 任务历史，方便在训练或推理结束后回看 GPU 曲线。它支持单机和小型 GPU 集群，不需要先部署一整套 Prometheus/Grafana 监控系统。
+不同于只能查看当前状态的终端工具，Constella 会自动记录加速器任务历史，
+方便在训练或推理结束后回看曲线。它支持单机和小型异构集群，不需要先部署
+一整套 Prometheus/Grafana 监控系统。
 
 ## 截图
 
@@ -59,11 +62,12 @@ Constella 是一个面向实验室、AI 团队和个人 GPU 服务器的轻量�
 - 回看最近 7 天内的训练和推理任务。
 - 短任务优先使用高分辨率内存缓存，持久化历史由 SQLite rollup 提供。
 
-**GPU 监控**
+**加速器监控**
 
 - 在一个 Web UI 中监控单机或小型 GPU 集群。
 - 查看 GPU 利用率、显存、功耗、温度、时钟、进程、用户、PID 和命令指纹。
-- 优先使用 NVML 采样，必要时使用 `nvidia-smi` 兜底。
+- NVIDIA 优先使用 NVML 并以 `nvidia-smi` 兜底；Ascend 优先使用 DCMI
+  并以 `npu-smi` 兜底。
 
 **多用户分析**
 
@@ -74,8 +78,8 @@ Constella 是一个面向实验室、AI 团队和个人 GPU 服务器的轻量�
 **轻量部署**
 
 - 不需要 root 权限、system service、Prometheus 或 Grafana。
-- 一个 manager 进程接收本机和远端 GPU agent 的数据。
-- 远端 GPU 节点只需要 Python、NVIDIA 驱动和 SSH 访问权限。
+- 一个 manager 进程接收本机和远端加速器 agent 的数据。
+- 远端节点只需要 Python、对应厂商驱动/运行时和 SSH 访问权限。
 
 ## 为什么是 Constella？
 
@@ -98,6 +102,10 @@ Constella 介于终端监控和完整可观测性系统之间：比 `nvitop` 更
 pip install constella-gpu
 constella service start
 ```
+
+`constella-gpu` 是包含后端、Web UI 与 TUI 的完整安装包。只需要部分功能时，
+可安装 `constella-gpu-web`、`constella-gpu-tui` 或
+`constella-gpu-backend`；功能矩阵见[打包说明](docs/PACKAGING.md)。
 
 Ascend 主机使用 `constella service start --device ascend`。
 
@@ -229,9 +237,11 @@ manager 不直接采样 GPU；本机节点和远端节点都通过同一条 agen
 ## 项目结构
 
 ```text
-src/constella/          Python 后端、agent、cluster manager、NVML/DCMI 采样、WebSocket
+packages/backend/       Python 后端、agent、cluster manager、采样器、API/WebSocket
+packages/web/           可安装的生产 Web 静态资源
+packages/tui/           Textual 终端客户端、主题与使用说明
+src/constella_gpu/      完整发行包的元数据包
 frontend/               Vite + TypeScript 前端
-tui/                    Textual 终端客户端、主题与使用说明
 scripts/                按 service、cluster、tunnel、maintenance、dev 分类的脚本
 docs/                   设计和运维文档
 tests/                  单元测试
@@ -255,7 +265,8 @@ cd frontend
 npm run dev
 ```
 
-生产服务依赖 `frontend/dist`，执行 `npm run build` 后由 FastAPI 直接托管。
+发布时运行 `scripts/package/build.sh`，它会把前端构建到 Web 发行包中，并生成
+四组 wheel 与源码包。
 
 ## API
 

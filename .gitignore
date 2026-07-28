@@ -9,7 +9,7 @@ __pycache__/
 node_modules/
 frontend/dist/
 frontend/.vite/
-src/constella/frontend/dist/
+packages/web/src/constella_web/dist/
 
 logs/
 run/

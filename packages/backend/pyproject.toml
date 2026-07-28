@@ -1,11 +1,11 @@
 [project]
-name = "constella-gpu"
+name = "constella-gpu-backend"
 version = "0.1.2"
-description = "Full Constella distribution with backend, Web UI, and terminal UI."
-readme = "PYPI.md"
+description = "Constella accelerator monitoring backend, agents, and HTTP/WebSocket APIs."
+readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
-keywords = ["gpu", "nvidia", "ascend", "monitoring", "textual", "tui", "web"]
+keywords = ["gpu", "nvidia", "ascend", "monitoring", "api", "fastapi"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -20,8 +20,10 @@ classifiers = [
     "Topic :: System :: Monitoring",
 ]
 dependencies = [
-    "constella-gpu-tui==0.1.2",
-    "constella-gpu-web==0.1.2",
+    "fastapi>=0.116.0",
+    "pyyaml>=6.0.0",
+    "uvicorn[standard]>=0.35.0",
+    "websockets>=13.0",
 ]
 
 [project.urls]
@@ -30,40 +32,15 @@ Repository = "https://github.com/kuma-loong/Constella"
 Documentation = "https://github.com/kuma-loong/Constella#readme"
 Issues = "https://github.com/kuma-loong/Constella/issues"
 
-[dependency-groups]
-dev = [
-    "httpx>=0.28.0",
-    "pytest>=8.4.0",
-    "ruff>=0.12.0",
-]
+[project.scripts]
+constella = "constella.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/constella_gpu"]
+packages = ["src/constella"]
 
 [tool.hatch.build.targets.sdist]
-include = [
-    "/LICENSE",
-    "/PYPI.md",
-    "/pyproject.toml",
-    "/src/constella_gpu",
-]
-
-[tool.uv.workspace]
-members = ["packages/backend", "packages/tui", "packages/web"]
-
-[tool.uv.sources]
-constella-gpu-backend = { workspace = true }
-constella-gpu-tui = { workspace = true }
-constella-gpu-web = { workspace = true }
-
-[tool.ruff]
-line-length = 100
-target-version = "py310"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["packages/backend/src", "packages/tui/src", "packages/web/src"]
+include = ["/LICENSE", "/README.md", "/pyproject.toml", "/src/constella"]

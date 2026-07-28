@@ -2,6 +2,14 @@ version = 1
 revision = 3
 requires-python = ">=3.10"
 
+[manifest]
+members = [
+    "constella-gpu",
+    "constella-gpu-backend",
+    "constella-gpu-tui",
+    "constella-gpu-web",
+]
+
 [[package]]
 name = "annotated-doc"
 version = "0.0.4"
@@ -66,14 +74,11 @@ wheels = [
 
 [[package]]
 name = "constella-gpu"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
-    { name = "fastapi" },
-    { name = "pyyaml" },
-    { name = "textual" },
-    { name = "uvicorn", extra = ["standard"] },
-    { name = "websockets" },
+    { name = "constella-gpu-tui" },
+    { name = "constella-gpu-web" },
 ]
 
 [package.dev-dependencies]
@@ -85,11 +90,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastapi", specifier = ">=0.116.0" },
-    { name = "pyyaml", specifier = ">=6.0.0" },
-    { name = "textual", specifier = ">=8.0.0,<9" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.35.0" },
-    { name = "websockets", specifier = ">=13.0" },
+    { name = "constella-gpu-tui", editable = "packages/tui" },
+    { name = "constella-gpu-web", editable = "packages/web" },
 ]
 
 [package.metadata.requires-dev]
@@ -98,6 +100,53 @@ dev = [
     { name = "pytest", specifier = ">=8.4.0" },
     { name = "ruff", specifier = ">=0.12.0" },
 ]
+
+[[package]]
+name = "constella-gpu-backend"
+version = "0.1.2"
+source = { editable = "packages/backend" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "pyyaml" },
+    { name = "uvicorn", extra = ["standard"] },
+    { name = "websockets" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.116.0" },
+    { name = "pyyaml", specifier = ">=6.0.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.35.0" },
+    { name = "websockets", specifier = ">=13.0" },
+]
+
+[[package]]
+name = "constella-gpu-tui"
+version = "0.1.2"
+source = { editable = "packages/tui" }
+dependencies = [
+    { name = "constella-gpu-backend" },
+    { name = "textual" },
+    { name = "websockets" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "constella-gpu-backend", editable = "packages/backend" },
+    { name = "textual", specifier = ">=8.0.0,<9" },
+    { name = "websockets", specifier = ">=13.0" },
+]
+
+[[package]]
+name = "constella-gpu-web"
+version = "0.1.2"
+source = { editable = "packages/web" }
+dependencies = [
+    { name = "constella-gpu-backend" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "constella-gpu-backend", editable = "packages/backend" }]
 
 [[package]]
 name = "exceptiongroup"

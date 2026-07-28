@@ -1,22 +1,18 @@
 # Constella
 
-`constella-gpu` is the PyPI distribution for Constella, a lightweight Web-based
-accelerator monitoring and workload history platform for standalone servers and
-small clusters.
+`constella-gpu` is the complete Constella distribution: backend services, the
+production Web interface, and the keyboard-first Textual TUI.
 
-Constella natively supports heterogeneous accelerator clusters across multiple
-hardware backends. It shows current accelerator activity in realtime, records
-workload history automatically, and makes completed training and inference jobs
-easy to review without requiring a Prometheus/Grafana stack.
+Constella is a lightweight accelerator monitoring and workload history platform
+for standalone servers and small heterogeneous clusters. It shows current
+accelerator activity in realtime, records workload history automatically, and
+makes completed training and inference jobs easy to review without requiring a
+Prometheus/Grafana stack.
 
-The current release supports:
+Version 0.1.2 supports:
 
-- NVIDIA GPUs: NVML with `nvidia-smi` fallback.
-- Ascend NPUs: DCMI with `npu-smi` fallback.
-
-The wheel includes the production Web interface and the `constella` command, so
-an installed package does not require a source checkout or a separate frontend
-build.
+- NVIDIA GPUs: NVML with an `nvidia-smi` fallback.
+- Ascend NPUs: DCMI with an `npu-smi` fallback.
 
 ## Install
 
@@ -26,8 +22,14 @@ Constella requires Python 3.10 or newer.
 pip install constella-gpu
 ```
 
-The distribution name is `constella-gpu`; the installed command and Python
-package are both named `constella`.
+Four distributions provide explicit deployment sizes:
+
+| Distribution | Backend/API | Web UI | TUI |
+| --- | :---: | :---: | :---: |
+| `constella-gpu` | Yes | Yes | Yes |
+| `constella-gpu-web` | Yes | Yes | No |
+| `constella-gpu-tui` | Yes | No | Yes |
+| `constella-gpu-backend` | Yes | No | No |
 
 ## Quick start
 
@@ -39,16 +41,17 @@ constella service start \
   --log-dir ~/.constella/logs
 ```
 
-On an Ascend host, select the backend explicitly:
+On an Ascend host, add `--device ascend`.
+
+Use the terminal interface:
 
 ```bash
-constella service start \
-  --device ascend \
-  --run-dir ~/.constella/run \
-  --log-dir ~/.constella/logs
+constella tui
+# equivalent standalone entry point
+constella-tui
 ```
 
-Open `http://127.0.0.1:8765/overview` in a browser.
+Or open `http://127.0.0.1:8765/overview` in a browser.
 
 Inspect or stop the managed processes with the same runtime directory:
 
@@ -62,42 +65,19 @@ or use SSH port forwarding when the service runs on a remote host.
 
 ## Common commands
 
-Print one accelerator snapshot:
-
 ```bash
 constella probe --pretty
 constella probe --device ascend --pretty
-```
-
-Run only the manager for a custom supervisor or a manager-only node:
-
-```bash
 constella serve --host 127.0.0.1 --port 8765
 constella service start --no-local-agent
-```
-
-Manage agents defined in a cluster manifest:
-
-```bash
 constella cluster start --nodes nodes.yaml
 constella cluster status --nodes nodes.yaml
 constella cluster stop --nodes nodes.yaml
 ```
 
-## Optional history and job curves
-
-`constella service start` enables SQLite history by default. Disable it for a
-realtime-only deployment:
-
-```bash
-constella service start --no-db
-```
-
-The high-resolution job-curve sidecar is optional:
-
-```bash
-constella service start --highres-sidecar
-```
+SQLite history is enabled by default. Use `constella service start --no-db` for
+realtime-only operation, or `constella service start --highres-sidecar` to run
+the optional high-resolution job-curve sidecar.
 
 ## Project links
 

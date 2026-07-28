@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import importlib.util
 import json
 import math
 import os
@@ -62,13 +63,15 @@ def main(argv: list[str] | None = None) -> None:
     probe.add_argument("--pretty", action="store_true")
     probe.add_argument("--device", choices=DEVICE_TYPES, default="nvidia")
 
-    tui = subparsers.add_parser("tui", help="open the terminal cluster monitor")
-    tui.add_argument(
-        "--url",
-        default=os.environ.get("CONSTELLA_URL", "http://127.0.0.1:8765"),
-        help="manager HTTP or WebSocket URL",
-    )
-    tui.add_argument("--reconnect-delay", type=float, default=2.0)
+    tui_available = importlib.util.find_spec("constella_tui") is not None
+    if tui_available:
+        tui = subparsers.add_parser("tui", help="open the terminal cluster monitor")
+        tui.add_argument(
+            "--url",
+            default=os.environ.get("CONSTELLA_URL", "http://127.0.0.1:8765"),
+            help="manager HTTP or WebSocket URL",
+        )
+        tui.add_argument("--reconnect-delay", type=float, default=2.0)
 
     agent = subparsers.add_parser("agent", help="run a GPU node agent")
     agent.add_argument("--node-id")
@@ -244,7 +247,7 @@ def main(argv: list[str] | None = None) -> None:
         sys.stdout.write("\n")
         return
 
-    if args.command == "tui":
+    if tui_available and args.command == "tui":
         from constella_tui.app import ConstellaTui
 
         if not math.isfinite(args.reconnect_delay) or args.reconnect_delay < 0.1:

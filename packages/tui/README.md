@@ -1,6 +1,12 @@
 # Constella TUI
 
-Constella TUI is a keyboard-first terminal client for an existing Constella manager. It reads the same realtime `/ws/cluster` stream and analytics APIs as the Web UI, so sampling, aggregation, authentication boundaries, and cluster state remain in the backend.
+`constella-gpu-tui` installs the Constella backend together with its
+keyboard-first Textual terminal client. It reads the realtime `/ws/cluster`
+stream and historical analytics APIs, so live monitoring and completed
+workloads stay available in one terminal workspace.
+
+Constella natively supports heterogeneous accelerator clusters. Version 0.1.2
+supports NVIDIA GPUs and Ascend NPUs.
 
 ## Views
 
@@ -13,9 +19,16 @@ Rankings and History require the manager database. They show an explicit unavail
 
 ## Run
 
-After installing `constella-gpu`:
+Install the TUI-focused distribution:
 
 ```bash
+pip install constella-gpu-tui
+```
+
+Start a backend locally, then open the TUI:
+
+```bash
+constella service start
 constella tui
 # or
 constella-tui
@@ -44,3 +57,6 @@ constella-tui --url https://gpu.example.com
 | `q` | Quit |
 
 The selected node and GPU survive realtime refreshes and remain shared across views. The client reconnects automatically after a dropped connection. No agent token is needed because these read-only endpoints follow the same access boundary as the Web UI.
+
+Use `constella-gpu` when both Web and TUI frontends are wanted, or
+`constella-gpu-backend` for an API-only installation.
