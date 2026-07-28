@@ -235,3 +235,32 @@ async def exercise_multi_view_navigation() -> None:
 
 def test_tui_supports_cluster_rankings_and_history_views() -> None:
     asyncio.run(exercise_multi_view_navigation())
+
+
+async def exercise_compact_terminal_and_cycle_actions() -> None:
+    snapshot = deepcopy(SNAPSHOT)
+    snapshot["nodes"][0]["gpus"][0]["uuid"] = "GPU-0"
+    second_gpu = deepcopy(snapshot["nodes"][0]["gpus"][0])
+    second_gpu.update(index=1, uuid="GPU-1")
+    snapshot["nodes"][0]["gpus"].append(second_gpu)
+    second_node = deepcopy(snapshot["nodes"][0])
+    second_node.update(node_id="gpu-b", hostname="gpu-b")
+    snapshot["nodes"].append(second_node)
+
+    app = ConstellaTui("http://127.0.0.1:8765")
+    client = AnalyticsClient()
+    client.snapshots = lambda: _single_snapshot(snapshot)  # type: ignore[method-assign]
+    app.client = client  # type: ignore[assignment]
+    async with app.run_test(size=(90, 28)) as pilot:
+        await pilot.pause(0.2)
+        await pilot.press("g")
+        assert app.selected_gpu_key == "GPU-1"
+        await pilot.press("n")
+        assert app.selected_node_id == "gpu-b"
+        await pilot.press("4")
+        await pilot.pause(0.2)
+        assert app.query_one("#views", ContentSwitcher).current == "history-view"
+
+
+def test_tui_remains_usable_in_compact_terminal() -> None:
+    asyncio.run(exercise_compact_terminal_and_cycle_actions())

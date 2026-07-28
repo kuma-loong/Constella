@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from constella_tui.client import cluster_websocket_url, manager_http_url
+import asyncio
+import io
+
+from constella_tui import client as client_module
+from constella_tui.client import ClusterAPIError, ClusterClient, cluster_websocket_url, manager_http_url
 
 
 @pytest.mark.parametrize(
@@ -35,3 +39,36 @@ def test_cluster_websocket_url_rejects_invalid_values(source: str) -> None:
 )
 def test_manager_http_url(source: str, expected: str) -> None:
     assert manager_http_url(source) == expected
+
+
+class FakeResponse(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        self.close()
+
+
+def test_cluster_client_fetches_analytics_json(monkeypatch) -> None:
+    def fake_urlopen(request, *, timeout):
+        assert request.full_url == "http://manager:8765/api/analytics/overview?range=7d"
+        assert timeout == 3.0
+        return FakeResponse(b'{"enabled": true}')
+
+    monkeypatch.setattr(client_module, "urlopen", fake_urlopen)
+    client = ClusterClient("http://manager:8765")
+    result = asyncio.run(
+        client.get_json("/api/analytics/overview", params={"range": "7d"}, timeout=3.0)
+    )
+    assert result == {"enabled": True}
+
+
+def test_cluster_client_rejects_non_object_json(monkeypatch) -> None:
+    monkeypatch.setattr(
+        client_module,
+        "urlopen",
+        lambda _request, *, timeout: FakeResponse(b"[]"),
+    )
+    client = ClusterClient("http://manager:8765")
+    with pytest.raises(ClusterAPIError, match="invalid API payload"):
+        asyncio.run(client.get_json("/api/analytics/overview"))

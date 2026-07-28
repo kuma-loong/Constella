@@ -47,8 +47,8 @@ constella-tui
 ```
 
 Both commands connect to `http://127.0.0.1:8765` by default and consume the
-existing read-only `/ws/cluster` stream. They do not start another collector or
-write to the manager.
+existing read-only `/ws/cluster` stream and analytics APIs. They do not start
+another collector or write to the manager.
 
 | Parameter | Default | Description |
 | --- | --- | --- |
@@ -62,9 +62,11 @@ constella tui --url https://gpu.example.com
 CONSTELLA_URL=http://10.0.0.10:8765 constella-tui
 ```
 
-Use `Tab` to move focus, arrows or `j`/`k` to navigate, `r` to reconnect, `?`
-for keyboard help, and `q` to quit. See [`tui/README.md`](../tui/README.md) for
-the complete TUI notes.
+Use `1`–`4` to switch between Overview, Cluster, Rankings, and History. `n` and
+`g` move to the next node or GPU, `[` and `]` change analytics range, `r`
+reconnects, and `?` opens keyboard help. Rankings and historical charts require
+SQLite (enabled by `constella service start` unless `--no-db` is set). See
+[`tui/README.md`](../tui/README.md) for the complete TUI notes.
 
 ## `constella service start`
 

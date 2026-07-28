@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 
 from rich.text import Text
 
@@ -83,6 +84,31 @@ def heatmap_text(
             else:
                 output.append("■", style=_heat_style(float(value)))
     return output
+
+
+def aligned_heatmap_rows(items: Sequence[dict[str, Any]]) -> list[tuple[str, list[float | None]]]:
+    """Align sparse GPU heatmap buckets on a shared time axis."""
+    timestamps = sorted(
+        {
+            float(bucket["bucket_start"])
+            for item in items
+            for bucket in item.get("buckets", [])
+            if isinstance(bucket, dict) and bucket.get("bucket_start") is not None
+        }
+    )
+    rows: list[tuple[str, list[float | None]]] = []
+    for item in items:
+        values_by_time: dict[float, float] = {}
+        for bucket in item.get("buckets", []):
+            if not isinstance(bucket, dict) or bucket.get("bucket_start") is None:
+                continue
+            if bucket.get("sample_count") and bucket.get("avg_gpu_utilization") is not None:
+                values_by_time[float(bucket["bucket_start"])] = float(
+                    bucket["avg_gpu_utilization"]
+                )
+        label = f"GPU {item.get('gpu_index') if item.get('gpu_index') is not None else '?'}"
+        rows.append((label, [values_by_time.get(timestamp) for timestamp in timestamps]))
+    return rows
 
 
 def _heat_style(value: float) -> str:

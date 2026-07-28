@@ -18,7 +18,7 @@ from textual.events import Resize
 from textual.screen import ModalScreen
 from textual.widgets import ContentSwitcher, DataTable, Footer, Label, ListItem, ListView, Static
 
-from .charts import braille_chart, heatmap_text
+from .charts import aligned_heatmap_rows, braille_chart, heatmap_text
 from .client import ClusterAPIError, ClusterClient, ClusterConnectionError
 from .model import duration, gpu_rows, memory, node_label, percent, process_rows
 
@@ -43,6 +43,7 @@ class HelpScreen(ModalScreen[None]):
                 "[b]1-4[/b]              switch views\n"
                 "[b]Tab / Shift+Tab[/b]  move focus\n"
                 "[b]j / k or arrows[/b]  move through rows\n"
+                "[b]n / g[/b]            next node / GPU\n"
                 "[b][ / ][/b]            change analytics range\n"
                 "[b]r[/b]                refresh current view\n"
                 "[b]?[/b]                show this help\n"
@@ -98,6 +99,8 @@ class ConstellaTui(App[None]):
         Binding("4", "show_history", show=False),
         Binding("left_square_bracket", "previous_range", show=False),
         Binding("right_square_bracket", "next_range", show=False),
+        Binding("n", "next_node", show=False),
+        Binding("g", "next_gpu", show=False),
         Binding("j", "cursor_down", show=False),
         Binding("k", "cursor_up", show=False),
     ]
@@ -199,7 +202,10 @@ class ConstellaTui(App[None]):
                     with Vertical():
                         yield Static("MEMORY", id="history-memory-title", classes="section-title")
                         yield Static(id="history-memory-curve", classes="history-curve")
-                yield Static("UTILIZATION HEATMAP", classes="section-title")
+                yield Static(
+                    "UTILIZATION HEATMAP  ·  [#00E5FF]LOW[/]  [#A855F7]MID[/]  [#FF6B00]HIGH[/]",
+                    classes="section-title",
+                )
                 yield Static(id="history-heatmap")
         yield Footer()
 
@@ -336,6 +342,31 @@ class ConstellaTui(App[None]):
     def action_next_range(self) -> None:
         self._cycle_range(1)
 
+    def action_next_node(self) -> None:
+        nodes = self._snapshot_nodes()
+        ids = [self._node_id(node) for node in nodes]
+        if not ids:
+            return
+        current = ids.index(self.selected_node_id) if self.selected_node_id in ids else -1
+        self._select_node(ids[(current + 1) % len(ids)])
+        if self.active_view == "cluster":
+            self._render_cluster()
+
+    def action_next_gpu(self) -> None:
+        node = self._selected_node()
+        if node is None:
+            return
+        gpus = [gpu for gpu in node.get("gpus", []) if isinstance(gpu, dict)]
+        keys = [self._gpu_key(gpu) for gpu in gpus]
+        if not keys:
+            return
+        current = keys.index(self.selected_gpu_key) if self.selected_gpu_key in keys else -1
+        self.selected_gpu_key = keys[(current + 1) % len(keys)]
+        if self.active_view == "overview":
+            self._render_overview()
+        elif self.active_view == "history":
+            self._render_history()
+
     def action_cursor_down(self) -> None:
         action = getattr(self.focused, "action_cursor_down", None)
         if action is not None:
@@ -435,8 +466,10 @@ class ConstellaTui(App[None]):
             self._show_state("No nodes are reporting\n\nStart an agent or check the manager endpoint")
             return
         self._show_overview()
-        self._render_overview()
-        self._render_cluster()
+        if self.active_view == "overview":
+            self._render_overview()
+        elif self.active_view == "cluster":
+            self._render_cluster()
         self.call_after_refresh(self._render_visible_charts)
 
     def _render_node_list(self, nodes: list[dict[str, Any]]) -> None:
@@ -626,7 +659,10 @@ class ConstellaTui(App[None]):
         self.query_one("#hardware-title", Static).update(
             f"{self._node_id(node)} HARDWARE  ·  driver {node.get('driver_version') or 'unknown'}  ·  agent {node.get('agent_version') or 'unknown'}"
         )
-        for gpu in node.get("gpus", []):
+        live_gpus = [gpu for gpu in node.get("gpus", []) if isinstance(gpu, dict)]
+        hardware = node.get("hardware") if isinstance(node.get("hardware"), dict) else {}
+        known_gpus = [gpu for gpu in hardware.get("gpus", []) if isinstance(gpu, dict)]
+        for gpu in live_gpus or known_gpus:
             if not isinstance(gpu, dict):
                 continue
             table.add_row(
@@ -726,7 +762,7 @@ class ConstellaTui(App[None]):
         series = self._dict_items(payload.get("series"))
         selected = self._history_series(series)
         status.update(
-            f"NODE {self.selected_node_id or 'unknown'}  ·  RANGE {self.history_range}  ·  {len(series)} GPU series  ·  [ / ] change range"
+            f"NODE {self.selected_node_id or 'unknown'}  ·  RANGE {self.history_range}  ·  {len(series)} GPU series  ·  n/g select  ·  [ / ] range"
         )
         if selected is None:
             gpu_curve.update("No history points for the selected GPU")
@@ -760,15 +796,7 @@ class ConstellaTui(App[None]):
             label = f"GPU {selected.get('gpu_index') if selected.get('gpu_index') is not None else '?'}"
             self.query_one("#history-gpu-title", Static).update(f"{label} UTILIZATION")
             self.query_one("#history-memory-title", Static).update(f"{label} MEMORY GiB")
-        heat_rows: list[tuple[str, list[float | None]]] = []
-        for item in self._dict_items(payload.get("heatmap")):
-            values = [
-                float(bucket.get("avg_gpu_utilization"))
-                if bucket.get("sample_count") and bucket.get("avg_gpu_utilization") is not None
-                else None
-                for bucket in self._dict_items(item.get("buckets"))
-            ]
-            heat_rows.append((f"GPU {item.get('gpu_index', '?')}", values))
+        heat_rows = aligned_heatmap_rows(self._dict_items(payload.get("heatmap")))
         heatmap.update(heatmap_text(heat_rows, max_columns=max(12, heatmap.size.width - 15)))
 
     def _render_visible_charts(self) -> None:

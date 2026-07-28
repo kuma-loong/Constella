@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from constella_tui.charts import braille_chart, heatmap_text
+from constella_tui.charts import aligned_heatmap_rows, braille_chart, heatmap_text
 
 
 def test_braille_chart_renders_labeled_dot_matrix() -> None:
@@ -25,3 +25,28 @@ def test_heatmap_uses_semantic_color_bands() -> None:
     assert "#00E5FF" in styles
     assert "#A855F7" in styles
     assert "#FF6B00" in styles
+
+
+def test_heatmap_rows_align_sparse_gpu_buckets() -> None:
+    rows = aligned_heatmap_rows(
+        [
+            {
+                "gpu_index": 0,
+                "buckets": [
+                    {"bucket_start": 10, "avg_gpu_utilization": 20, "sample_count": 1},
+                    {"bucket_start": 30, "avg_gpu_utilization": 80, "sample_count": 1},
+                ],
+            },
+            {
+                "gpu_index": 1,
+                "buckets": [
+                    {"bucket_start": 20, "avg_gpu_utilization": 50, "sample_count": 1}
+                ],
+            },
+        ]
+    )
+
+    assert rows == [
+        ("GPU 0", [20.0, None, 80.0]),
+        ("GPU 1", [None, 50.0, None]),
+    ]
