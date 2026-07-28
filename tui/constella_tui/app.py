@@ -407,7 +407,15 @@ class ConstellaTui(App[None]):
             self.load_history(force=True)
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
-        node_id = getattr(event.item, "node_id", None)
+        self._select_highlighted_node(event.item)
+
+    def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
+        self._select_highlighted_node(event.item)
+
+    def _select_highlighted_node(self, item: ListItem | None) -> None:
+        if item is None:
+            return
+        node_id = getattr(item, "node_id", None)
         if not isinstance(node_id, str):
             return
         self._select_node(node_id)

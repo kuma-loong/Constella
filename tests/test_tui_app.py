@@ -208,6 +208,39 @@ def test_tui_preserves_selected_gpu_across_refresh() -> None:
     asyncio.run(exercise_gpu_selection_persistence())
 
 
+async def exercise_node_arrow_selection_persistence() -> None:
+    snapshot = deepcopy(SNAPSHOT)
+    second_node = deepcopy(snapshot["nodes"][0])
+    second_node.update(node_id="gpu-b", hostname="gpu-b")
+    snapshot["nodes"].append(second_node)
+
+    app = ConstellaTui("http://127.0.0.1:8765")
+    app.client = FakeClient()  # type: ignore[assignment]
+    app.client.snapshots = lambda: _single_snapshot(snapshot)  # type: ignore[method-assign]
+    async with app.run_test(size=(140, 42)) as pilot:
+        await pilot.pause(0.2)
+        node_list = app.query_one("#nodes", ListView)
+        node_list.focus()
+        await pilot.press("down")
+        await pilot.pause()
+
+        assert node_list.index == 1
+        assert app.selected_node_id == "gpu-b"
+
+        for utilization in (35, 66, 91):
+            refreshed = deepcopy(snapshot)
+            refreshed["nodes"][1]["gpus"][0]["utilization_gpu"] = utilization
+            app.snapshot = refreshed
+            app._render_snapshot()
+            await pilot.pause()
+            assert node_list.index == 1
+            assert app.selected_node_id == "gpu-b"
+
+
+def test_tui_preserves_arrow_selected_node_across_refresh() -> None:
+    asyncio.run(exercise_node_arrow_selection_persistence())
+
+
 async def exercise_multi_view_navigation() -> None:
     snapshot = deepcopy(SNAPSHOT)
     snapshot["nodes"][0]["gpus"][0]["uuid"] = "GPU-0"
