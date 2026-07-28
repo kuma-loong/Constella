@@ -82,7 +82,7 @@ def make_node_snapshot(
         source="test",
         gpus=gpus,
         totals=node_totals_from_gpus(gpus),
-        agent_version="0.1.0",
+        agent_version="0.1.1",
     )
 
 
@@ -288,7 +288,7 @@ def test_manager_highres_stream_emits_light_gpu_sample() -> None:
                     "schema_version": 1,
                     "node_id": "node-a",
                     "hostname": "node-a-host",
-                    "agent_version": "0.1.0",
+                    "agent_version": "0.1.1",
                 }
             )
             assert agent.receive_json()["type"] == "config"
