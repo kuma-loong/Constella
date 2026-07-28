@@ -41,14 +41,29 @@ class HelpScreen(ModalScreen[None]):
 
 class NodeItem(ListItem):
     def __init__(self, node_id: str, label: str, status: str) -> None:
-        super().__init__(Label(label), classes=f"status-{status}")
+        super().__init__(Label(self._styled_label(label, status)), classes=f"status-{status}")
         self.node_id = node_id
         self.status = status
+
+    def update_node(self, label: str, status: str) -> None:
+        self.query_one(Label).update(self._styled_label(label, status))
+        self.update_status(status)
 
     def update_status(self, status: str) -> None:
         self.remove_class(f"status-{self.status}")
         self.status = status
         self.add_class(f"status-{status}")
+
+    @staticmethod
+    def _styled_label(label: str, status: str) -> Text:
+        node_name, _, details = label.partition("\n")
+        status_label, _, gpu_count = details.partition(" ")
+        status_style = "#38BDF8" if status == "online" else "bold #FF2A5F"
+        text = Text(node_name)
+        text.append("\n")
+        text.append(status_label, style=status_style)
+        text.append(f"  {gpu_count.strip()}", style="#00E5FF")
+        return text
 
 
 class ConstellaTui(App[None]):
@@ -77,7 +92,7 @@ class ConstellaTui(App[None]):
     def compose(self) -> ComposeResult:
         with Horizontal(id="topbar"):
             yield Static(
-                "[bold #a7e36d]CONSTELLA[/]  |  GPU CLUSTER OBSERVATORY",
+                "[bold #00E5FF]CONSTELLA[/]  |  GPU CLUSTER OBSERVATORY",
                 id="brand",
             )
             yield Static("CONNECTING", id="connection-status", classes="connecting")
@@ -196,8 +211,20 @@ class ConstellaTui(App[None]):
 
         self._update_metric("#metric-nodes", "NODES", f"{int(totals.get('online_node_count', 0))}/{int(totals.get('node_count', len(nodes)))}")
         self._update_metric("#metric-gpus", "ACCELERATORS", str(int(totals.get("accelerator_count") or totals.get("gpu_count", 0))))
-        self._update_metric("#metric-util", "GPU UTIL", percent(totals.get("avg_gpu_utilization")))
-        self._update_metric("#metric-memory", "MEMORY", f"{memory(totals.get('memory_used_mb'))}\n{percent(totals.get('avg_memory_utilization'))}")
+        utilization = float(totals.get("avg_gpu_utilization") or 0)
+        self._update_metric(
+            "#metric-util",
+            "GPU UTIL",
+            percent(utilization),
+            value_style=self._utilization_style(utilization),
+        )
+        memory_utilization = float(totals.get("avg_memory_utilization") or 0)
+        self._update_metric(
+            "#metric-memory",
+            "MEMORY",
+            f"{memory(totals.get('memory_used_mb'))}\n{percent(memory_utilization)}",
+            value_style=self._threshold_style(memory_utilization, warning=80, danger=94),
+        )
         self._update_metric("#metric-processes", "PROCESSES", str(int(totals.get("active_processes", 0))))
 
         node_list = self.query_one("#nodes", ListView)
@@ -208,8 +235,10 @@ class ConstellaTui(App[None]):
             for item, node in zip(node_list.children, nodes, strict=True):
                 if not isinstance(item, NodeItem):
                     continue
-                item.query_one(Label).update(node_label(node))
-                item.update_status(str(node.get("status") or "offline"))
+                item.update_node(
+                    node_label(node),
+                    str(node.get("status") or "offline"),
+                )
         else:
             node_list.clear()
             node_list.extend(
@@ -248,10 +277,10 @@ class ConstellaTui(App[None]):
         processes = process_rows(node)
         for row in processes:
             cells: list[str | Text] = list(row.cells)
-            cells[1] = Text(row.cells[1], style="bold #d9e5dc")
-            cells[3] = Text(row.cells[3], style="bold #a7e36d")
-            cells[4] = Text(row.cells[4], style="#f1c66b")
-            cells[6] = Text(row.cells[6], style="#9bac9f")
+            cells[1] = Text(row.cells[1], style="bold #E2E8F0")
+            cells[3] = Text(row.cells[3], style="bold #00E5FF")
+            cells[4] = Text(row.cells[4], style="#E2E8F0")
+            cells[6] = Text(row.cells[6], style="#8A99AD")
             process_table.add_row(*cells, key=row.key)
         if not processes:
             process_table.add_row("-", "-", "-", "No active processes", "-", "-", "-")
@@ -269,9 +298,16 @@ class ConstellaTui(App[None]):
         self.query_one("#gpus", DataTable).clear()
         self.query_one("#processes", DataTable).clear()
 
-    def _update_metric(self, selector: str, label: str, value: str) -> None:
+    def _update_metric(
+        self,
+        selector: str,
+        label: str,
+        value: str,
+        *,
+        value_style: str = "bold #00E5FF",
+    ) -> None:
         self.query_one(selector, Static).update(
-            f"[#809486]{label}[/]\n[bold #c9f7a8]{escape(value)}[/]"
+            f"[#8A99AD]{label}[/]\n[{value_style}]{escape(value)}[/]"
         )
 
     @staticmethod
@@ -284,7 +320,7 @@ class ConstellaTui(App[None]):
         memory_load = used_memory / total_memory * 100 if total_memory else 0
         temperature = float(gpu.get("temperature_c") or 0)
 
-        utilization_style = "#6f806f" if utilization < 10 else "bold #a7e36d"
+        utilization_style = ConstellaTui._utilization_style(utilization)
         memory_style = ConstellaTui._threshold_style(memory_load, warning=80, danger=94)
         temperature_style = ConstellaTui._threshold_style(temperature, warning=75, danger=85)
 
@@ -292,26 +328,34 @@ class ConstellaTui(App[None]):
         filled = meter_text.count("█")
         utilization_cell = Text()
         utilization_cell.append(meter_text[:filled], style=utilization_style)
-        utilization_cell.append(meter_text[filled:], style="#334238")
+        utilization_cell.append(meter_text[filled:], style="#121824")
         utilization_cell.append(f"  {utilization_text.strip()}", style=utilization_style)
 
         return (
-            Text(cells[0], style="bold #d9e5dc"),
-            Text(cells[1], style="#d9e5dc"),
+            Text(cells[0], style="bold #E2E8F0"),
+            Text(cells[1], style="#E2E8F0"),
             utilization_cell,
             Text(cells[3], style=memory_style),
             Text(cells[4], style=memory_style),
             Text(cells[5], style=temperature_style),
-            Text(cells[6], style="#9bac9f"),
+            Text(cells[6], style="#8A99AD"),
         )
+
+    @staticmethod
+    def _utilization_style(value: float) -> str:
+        if value >= 85:
+            return "bold #FF6B00"
+        if value >= 60:
+            return "bold #A855F7"
+        return "bold #00E5FF"
 
     @staticmethod
     def _threshold_style(value: float, *, warning: float, danger: float) -> str:
         if value >= danger:
-            return "bold #ff7777"
+            return "bold #FF2A5F"
         if value >= warning:
-            return "bold #f1c66b"
-        return "#a7e36d"
+            return "bold #FF6B00"
+        return "#00E5FF"
 
 
 def build_parser() -> argparse.ArgumentParser:

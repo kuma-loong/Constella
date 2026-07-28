@@ -1,13 +1,16 @@
-$background: #090d0b;
-$surface: #101712;
-$surface-raised: #18231b;
-$line: #2d4032;
-$text: #d9e5dc;
-$muted: #809486;
-$accent: #a7e36d;
-$accent-strong: #c9f7a8;
-$warning: #f1c66b;
-$danger: #ff7777;
+$background: #0B0E14;
+$surface: #131822;
+$surface-raised: #182033;
+$selection: #1E2538;
+$line: #2B334A;
+$text: #E2E8F0;
+$muted: #8A99AD;
+$accent: #00E5FF;
+$accent-strong: #B9F7FF;
+$online: #38BDF8;
+$purple: #A855F7;
+$warning: #FF6B00;
+$danger: #FF2A5F;
 
 Screen {
     background: $background;
@@ -44,7 +47,7 @@ Screen {
 
 #summary {
     height: 6;
-    background: #111a14;
+    background: #101621;
     border-bottom: solid $line;
 }
 
@@ -96,14 +99,15 @@ Screen {
     border-left: tall transparent;
 }
 
-#nodes ListItem:hover { background: #1c2b20; color: $accent-strong; }
+#nodes ListItem:hover { background: #192033; color: $text; }
 #nodes ListItem.-highlight {
-    background: #223727;
-    color: $accent-strong;
+    background: $selection;
+    color: #FFFFFF;
     border-left: tall $accent;
     text-style: bold;
 }
-#nodes ListItem.status-online { color: $accent; }
+#nodes ListItem.-highlight Label { color: #FFFFFF; }
+#nodes ListItem.status-online { color: $muted; }
 #nodes ListItem.status-offline, #nodes ListItem.status-stale { color: $danger; }
 #nodes:focus { border: none; }
 
@@ -129,15 +133,15 @@ DataTable {
 
 DataTable > .datatable--header {
     background: $surface;
-    color: $accent;
+    color: $muted;
     text-style: bold;
 }
 
 DataTable > .datatable--cursor {
-    background: #223727;
-    color: $accent-strong;
+    background: #1A2234;
+    color: $text;
 }
-DataTable > .datatable--odd-row { background: #101411; }
+DataTable > .datatable--odd-row { background: #101620; }
 DataTable:focus { border: none; }
 
 #endpoint {
@@ -158,7 +162,7 @@ Footer {
 Footer > .footer--key { background: $accent; color: $background; text-style: bold; }
 Footer > .footer--description { background: $surface-raised; color: $muted; }
 
-HelpScreen { align: center middle; background: #0c0f0e 85%; }
+HelpScreen { align: center middle; background: #0B0E14 85%; }
 
 #help-dialog {
     width: 60;
