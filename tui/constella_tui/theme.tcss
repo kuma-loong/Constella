@@ -26,11 +26,19 @@ Screen {
 }
 
 #brand {
-    width: 1fr;
+    width: 22;
     height: 100%;
-    padding: 1 2 0 2;
+    padding: 1 0 0 2;
     color: $text;
     text-style: bold;
+}
+
+#view-nav {
+    width: 1fr;
+    height: 100%;
+    padding-top: 1;
+    content-align: center top;
+    text-align: center;
 }
 
 #connection-status {
@@ -45,36 +53,40 @@ Screen {
 #connection-status.connecting { color: $warning; }
 #connection-status.error { color: $danger; }
 
-#summary {
-    height: 6;
+#context-bar {
+    height: 2;
+    padding: 0 2;
     background: #101621;
     border-bottom: solid $line;
-}
-
-.metric {
-    width: 1fr;
-    height: 100%;
-    padding: 1 2;
     color: $muted;
-    border-right: solid $line;
+    content-align: left middle;
 }
 
-.metric:last-child { border-right: none; }
-#workspace { height: 1fr; }
+#views, .view {
+    width: 100%;
+    height: 1fr;
+    background: $background;
+}
+
+#overview-workspace { width: 100%; height: 1fr; }
 
 #node-pane {
     width: 25;
     min-width: 22;
-    max-width: 32;
+    max-width: 30;
     height: 100%;
     background: $surface;
     border-right: solid $line;
 }
 
-#detail-pane {
-    width: 1fr;
-    height: 100%;
+#overview-detail { width: 1fr; height: 100%; }
+
+#node-summary {
+    height: 2;
+    padding: 0 1;
     background: $background;
+    border-bottom: solid $line;
+    content-align: left middle;
 }
 
 .section-title {
@@ -111,6 +123,39 @@ Screen {
 #nodes ListItem.status-offline, #nodes ListItem.status-stale { color: $danger; }
 #nodes:focus { border: none; }
 
+#gpus {
+    height: auto;
+    min-height: 4;
+    max-height: 15;
+}
+
+#gpu-lower-pane {
+    width: 100%;
+    height: 1fr;
+    border-top: solid $line;
+}
+
+#realtime-pane { width: 2fr; height: 100%; border-right: solid $line; }
+#process-pane { width: 3fr; height: 100%; }
+
+#realtime-curve, .history-curve {
+    width: 100%;
+    height: 1fr;
+    padding: 1;
+    background: $background;
+    color: $accent;
+    overflow: hidden;
+}
+
+#processes { height: auto; min-height: 4; max-height: 12; }
+#gpu-facts {
+    width: 100%;
+    height: 1fr;
+    padding: 1 2;
+    background: $background;
+    overflow: hidden;
+}
+
 #state-message {
     width: 100%;
     height: 1fr;
@@ -119,17 +164,47 @@ Screen {
     color: $muted;
 }
 
-DataTable {
+#cluster-view { layout: vertical; }
+#cluster-nodes { height: auto; min-height: 4; max-height: 18; }
+#node-hardware { height: 1fr; min-height: 8; }
+
+.view-status {
+    height: 2;
+    padding: 0 1;
+    background: #101621;
+    border-bottom: solid $line;
+    color: $muted;
+    content-align: left middle;
+}
+
+#rankings-view { layout: vertical; }
+#ranking-grid { width: 100%; height: 58%; min-height: 12; }
+#ranking-grid > Vertical { width: 1fr; height: 100%; }
+#ranking-grid > Vertical:first-child { border-right: solid $line; }
+#user-rankings, #job-rankings { height: 1fr; }
+#anomalies { height: 1fr; min-height: 8; }
+
+#history-view { layout: vertical; }
+#history-charts { width: 100%; height: 58%; min-height: 14; }
+#history-charts > Vertical { width: 1fr; height: 100%; }
+#history-charts > Vertical:first-child { border-right: solid $line; }
+#history-heatmap {
     width: 100%;
     height: 1fr;
+    min-height: 8;
+    padding: 1 2;
+    background: $background;
+    overflow-x: auto;
+    overflow-y: auto;
+}
+
+DataTable {
+    width: 100%;
     background: $background;
     color: $text;
     scrollbar-color: $line;
     scrollbar-background: $background;
 }
-
-#gpus { height: 44%; min-height: 8; }
-#processes { height: 1fr; min-height: 8; }
 
 DataTable > .datatable--header {
     background: $surface;
@@ -137,21 +212,9 @@ DataTable > .datatable--header {
     text-style: bold;
 }
 
-DataTable > .datatable--cursor {
-    background: #1A2234;
-    color: $text;
-}
+DataTable > .datatable--cursor { background: #1A2234; }
 DataTable > .datatable--odd-row { background: #101620; }
 DataTable:focus { border: none; }
-
-#endpoint {
-    height: 2;
-    padding: 0 2;
-    background: $surface;
-    color: $muted;
-    border-top: solid $line;
-    content-align: left middle;
-}
 
 Footer {
     height: 1;
@@ -165,9 +228,9 @@ Footer > .footer--description { background: $surface-raised; color: $muted; }
 HelpScreen { align: center middle; background: #0B0E14 85%; }
 
 #help-dialog {
-    width: 60;
+    width: 64;
     max-width: 90%;
-    height: 19;
+    height: 21;
     background: $surface;
     border: solid $line;
     padding: 1 2;

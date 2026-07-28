@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from constella_tui.client import cluster_websocket_url
+from constella_tui.client import cluster_websocket_url, manager_http_url
 
 
 @pytest.mark.parametrize(
@@ -23,3 +23,15 @@ def test_cluster_websocket_url(source: str, expected: str) -> None:
 def test_cluster_websocket_url_rejects_invalid_values(source: str) -> None:
     with pytest.raises(ValueError):
         cluster_websocket_url(source)
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("ws://127.0.0.1:8765/ws/cluster", "http://127.0.0.1:8765"),
+        ("https://gpu.example.com", "https://gpu.example.com"),
+        ("wss://example.com/constella/ws/cluster", "https://example.com/constella"),
+    ],
+)
+def test_manager_http_url(source: str, expected: str) -> None:
+    assert manager_http_url(source) == expected
