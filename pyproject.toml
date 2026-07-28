@@ -37,12 +37,6 @@ Issues = "https://github.com/kuma-loong/Constella/issues"
 constella = "constella.cli:main"
 constella-tui = "constella_tui.app:main"
 
-[project.urls]
-Homepage = "https://github.com/kuma-loong/Constella"
-Documentation = "https://github.com/kuma-loong/Constella#readme"
-Issues = "https://github.com/kuma-loong/Constella/issues"
-Repository = "https://github.com/kuma-loong/Constella.git"
-
 [dependency-groups]
 dev = [
     "httpx>=0.28.0",
