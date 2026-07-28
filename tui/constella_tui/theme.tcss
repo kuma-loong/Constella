@@ -106,16 +106,17 @@ Screen {
 
 #nodes ListItem {
     height: 4;
-    padding: 1 1 0 2;
+    padding: 0 1;
     color: $muted;
-    border-left: tall transparent;
+    border: solid transparent;
+    content-align: left middle;
 }
 
 #nodes ListItem:hover { background: #192033; color: $text; }
 #nodes ListItem.-highlight {
     background: $selection;
     color: #FFFFFF;
-    border-left: tall $accent;
+    border: solid $accent;
     text-style: bold;
 }
 #nodes ListItem.-highlight Label { color: #FFFFFF; }
