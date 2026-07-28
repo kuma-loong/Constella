@@ -18,7 +18,7 @@ from textual.events import Resize
 from textual.screen import ModalScreen
 from textual.widgets import ContentSwitcher, DataTable, Footer, Label, ListItem, ListView, Static
 
-from .charts import aligned_heatmap_rows, braille_chart, heatmap_text
+from .charts import aligned_heatmap_rows, braille_chart, heatmap_text, heatmap_timestamps
 from .client import ClusterAPIError, ClusterClient, ClusterConnectionError
 from .model import duration, gpu_rows, memory, node_label, percent, process_rows
 
@@ -822,6 +822,11 @@ class ConstellaTui(App[None]):
             points = self._dict_items(selected.get("points"))
             gpu_values = [float(point.get("avg_gpu_utilization") or 0) for point in points]
             memory_values = [float(point.get("avg_memory_used_mb") or 0) / 1024 for point in points]
+            timestamps = [
+                float(point["bucket_start"])
+                for point in points
+                if point.get("bucket_start") is not None
+            ]
             memory_max = max(memory_values, default=1.0)
             gpu_curve.update(
                 Text(
@@ -829,6 +834,7 @@ class ConstellaTui(App[None]):
                         gpu_values,
                         width=max(12, gpu_curve.size.width - 7),
                         height=max(3, gpu_curve.size.height - 1),
+                        timestamps=timestamps,
                     ),
                     style="#00E5FF",
                 )
@@ -840,6 +846,7 @@ class ConstellaTui(App[None]):
                         width=max(12, memory_curve.size.width - 7),
                         height=max(3, memory_curve.size.height - 1),
                         maximum=max(1.0, memory_max),
+                        timestamps=timestamps,
                     ),
                     style="#A855F7",
                 )
@@ -847,8 +854,15 @@ class ConstellaTui(App[None]):
             label = f"GPU {selected.get('gpu_index') if selected.get('gpu_index') is not None else '?'}"
             self.query_one("#history-gpu-title", Static).update(f"{label} UTILIZATION")
             self.query_one("#history-memory-title", Static).update(f"{label} MEMORY GiB")
-        heat_rows = aligned_heatmap_rows(self._dict_items(payload.get("heatmap")))
-        heatmap.update(heatmap_text(heat_rows, max_columns=max(12, heatmap.size.width - 15)))
+        heatmap_items = self._dict_items(payload.get("heatmap"))
+        heat_rows = aligned_heatmap_rows(heatmap_items)
+        heatmap.update(
+            heatmap_text(
+                heat_rows,
+                max_columns=max(12, heatmap.size.width - 15),
+                timestamps=heatmap_timestamps(heatmap_items),
+            )
+        )
 
     def _render_visible_charts(self) -> None:
         if self.active_view == "overview" and self.snapshot is not None:

@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from constella_tui.charts import aligned_heatmap_rows, braille_chart, heatmap_text
+from constella_tui.charts import (
+    aligned_heatmap_rows,
+    braille_chart,
+    heatmap_text,
+    heatmap_timestamps,
+    time_axis,
+)
 
 
 def test_braille_chart_renders_labeled_dot_matrix() -> None:
@@ -15,6 +21,19 @@ def test_braille_chart_renders_labeled_dot_matrix() -> None:
 
 def test_braille_chart_handles_empty_data() -> None:
     assert len(braille_chart([], width=6, height=2).splitlines()) == 2
+
+
+def test_braille_chart_adds_aligned_time_axis() -> None:
+    chart = braille_chart(
+        [10, 90],
+        width=20,
+        height=3,
+        timestamps=[1_700_000_000, 1_700_003_600],
+    )
+
+    assert len(chart.splitlines()) == 4
+    assert chart.splitlines()[-1].startswith("    ")
+    assert len(chart.splitlines()[-1]) == 24
 
 
 def test_heatmap_uses_semantic_color_bands() -> None:
@@ -50,3 +69,24 @@ def test_heatmap_rows_align_sparse_gpu_buckets() -> None:
         ("GPU 0", [20.0, None, 80.0]),
         ("GPU 1", [None, 50.0, None]),
     ]
+
+
+def test_heatmap_renders_shared_time_axis() -> None:
+    timestamps = [1_700_000_000 + offset * 3600 for offset in range(20)]
+    heatmap = heatmap_text(
+        [("GPU 0", [10] * 20)], max_columns=20, timestamps=timestamps
+    )
+
+    axis = heatmap.plain.splitlines()[-1]
+    assert axis.startswith(" " * 13)
+    assert len(axis) == 33
+    assert time_axis(timestamps, width=20) in axis
+
+
+def test_heatmap_timestamps_returns_union_in_order() -> None:
+    items = [
+        {"buckets": [{"bucket_start": 30}, {"bucket_start": 10}]},
+        {"buckets": [{"bucket_start": 20}, {"bucket_start": 30}]},
+    ]
+
+    assert heatmap_timestamps(items) == [10.0, 20.0, 30.0]

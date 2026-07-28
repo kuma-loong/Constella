@@ -114,8 +114,16 @@ class AnalyticsClient(FakeClient):
                         "gpu_uuid": "GPU-0",
                         "gpu_index": 0,
                         "points": [
-                            {"avg_gpu_utilization": 10, "avg_memory_used_mb": 1024},
-                            {"avg_gpu_utilization": 70, "avg_memory_used_mb": 2048},
+                            {
+                                "bucket_start": 1_700_000_000,
+                                "avg_gpu_utilization": 10,
+                                "avg_memory_used_mb": 1024,
+                            },
+                            {
+                                "bucket_start": 1_700_003_600,
+                                "avg_gpu_utilization": 70,
+                                "avg_memory_used_mb": 2048,
+                            },
                         ],
                     }
                 ],
@@ -124,8 +132,16 @@ class AnalyticsClient(FakeClient):
                         "gpu_uuid": "GPU-0",
                         "gpu_index": 0,
                         "buckets": [
-                            {"avg_gpu_utilization": 10, "sample_count": 2},
-                            {"avg_gpu_utilization": 90, "sample_count": 2},
+                            {
+                                "bucket_start": 1_700_000_000,
+                                "avg_gpu_utilization": 10,
+                                "sample_count": 2,
+                            },
+                            {
+                                "bucket_start": 1_700_003_600,
+                                "avg_gpu_utilization": 90,
+                                "sample_count": 2,
+                            },
                         ],
                     }
                 ],
