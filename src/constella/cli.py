@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import os
 import sys
 import time
@@ -60,6 +61,14 @@ def main(argv: list[str] | None = None) -> None:
     probe = subparsers.add_parser("probe", help="print one JSON GPU snapshot")
     probe.add_argument("--pretty", action="store_true")
     probe.add_argument("--device", choices=DEVICE_TYPES, default="nvidia")
+
+    tui = subparsers.add_parser("tui", help="open the terminal cluster monitor")
+    tui.add_argument(
+        "--url",
+        default=os.environ.get("CONSTELLA_URL", "http://127.0.0.1:8765"),
+        help="manager HTTP or WebSocket URL",
+    )
+    tui.add_argument("--reconnect-delay", type=float, default=2.0)
 
     agent = subparsers.add_parser("agent", help="run a GPU node agent")
     agent.add_argument("--node-id")
@@ -233,6 +242,18 @@ def main(argv: list[str] | None = None) -> None:
             separators=None if args.pretty else (",", ":"),
         )
         sys.stdout.write("\n")
+        return
+
+    if args.command == "tui":
+        from constella_tui.app import ConstellaTui
+
+        if not math.isfinite(args.reconnect_delay) or args.reconnect_delay < 0.1:
+            parser.error("--reconnect-delay must be a finite value of at least 0.1 seconds")
+        try:
+            app = ConstellaTui(args.url, reconnect_delay=args.reconnect_delay)
+        except ValueError as exc:
+            parser.error(str(exc))
+        app.run()
         return
 
     if args.command == "agent":

@@ -121,6 +121,16 @@ Open:
 http://127.0.0.1:8765/overview
 ```
 
+Or stay in the terminal with the keyboard-first TUI:
+
+```bash
+constella tui
+```
+
+The TUI connects to the same realtime cluster stream as the Web UI. Use
+`constella tui --url https://gpu.example.com` for a remote manager, or run the
+equivalent `constella-tui` entry point.
+
 If the service runs on a remote server, forward the port from your local machine:
 
 ```bash
@@ -222,6 +232,7 @@ The manager does not sample GPUs directly. Local and remote nodes both report cu
 ```text
 src/constella/          Python backend, agents, cluster manager, NVML/DCMI samplers, API/WebSocket
 frontend/               Vite + TypeScript frontend
+tui/                    Textual terminal client, theme, and usage notes
 scripts/                categorized service, cluster, tunnel, maintenance, and dev scripts
 docs/                   design and operations notes
 tests/                  unit tests

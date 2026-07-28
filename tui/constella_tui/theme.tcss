@@ -1,0 +1,165 @@
+$background: #0c0f0e;
+$surface: #121714;
+$surface-raised: #18201b;
+$line: #2a332d;
+$text: #d7ded9;
+$muted: #7e8d83;
+$accent: #77b86f;
+$warning: #c6a15b;
+$danger: #c87373;
+
+Screen {
+    background: $background;
+    color: $text;
+    layout: vertical;
+}
+
+#topbar {
+    width: 100%;
+    height: 3;
+    background: $background;
+    border-bottom: solid $line;
+}
+
+#brand {
+    width: 1fr;
+    height: 100%;
+    padding: 1 2 0 2;
+    color: $text;
+    text-style: bold;
+}
+
+#connection-status {
+    width: 14;
+    height: 100%;
+    padding: 1 2 0 0;
+    text-align: right;
+    text-style: bold;
+}
+
+#connection-status.live { color: $accent; }
+#connection-status.connecting { color: $warning; }
+#connection-status.error { color: $danger; }
+
+#summary {
+    height: 6;
+    background: $surface;
+    border-bottom: solid $line;
+}
+
+.metric {
+    width: 1fr;
+    height: 100%;
+    padding: 1 2;
+    color: $muted;
+    border-right: solid $line;
+}
+
+.metric:last-child { border-right: none; }
+.metric > .rich-style--bold { color: $text; }
+
+#workspace { height: 1fr; }
+
+#node-pane {
+    width: 25;
+    min-width: 22;
+    max-width: 32;
+    height: 100%;
+    background: $surface;
+    border-right: solid $line;
+}
+
+#detail-pane {
+    width: 1fr;
+    height: 100%;
+    background: $background;
+}
+
+.section-title {
+    height: 2;
+    padding: 0 1;
+    background: $surface-raised;
+    color: $muted;
+    text-style: bold;
+    content-align: left middle;
+}
+
+#nodes {
+    height: 1fr;
+    padding: 1 0;
+    background: $surface;
+}
+
+#nodes ListItem {
+    height: 4;
+    padding: 1 1 0 2;
+    color: $muted;
+    border-left: tall transparent;
+}
+
+#nodes ListItem:hover { background: $surface-raised; color: $text; }
+#nodes ListItem.--highlight { background: $surface-raised; color: $text; border-left: tall $accent; }
+#nodes ListItem.status-offline, #nodes ListItem.status-stale { color: $danger; }
+#nodes:focus { border: none; }
+
+#state-message {
+    width: 100%;
+    height: 1fr;
+    content-align: center middle;
+    text-align: center;
+    color: $muted;
+}
+
+DataTable {
+    width: 100%;
+    height: 1fr;
+    background: $background;
+    color: $text;
+    scrollbar-color: $line;
+    scrollbar-background: $background;
+}
+
+#gpus { height: 44%; min-height: 8; }
+#processes { height: 1fr; min-height: 8; }
+
+DataTable > .datatable--header {
+    background: $surface;
+    color: $muted;
+    text-style: bold;
+}
+
+DataTable > .datatable--cursor { background: $surface-raised; color: $text; }
+DataTable > .datatable--odd-row { background: #101411; }
+DataTable:focus { border: none; }
+
+#endpoint {
+    height: 2;
+    padding: 0 2;
+    background: $surface;
+    color: $muted;
+    border-top: solid $line;
+    content-align: left middle;
+}
+
+Footer {
+    height: 1;
+    background: $surface-raised;
+    color: $muted;
+}
+
+Footer > .footer--key { background: $accent; color: $background; text-style: bold; }
+Footer > .footer--description { background: $surface-raised; color: $muted; }
+
+HelpScreen { align: center middle; background: #0c0f0e 85%; }
+
+#help-dialog {
+    width: 60;
+    max-width: 90%;
+    height: 19;
+    background: $surface;
+    border: solid $line;
+    padding: 1 2;
+}
+
+#help-copy { height: 1fr; padding: 1 0; color: $text; }
+#help-close { height: 1; color: $muted; text-align: center; }

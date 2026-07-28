@@ -36,6 +36,36 @@ constella service status
 constella service stop
 ```
 
+## Terminal UI
+
+Open the realtime terminal client after the manager is running:
+
+```bash
+constella tui
+# equivalent dedicated entry point
+constella-tui
+```
+
+Both commands connect to `http://127.0.0.1:8765` by default and consume the
+existing read-only `/ws/cluster` stream. They do not start another collector or
+write to the manager.
+
+| Parameter | Default | Description |
+| --- | --- | --- |
+| `--url` | `CONSTELLA_URL` or `http://127.0.0.1:8765` | Manager HTTP, HTTPS, WS, or WSS URL. |
+| `--reconnect-delay` | `2.0` | Delay between automatic reconnect attempts. |
+
+Examples:
+
+```bash
+constella tui --url https://gpu.example.com
+CONSTELLA_URL=http://10.0.0.10:8765 constella-tui
+```
+
+Use `Tab` to move focus, arrows or `j`/`k` to navigate, `r` to reconnect, `?`
+for keyboard help, and `q` to quit. See [`tui/README.md`](../tui/README.md) for
+the complete TUI notes.
+
 ## `constella service start`
 
 Starts the manager and optional helper processes.

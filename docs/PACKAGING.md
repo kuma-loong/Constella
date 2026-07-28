@@ -42,6 +42,13 @@ constella service status
 constella service stop
 ```
 
+The wheel includes the Textual client and both terminal entry points:
+
+```bash
+constella tui --url http://127.0.0.1:8765
+constella-tui --url http://127.0.0.1:8765
+```
+
 Optional service flags:
 
 ```bash

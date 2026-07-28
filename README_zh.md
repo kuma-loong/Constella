@@ -121,6 +121,16 @@ Ascend 主机需要显式选择硬件后端：
 http://127.0.0.1:8765/overview
 ```
 
+也可以直接使用键盘优先的终端界面：
+
+```bash
+constella tui
+```
+
+TUI 与 Web UI 复用同一条实时集群数据流。远程管理端可通过
+`constella tui --url https://gpu.example.com` 连接，也可以使用等价入口
+`constella-tui`。
+
 如果服务运行在远端服务器，在本地电脑转发端口：
 
 ```bash
@@ -221,6 +231,7 @@ manager 不直接采样 GPU；本机节点和远端节点都通过同一条 agen
 ```text
 src/constella/          Python 后端、agent、cluster manager、NVML/DCMI 采样、WebSocket
 frontend/               Vite + TypeScript 前端
+tui/                    Textual 终端客户端、主题与使用说明
 scripts/                按 service、cluster、tunnel、maintenance、dev 分类的脚本
 docs/                   设计和运维文档
 tests/                  单元测试
