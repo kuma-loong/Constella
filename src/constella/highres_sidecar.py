@@ -13,6 +13,7 @@ from typing import Any
 import websockets
 from fastapi import FastAPI, HTTPException
 
+from . import __version__
 from .db import SQLiteStore
 from .highres import (
     HIGHRES_JOB_LOOKBACK_SECONDS,
@@ -153,7 +154,7 @@ def create_highres_sidecar_app(
 
     app = FastAPI(
         title="Constella Highres Sidecar",
-        version="0.2.0",
+        version=__version__,
         lifespan=lifespan,
         docs_url="/api/docs",
         redoc_url=None,

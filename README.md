@@ -92,7 +92,16 @@ Constella sits between terminal monitoring and a full observability stack: more 
 
 ## Quick Start
 
-Start the manager and local GPU agent:
+Install the PyPI distribution and start the managed local stack:
+
+```bash
+pip install constella-gpu
+constella service start
+```
+
+On an Ascend host, use `constella service start --device ascend`.
+
+From a source checkout, start the manager and local accelerator agent with:
 
 ```bash
 cd Constella
@@ -204,12 +213,14 @@ The manager does not sample GPUs directly. Local and remote nodes both report cu
 - [SQLite History](docs/HISTORY.md): persistence, rollups, maintenance, and job curves.
 - [Cloudflare Tunnel](docs/CLOUD_TUNNEL.md): domain access without opening an inbound server port.
 - [Node manifest example](docs/nodes.example.yaml): `nodes.yaml` template for remote agents.
+- [PyPI CLI](docs/PYPI_CLI.md): installed service, probe, agent, and cluster commands.
+- [Packaging](docs/PACKAGING.md): build and safely smoke-test wheel and source distributions.
 - [Scripts](scripts/README.md): service, cluster, tunnel, maintenance, and dev script entry points.
 
 ## Project Layout
 
 ```text
-src/constella/          Python backend, agent, cluster manager, NVML sampler, API/WebSocket
+src/constella/          Python backend, agents, cluster manager, NVML/DCMI samplers, API/WebSocket
 frontend/               Vite + TypeScript frontend
 scripts/                categorized service, cluster, tunnel, maintenance, and dev scripts
 docs/                   design and operations notes

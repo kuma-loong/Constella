@@ -25,7 +25,7 @@ One-command service start:
 constella service start
 ```
 
-By default this starts the manager, creates `run/agent-token`, enables SQLite at `run/constella.db`, and starts a local GPU agent. Use explicit paths when running outside a project checkout:
+By default this starts the manager, creates `run/agent-token`, enables SQLite at `run/constella.db`, and starts a local NVIDIA agent. On an Ascend host, select the packaged DCMI/`npu-smi` backend with `--device ascend`. Use explicit paths when running outside a project checkout:
 
 ```bash
 constella service start \
@@ -46,6 +46,7 @@ Optional service flags:
 
 ```bash
 constella service start --no-local-agent
+constella service start --device ascend
 constella service start --db-path /data/constella.db
 constella service start --no-db
 constella service start --highres-sidecar --highres-port 8766
@@ -57,7 +58,8 @@ The lower-level commands remain available for manual process managers, custom su
 
 ```bash
 constella serve --host 127.0.0.1 --port 8765 --db-path run/constella.db
-constella agent --manager-url ws://127.0.0.1:8765/api/agents/ws --token-file run/agent-token
+constella agent --device ascend --manager-url ws://127.0.0.1:8765/api/agents/ws --token-file run/agent-token
+constella probe --device ascend --pretty
 constella highres-sidecar \
   --host 127.0.0.1 \
   --port 8766 \
@@ -79,7 +81,7 @@ constella cluster status --nodes nodes.yaml
 constella cluster stop --nodes nodes.yaml
 ```
 
-When installed from a wheel, `cluster start` builds the remote agent runtime from the installed package and writes temporary build files under the user cache directory.
+When installed from a wheel, `cluster start` builds the remote agent runtime from the installed package and writes temporary build files under the user cache directory. The runtime bundle includes `dcmi.py` and `npu.py`, so `device: ascend` nodes do not need a separate Constella source checkout.
 
 ## Source Deployment
 
@@ -100,7 +102,7 @@ Never reuse a production port or database during packaging validation. If `8765`
 
 ```bash
 python3 -m venv /tmp/constella-wheel-test
-/tmp/constella-wheel-test/bin/pip install dist/constella-*.whl
+/tmp/constella-wheel-test/bin/pip install dist/constella_gpu-*.whl
 /tmp/constella-wheel-test/bin/constella service start \
   --host 127.0.0.1 \
   --port 18875 \

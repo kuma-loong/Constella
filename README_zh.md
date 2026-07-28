@@ -92,7 +92,16 @@ Constella 介于终端监控和完整可观测性系统之间：比 `nvitop` 更
 
 ## 快速开始
 
-启动 manager 和本机 GPU agent：
+安装 PyPI 发行包并启动本机托管服务：
+
+```bash
+pip install constella-gpu
+constella service start
+```
+
+Ascend 主机使用 `constella service start --device ascend`。
+
+从源码检出启动 manager 和本机加速器 agent：
 
 ```bash
 cd Constella
@@ -203,12 +212,14 @@ manager 不直接采样 GPU；本机节点和远端节点都通过同一条 agen
 - [SQLite 历史库](docs/HISTORY.md)：持久化、rollup、维护和作业曲线。
 - [Cloudflare Tunnel](docs/CLOUD_TUNNEL.md)：无入站端口的域名访问方案。
 - [节点清单示例](docs/nodes.example.yaml)：远端 agent 的 `nodes.yaml` 模板。
+- [PyPI CLI](docs/PYPI_CLI.md)：安装包的 service、probe、agent 和 cluster 命令。
+- [打包说明](docs/PACKAGING.md)：构建并安全烟测 wheel 和源码包。
 - [脚本说明](scripts/README.md)：service、cluster、tunnel、maintenance、dev 脚本入口。
 
 ## 项目结构
 
 ```text
-src/constella/          Python 后端、agent、cluster manager、NVML 采样、WebSocket
+src/constella/          Python 后端、agent、cluster manager、NVML/DCMI 采样、WebSocket
 frontend/               Vite + TypeScript 前端
 scripts/                按 service、cluster、tunnel、maintenance、dev 分类的脚本
 docs/                   设计和运维文档

@@ -13,10 +13,9 @@ import uvicorn
 from . import __version__
 from .agent import AgentConfig, run_agent
 from .cluster_control import ClusterController, format_results, load_cluster_config
-from .collector import DEVICE_TYPES, validate_refresh_interval
+from .collector import DEVICE_TYPES, SnapshotCollector, validate_refresh_interval
 from .db import RAW_SNAPSHOT_RETENTION_SECONDS, SQLiteStore
 from .highres_sidecar import HighresSidecarConfig
-from .nvml import sample_with_fallback
 from .paths import default_build_root, default_project_root
 from .service import ServiceConfig, format_service_results, start_service, status_service, stop_service
 
@@ -60,6 +59,7 @@ def main(argv: list[str] | None = None) -> None:
 
     probe = subparsers.add_parser("probe", help="print one JSON GPU snapshot")
     probe.add_argument("--pretty", action="store_true")
+    probe.add_argument("--device", choices=DEVICE_TYPES, default="nvidia")
 
     agent = subparsers.add_parser("agent", help="run a GPU node agent")
     agent.add_argument("--node-id")
@@ -91,6 +91,7 @@ def main(argv: list[str] | None = None) -> None:
     service_start.add_argument("--no-local-agent", action="store_true")
     service_start.add_argument("--local-agent-node-id")
     service_start.add_argument("--local-agent-manager-url")
+    service_start.add_argument("--device", choices=DEVICE_TYPES, default="nvidia")
     service_start.add_argument("--manager-hostname")
     service_start.add_argument("--agent-token-file", type=Path)
     service_start.add_argument("--db-path", type=Path)
@@ -219,7 +220,11 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if args.command == "probe":
-        snapshot = sample_with_fallback()
+        collector = SnapshotCollector(device_type=args.device)
+        try:
+            snapshot = collector.sample_once()
+        finally:
+            collector.close()
         json.dump(
             snapshot.to_dict(),
             sys.stdout,
@@ -350,6 +355,7 @@ def add_service_common_args(parser: argparse.ArgumentParser, *, include_runtime:
         parser.add_argument("--port", type=int, default=8765)
         parser.add_argument("--refresh", type=float, default=1.0)
         parser.add_argument("--process-refresh", type=float, default=5.0)
+        parser.add_argument("--graceful-timeout", type=float, default=10.0)
         parser.add_argument("--log-level", default="info")
     else:
         parser.add_argument("--host", default="127.0.0.1")
@@ -369,12 +375,14 @@ def service_config_from_args(args: argparse.Namespace) -> ServiceConfig:
         port=args.port,
         refresh=getattr(args, "refresh", 1.0),
         process_refresh=getattr(args, "process_refresh", 5.0),
+        graceful_timeout=getattr(args, "graceful_timeout", 10.0),
         log_level=getattr(args, "log_level", "info"),
         run_dir=args.run_dir,
         log_dir=args.log_dir,
         local_agent=not getattr(args, "no_local_agent", False),
         local_agent_node_id=getattr(args, "local_agent_node_id", None),
         local_agent_manager_url=getattr(args, "local_agent_manager_url", None),
+        local_agent_device=getattr(args, "device", "nvidia"),
         manager_hostname=getattr(args, "manager_hostname", None),
         agent_token_file=getattr(args, "agent_token_file", None),
         db_path=db_path,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 
 from fastapi.testclient import TestClient
@@ -8,6 +9,31 @@ from constella.app import create_app
 from constella.cli import main
 from constella.cluster_control import AGENT_RUNTIME_MODULES, prepare_agent_runtime
 from constella.paths import resolve_frontend_dist
+
+
+def test_cli_probe_selects_ascend_backend(monkeypatch, capsys) -> None:
+    closed: list[bool] = []
+
+    class FakeSnapshot:
+        def to_dict(self) -> dict[str, object]:
+            return {"ok": True, "source": "dcmi", "gpus": []}
+
+    class FakeCollector:
+        def __init__(self, *, device_type: str):
+            assert device_type == "ascend"
+
+        def sample_once(self) -> FakeSnapshot:
+            return FakeSnapshot()
+
+        def close(self) -> None:
+            closed.append(True)
+
+    monkeypatch.setattr("constella.cli.SnapshotCollector", FakeCollector)
+
+    main(["probe", "--device", "ascend"])
+
+    assert json.loads(capsys.readouterr().out) == {"ok": True, "source": "dcmi", "gpus": []}
+    assert closed == [True]
 
 
 def test_resolve_frontend_dist_uses_explicit_index(tmp_path) -> None:
@@ -87,6 +113,7 @@ def test_cli_serve_sets_explicit_runtime_environment(tmp_path, monkeypatch) -> N
             "factory": True,
             "log_level": "info",
             "lifespan": "on",
+            "timeout_graceful_shutdown": 10.0,
         }
     ]
     assert os.environ["CONSTELLA_AGENT_TOKEN_FILE"] == str(token_file)
@@ -108,4 +135,6 @@ def test_prepare_agent_runtime_accepts_installed_package_dir(tmp_path) -> None:
 
     assert runtime == build_root / "agent-runtime"
     assert (runtime / "constella" / "agent_main.py").exists()
+    assert (runtime / "constella" / "dcmi.py").exists()
+    assert (runtime / "constella" / "npu.py").exists()
     assert (runtime / "websockets").is_dir()

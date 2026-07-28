@@ -105,10 +105,12 @@ def test_start_service_spawns_manager_and_local_agent_with_database(tmp_path) ->
     config = ServiceConfig(
         host="127.0.0.1",
         port=18875,
+        graceful_timeout=4.0,
         run_dir=run_dir,
         log_dir=log_dir,
         db_path=run_dir / "constella.db",
         local_agent_node_id="node-a",
+        local_agent_device="ascend",
         wait_timeout=0,
     )
     fake_popen = FakePopen()
@@ -128,6 +130,8 @@ def test_start_service_spawns_manager_and_local_agent_with_database(tmp_path) ->
     assert str(run_dir / "constella.db") in manager_command
     assert "--agent-token-file" in manager_command
     assert str(run_dir / "agent-token") in manager_command
+    assert manager_command[manager_command.index("--graceful-timeout") + 1] == "4.0"
     assert agent_command[:4] == [os.sys.executable, "-m", "constella.cli", "agent"]
     assert "ws://127.0.0.1:18875/api/agents/ws" in agent_command
     assert str(run_dir / "local-agent-state.json") in agent_command
+    assert agent_command[agent_command.index("--device") + 1] == "ascend"

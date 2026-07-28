@@ -93,7 +93,7 @@ def make_node_snapshot(sampled_at: float, *, gpu_util: int = 50) -> NodeSnapshot
         source="test",
         gpus=gpus,
         totals=node_totals_from_gpus(gpus),
-        agent_version="0.2.0",
+        agent_version="0.1.0",
     )
 
 

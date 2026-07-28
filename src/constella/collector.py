@@ -107,10 +107,16 @@ class SnapshotCollector:
                 await self._task
             except asyncio.CancelledError:
                 pass
+        self.close()
+
+    def close(self) -> None:
         if self._sampler:
             self._sampler.close()
             self._sampler = None
         self._npu_smi_sampler = None
+
+    def sample_once(self) -> Snapshot:
+        return self._sample_once()
 
     async def wait_for_update(self, last_seq: int, timeout: float = 30.0) -> Snapshot | None:
         deadline = asyncio.get_running_loop().time() + timeout

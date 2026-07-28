@@ -295,7 +295,7 @@ WS /ws/cluster
   "schema_version": 1,
   "node_id": "gpu-node-01",
   "hostname": "gpu-node-01",
-  "agent_version": "0.2.0",
+  "agent_version": "0.1.0",
   "capabilities": {
     "nvml": true,
     "nvidia_smi_fallback": true,

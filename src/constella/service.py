@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 from .cluster_control import ClusterController, load_cluster_config
+from .collector import validate_device_type
 from .paths import default_build_root, default_project_root
 
 
@@ -26,12 +27,14 @@ class ServiceConfig:
     port: int = 8765
     refresh: float = 1.0
     process_refresh: float = 5.0
+    graceful_timeout: float = 10.0
     log_level: str = "info"
     run_dir: Path = Path("run")
     log_dir: Path = Path("logs")
     local_agent: bool = True
     local_agent_node_id: str | None = None
     local_agent_manager_url: str | None = None
+    local_agent_device: str = "nvidia"
     manager_hostname: str | None = None
     agent_token_file: Path | None = None
     db_path: Path | None = Path("run/constella.db")
@@ -159,6 +162,7 @@ def status_service(config: ServiceConfig, *, include_cluster: bool = False) -> l
 def validate_start_config(config: ServiceConfig) -> None:
     if config.highres_sidecar and config.db_path is None:
         raise ValueError("service start --highres-sidecar requires the default database or --db-path")
+    validate_device_type(config.local_agent_device)
 
 
 def command_prefix() -> list[str]:
@@ -177,6 +181,8 @@ def manager_process(config: ServiceConfig) -> ServiceProcess:
         str(config.refresh),
         "--process-refresh",
         str(config.process_refresh),
+        "--graceful-timeout",
+        str(config.graceful_timeout),
         "--log-level",
         config.log_level,
     ]
@@ -213,6 +219,8 @@ def local_agent_process(config: ServiceConfig) -> ServiceProcess:
         str(config.refresh),
         "--process-refresh",
         str(config.process_refresh),
+        "--device",
+        config.local_agent_device,
         "--state-file",
         str(config.local_agent_state_file),
     ]
@@ -241,6 +249,8 @@ def highres_process(config: ServiceConfig) -> ServiceProcess:
         config.resolved_highres_manager_stream_url(),
         "--token-file",
         str(config.resolved_highres_token_file()),
+        "--graceful-timeout",
+        str(config.graceful_timeout),
         "--log-level",
         config.log_level,
     ]

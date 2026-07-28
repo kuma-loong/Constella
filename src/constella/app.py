@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from . import __version__
 from .analytics import node_analytics, overview_analytics
 from .cluster import ClusterState, parse_agent_hello
 from .collector import ALLOWED_REFRESH_INTERVALS, validate_refresh_interval
@@ -188,7 +189,7 @@ def create_app(
 
     app = FastAPI(
         title="Constella",
-        version="0.2.0",
+        version=__version__,
         lifespan=lifespan,
         docs_url="/api/docs",
         redoc_url=None,

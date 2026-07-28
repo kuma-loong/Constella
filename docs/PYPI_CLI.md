@@ -1,6 +1,6 @@
 # PyPI CLI Usage
 
-This document covers the CLI intended for `pip install constella` users. Source deployments can keep using `scripts/service/*`.
+This document covers the CLI intended for `pip install constella-gpu` users. Source deployments can keep using `scripts/service/*`.
 
 ## Recommended One-Command Service
 
@@ -15,7 +15,7 @@ Default behavior:
 - Starts the manager on `127.0.0.1:8765`.
 - Creates `run/agent-token` if needed.
 - Enables SQLite at `run/constella.db`.
-- Starts a local GPU agent connected to the manager.
+- Starts a local NVIDIA agent connected to the manager; use `--device ascend` on Ascend hosts.
 - Writes logs to `logs/`.
 - Writes PID and runtime state files to `run/`.
 
@@ -46,12 +46,14 @@ Starts the manager and optional helper processes.
 | `--port` | `8765` | Manager HTTP/WebSocket port. |
 | `--refresh` | `1.0` | GPU metric refresh interval. Must be one of the supported collector intervals. |
 | `--process-refresh` | `5.0` | Process sampling interval. |
+| `--graceful-timeout` | `10.0` | Maximum graceful shutdown time for manager and sidecar processes. |
 | `--log-level` | `info` | Uvicorn log level for managed server processes. |
 | `--run-dir` | `run` | Directory for PID files, token files, local agent state, and the default database. |
 | `--log-dir` | `logs` | Directory for manager, local agent, and sidecar logs. |
 | `--no-local-agent` | off | Do not start the local GPU agent. |
 | `--local-agent-node-id` | host-derived | Display node ID for the local agent. |
 | `--local-agent-manager-url` | `ws://127.0.0.1:<port>/api/agents/ws` | Manager WebSocket URL used by the local agent. |
+| `--device` | `nvidia` | Local agent backend: `nvidia` (NVML/`nvidia-smi`) or `ascend` (DCMI/`npu-smi`). |
 | `--manager-hostname` | unset | Manager hostname label exposed to the app and used as local node ID when no local node ID is set. |
 | `--agent-token-file` | `<run-dir>/agent-token` | Agent token file. Created automatically when missing. |
 | `--db-path` | `<run-dir>/constella.db` | SQLite database path. Enabled by default. |
@@ -75,6 +77,7 @@ Examples:
 constella service start --host 0.0.0.0 --port 8765
 constella service start --run-dir ~/.constella/run --log-dir ~/.constella/logs
 constella service start --local-agent-node-id HGX-H100
+constella service start --device ascend
 constella service start --no-local-agent
 constella service start --db-path /data/constella.db
 constella service start --no-db
@@ -135,6 +138,11 @@ nodes:
   - id: gpu-node-01
     host: gpu-node-01
     user: alice
+    device: nvidia
+  - id: ascend-node-01
+    host: ascend-node-01
+    user: alice
+    device: ascend
 ```
 
 Start manager, local agent, SQLite, and remote agents in one command:
@@ -146,7 +154,7 @@ constella service start \
   --cluster-nodes nodes.yaml
 ```
 
-Remote nodes do not need `uv`. The manager syncs a minimal agent runtime and starts `python3 -m constella.agent_main` through SSH.
+Remote nodes do not need `uv`. The manager syncs a minimal agent runtime, including both the NVIDIA and Ascend backends, and starts `python3 -m constella.agent_main` through SSH.
 
 ## Fine-Grained Commands
 
@@ -162,6 +170,7 @@ Runs only the manager web service.
 | `--port` | `8765` | HTTP/WebSocket port. |
 | `--refresh` | `1.0` | Manager refresh interval broadcast to agents. |
 | `--process-refresh` | `5.0` | Process refresh interval broadcast to agents. |
+| `--graceful-timeout` | `10.0` | Maximum graceful shutdown time. |
 | `--agent-token-file` | unset | Enables authenticated agent ingest. |
 | `--highres-token-file` | unset | Token file for high-resolution stream clients. |
 | `--db-path` | unset | Enables SQLite history and analytics. |
@@ -182,6 +191,16 @@ Runs one local GPU node agent.
 | `--refresh` | env/default | Sampling refresh interval. |
 | `--process-refresh` | env/default | Process sampling interval. |
 | `--state-file` | `~/.constella/run/agent-state.json` | Private JSON state file. |
+| `--device` | `nvidia` or `CONSTELLA_DEVICE_TYPE` | Backend selection: `nvidia` or `ascend`. |
+
+### `constella probe`
+
+Prints one JSON accelerator snapshot. Use `--device ascend` to select DCMI with
+`npu-smi` fallback; the default is `nvidia`.
+
+```bash
+constella probe --device ascend --pretty
+```
 
 ### `constella highres-sidecar`
 
@@ -195,6 +214,7 @@ Runs the optional high-resolution sidecar.
 | `--manager-stream-url` | `ws://127.0.0.1:8765/api/highres/stream` | Manager high-resolution stream URL. |
 | `--token-file` | unset | Token file for manager stream authentication. |
 | `--retention-seconds` | sidecar default | In-memory high-resolution retention. |
+| `--graceful-timeout` | `10.0` | Maximum graceful shutdown time. |
 | `--log-level` | `info` | Uvicorn log level. |
 
 ### `constella cluster`

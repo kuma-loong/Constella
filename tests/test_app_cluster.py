@@ -28,7 +28,7 @@ def test_agent_websocket_updates_cluster_snapshot() -> None:
                 "schema_version": 1,
                 "node_id": "node-a",
                 "hostname": "node-a-host",
-                "agent_version": "0.2.0",
+                "agent_version": "0.1.0",
                 "capabilities": {"nvml": True},
             }
         )
@@ -97,7 +97,7 @@ def test_cluster_websocket_coalesces_updates_to_refresh_interval() -> None:
                     "schema_version": 1,
                     "node_id": "node-a",
                     "hostname": "node-a-host",
-                    "agent_version": "0.2.0",
+                    "agent_version": "0.1.0",
                 }
             )
             assert agent_websocket.receive_json()["type"] == "config"

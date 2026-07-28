@@ -65,8 +65,8 @@ wheels = [
 ]
 
 [[package]]
-name = "constella"
-version = "0.2.0"
+name = "constella-gpu"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
