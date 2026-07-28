@@ -121,7 +121,7 @@ class ConstellaTui(App[None]):
         self.history_payload: dict[str, Any] | None = None
         self.history_error: str | None = None
         self._connect_generation = 0
-        self._suspend_table_events = False
+        self._table_event_generations: dict[str, int] = {}
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="topbar"):
@@ -155,7 +155,7 @@ class ConstellaTui(App[None]):
                                 yield DataTable(
                                     id="processes",
                                     zebra_stripes=True,
-                                    cursor_type="row",
+                                    cursor_type="none",
                                     cell_padding=2,
                                     cursor_foreground_priority="renderable",
                                     cursor_background_priority="css",
@@ -177,7 +177,7 @@ class ConstellaTui(App[None]):
                 yield DataTable(
                     id="node-hardware",
                     zebra_stripes=True,
-                    cursor_type="row",
+                    cursor_type="none",
                     cell_padding=1,
                     cursor_foreground_priority="renderable",
                     cursor_background_priority="css",
@@ -187,12 +187,16 @@ class ConstellaTui(App[None]):
                 with Horizontal(id="ranking-grid"):
                     with Vertical():
                         yield Static("USER GPU HOURS", classes="section-title")
-                        yield DataTable(id="user-rankings", zebra_stripes=True, cursor_type="row")
+                        yield DataTable(
+                            id="user-rankings", zebra_stripes=True, cursor_type="none"
+                        )
                     with Vertical():
                         yield Static("JOB RANKINGS", classes="section-title")
-                        yield DataTable(id="job-rankings", zebra_stripes=True, cursor_type="row")
+                        yield DataTable(
+                            id="job-rankings", zebra_stripes=True, cursor_type="none"
+                        )
                 yield Static("ANOMALIES", classes="section-title")
-                yield DataTable(id="anomalies", zebra_stripes=True, cursor_type="row")
+                yield DataTable(id="anomalies", zebra_stripes=True, cursor_type="none")
             with Container(id="history-view", classes="view"):
                 yield Static(id="history-status", classes="view-status")
                 with Horizontal(id="history-charts"):
@@ -221,16 +225,43 @@ class ConstellaTui(App[None]):
 
     def _configure_tables(self) -> None:
         self.query_one("#gpus", DataTable).add_columns(
-            ("GPU", "gpu"), "MODEL", "UTILIZATION", "MEMORY", "MEM %", "TEMP", "POWER"
+            ("GPU", "gpu"),
+            ("MODEL", "model"),
+            ("UTILIZATION", "utilization"),
+            ("MEMORY", "memory"),
+            ("MEM %", "memory_percent"),
+            ("TEMP", "temperature"),
+            ("POWER", "power"),
         )
         self.query_one("#processes", DataTable).add_columns(
-            "PID", "USER", "TASK", "GPU MEM", "RUNTIME", "COMMAND"
+            ("PID", "pid"),
+            ("USER", "user"),
+            ("TASK", "task"),
+            ("GPU MEM", "gpu_memory"),
+            ("RUNTIME", "runtime"),
+            ("COMMAND", "command"),
         )
         self.query_one("#cluster-nodes", DataTable).add_columns(
-            "NODE", "STATUS", "HOST", "GPUS", "UTIL", "MEMORY", "TEMP", "POWER", "PROCS", "SOURCE"
+            ("NODE", "node"),
+            ("STATUS", "status"),
+            ("HOST", "host"),
+            ("GPUS", "gpus"),
+            ("UTIL", "util"),
+            ("MEMORY", "memory"),
+            ("TEMP", "temp"),
+            ("POWER", "power"),
+            ("PROCS", "procs"),
+            ("SOURCE", "source"),
         )
         self.query_one("#node-hardware", DataTable).add_columns(
-            "GPU", "MODEL", "TYPE", "UUID", "PCI", "PSTATE", "COMPUTE", "ECC"
+            ("GPU", "gpu"),
+            ("MODEL", "model"),
+            ("TYPE", "type"),
+            ("UUID", "uuid"),
+            ("PCI", "pci"),
+            ("PSTATE", "pstate"),
+            ("COMPUTE", "compute"),
+            ("ECC", "ecc"),
         )
         self.query_one("#user-rankings", DataTable).add_columns(
             "#", "USER", "GPU H", "WEIGHTED", "JOBS", "TASKS", "LAST SEEN"
@@ -384,6 +415,7 @@ class ConstellaTui(App[None]):
         self._render_context()
         if view == "cluster":
             self._render_cluster()
+            self.query_one("#cluster-nodes", DataTable).focus()
         elif view == "rankings":
             self.load_rankings()
         elif view == "history":
@@ -427,7 +459,7 @@ class ConstellaTui(App[None]):
         self._select_table_row(event.data_table, event.row_key)
 
     def _select_table_row(self, table: DataTable, row_key: object) -> None:
-        if self._suspend_table_events or row_key is None:
+        if table.id in self._table_event_generations or row_key is None:
             return
         key = str(getattr(row_key, "value", row_key))
         if table.id == "gpus":
@@ -436,6 +468,7 @@ class ConstellaTui(App[None]):
             self._render_selected_gpu_panel()
         elif table.id == "cluster-nodes":
             self._select_node(key, render_overview=False)
+            self._render_cluster_selection_markers()
             self._render_node_hardware()
 
     def _select_node(self, node_id: str, *, render_overview: bool = True) -> None:
@@ -544,20 +577,27 @@ class ConstellaTui(App[None]):
         keys = [row.key for row in rows]
         if self.selected_gpu_key not in keys:
             self.selected_gpu_key = keys[0] if keys else None
-        selected_row = keys.index(self.selected_gpu_key) if self.selected_gpu_key in keys else 0
-
-        self._suspend_table_events = True
-        table.clear()
-        for row, gpu in zip(rows, raw_gpus, strict=True):
-            table.add_row(
-                *self._styled_gpu_cells(
-                    row.cells, gpu, selected=row.key == self.selected_gpu_key
-                ),
-                key=row.key,
+        rendered_rows = [
+            self._styled_gpu_cells(
+                row.cells, gpu, selected=row.key == self.selected_gpu_key
             )
-        if rows:
-            table.move_cursor(row=selected_row, column=0, animate=False, scroll=False)
-        self.call_after_refresh(self._resume_table_events)
+            for row, gpu in zip(rows, raw_gpus, strict=True)
+        ]
+        self._sync_keyed_table(
+            table,
+            keys=keys,
+            rows=rendered_rows,
+            column_keys=(
+                "gpu",
+                "model",
+                "utilization",
+                "memory",
+                "memory_percent",
+                "temperature",
+                "power",
+            ),
+            selected_key=self.selected_gpu_key,
+        )
 
     def _render_gpu_selection_markers(self) -> None:
         table = self.query_one("#gpus", DataTable)
@@ -580,8 +620,50 @@ class ConstellaTui(App[None]):
                 update_width=False,
             )
 
-    def _resume_table_events(self) -> None:
-        self._suspend_table_events = False
+    def _sync_keyed_table(
+        self,
+        table: DataTable,
+        *,
+        keys: list[str],
+        rows: list[tuple[str | Text, ...]],
+        column_keys: tuple[str, ...],
+        selected_key: str | None,
+    ) -> None:
+        """Update live table cells without rebuilding stable rows or moving its cursor."""
+        mounted_keys = [str(row_key.value) for row_key in table.rows]
+        topology_changed = mounted_keys != keys
+        generation: int | None = None
+        if topology_changed:
+            generation = self._suspend_table(table)
+            table.clear()
+            for key, values in zip(keys, rows, strict=True):
+                table.add_row(*values, key=key)
+        else:
+            for key, values in zip(keys, rows, strict=True):
+                for column_key, value in zip(column_keys, values, strict=True):
+                    table.update_cell(key, column_key, value, update_width=False)
+
+        selected_row = keys.index(selected_key) if selected_key in keys else 0
+        cursor_key = keys[table.cursor_row] if keys and table.cursor_row < len(keys) else None
+        if selected_key is not None and keys and (
+            topology_changed or cursor_key != selected_key
+        ):
+            generation = generation or self._suspend_table(table)
+            table.move_cursor(row=selected_row, column=0, animate=False, scroll=False)
+        if generation is not None:
+            self.call_after_refresh(
+                self._resume_table_events, table.id or "", generation
+            )
+
+    def _suspend_table(self, table: DataTable) -> int:
+        table_id = table.id or ""
+        generation = self._table_event_generations.get(table_id, 0) + 1
+        self._table_event_generations[table_id] = generation
+        return generation
+
+    def _resume_table_events(self, table_id: str, generation: int) -> None:
+        if self._table_event_generations.get(table_id) == generation:
+            self._table_event_generations.pop(table_id, None)
 
     def _render_selected_gpu_panel(self) -> None:
         gpu = self._selected_gpu()
@@ -614,22 +696,33 @@ class ConstellaTui(App[None]):
 
     def _render_process_table(self, gpu: dict[str, Any]) -> None:
         table = self.query_one("#processes", DataTable)
-        table.clear()
         node = {"gpus": [gpu]}
         rows = process_rows(node)
+        keys: list[str] = []
+        rendered_rows: list[tuple[str | Text, ...]] = []
         for row in rows:
             source = row.cells
-            cells: tuple[str | Text, ...] = (
-                Text(source[1], style="bold #E2E8F0"),
-                Text(source[2], style="#E2E8F0"),
-                Text(source[3], style="bold #00E5FF"),
-                Text(source[4], style="#E2E8F0"),
-                Text(source[5], style="#8A99AD"),
-                Text(source[6], style="#8A99AD"),
+            keys.append(row.key)
+            rendered_rows.append(
+                (
+                    Text(source[1], style="bold #E2E8F0"),
+                    Text(source[2], style="#E2E8F0"),
+                    Text(source[3], style="bold #00E5FF"),
+                    Text(source[4], style="#E2E8F0"),
+                    Text(source[5], style="#8A99AD"),
+                    Text(source[6], style="#8A99AD"),
+                )
             )
-            table.add_row(*cells, key=row.key)
         if not rows:
-            table.add_row("-", "-", "No active processes", "-", "-", "-")
+            keys = ["__empty__"]
+            rendered_rows = [("-", "-", "No active processes", "-", "-", "-")]
+        self._sync_keyed_table(
+            table,
+            keys=keys,
+            rows=rendered_rows,
+            column_keys=("pid", "user", "task", "gpu_memory", "runtime", "command"),
+            selected_key=None,
+        )
 
     def _render_gpu_facts(self, gpu: dict[str, Any]) -> None:
         total_memory = float(gpu.get("memory_total_mb") or 0)
@@ -674,36 +767,79 @@ class ConstellaTui(App[None]):
         table = self.query_one("#cluster-nodes", DataTable)
         nodes = self._snapshot_nodes()
         keys = [self._node_id(node) for node in nodes]
-        selected_row = keys.index(self.selected_node_id) if self.selected_node_id in keys else 0
-        self._suspend_table_events = True
-        table.clear()
-        for node in nodes:
-            totals = node.get("totals") if isinstance(node.get("totals"), dict) else {}
-            status = str(node.get("status") or "offline")
-            status_style = "#38BDF8" if status == "online" else "bold #FF2A5F"
-            table.add_row(
-                Text(self._node_id(node), style="bold #E2E8F0"),
-                Text(status, style=status_style),
-                str(node.get("hostname") or "unknown"),
-                str(int(totals.get("accelerator_count") or totals.get("gpu_count") or 0)),
-                Text(percent(totals.get("avg_gpu_utilization")), style=self._utilization_style(float(totals.get("avg_gpu_utilization") or 0))),
-                f"{memory(totals.get('memory_used_mb'))} / {memory(totals.get('memory_total_mb'))}",
-                self._temperature_text(float(totals.get("max_temperature_c") or 0)),
-                f"{float(totals.get('power_watts') or 0):.0f} W",
-                str(int(totals.get("active_processes") or 0)),
-                str(node.get("source") or "unknown"),
-                key=self._node_id(node),
+        rendered_rows = [
+            self._cluster_node_cells(
+                node, selected=self._node_id(node) == self.selected_node_id
             )
-        if nodes:
-            table.move_cursor(row=selected_row, column=0, animate=False, scroll=False)
-        self.call_after_refresh(self._resume_table_events)
+            for node in nodes
+        ]
+        self._sync_keyed_table(
+            table,
+            keys=keys,
+            rows=rendered_rows,
+            column_keys=(
+                "node",
+                "status",
+                "host",
+                "gpus",
+                "util",
+                "memory",
+                "temp",
+                "power",
+                "procs",
+                "source",
+            ),
+            selected_key=self.selected_node_id,
+        )
         self._render_node_hardware()
+
+    def _render_cluster_selection_markers(self) -> None:
+        table = self.query_one("#cluster-nodes", DataTable)
+        nodes = self._snapshot_nodes()
+        mounted_keys = {str(row_key.value) for row_key in table.rows}
+        for node in nodes:
+            key = self._node_id(node)
+            if key not in mounted_keys:
+                continue
+            table.update_cell(
+                key,
+                "node",
+                self._cluster_node_label(key, selected=key == self.selected_node_id),
+                update_width=False,
+            )
+
+    def _cluster_node_cells(
+        self, node: dict[str, Any], *, selected: bool
+    ) -> tuple[str | Text, ...]:
+        totals = node.get("totals") if isinstance(node.get("totals"), dict) else {}
+        status = str(node.get("status") or "offline")
+        status_style = "#38BDF8" if status == "online" else "bold #FF2A5F"
+        utilization = float(totals.get("avg_gpu_utilization") or 0)
+        return (
+            self._cluster_node_label(self._node_id(node), selected=selected),
+            Text(status, style=status_style),
+            str(node.get("hostname") or "unknown"),
+            str(int(totals.get("accelerator_count") or totals.get("gpu_count") or 0)),
+            Text(percent(utilization), style=self._utilization_style(utilization)),
+            f"{memory(totals.get('memory_used_mb'))} / {memory(totals.get('memory_total_mb'))}",
+            self._temperature_text(float(totals.get("max_temperature_c") or 0)),
+            f"{float(totals.get('power_watts') or 0):.0f} W",
+            str(int(totals.get("active_processes") or 0)),
+            str(node.get("source") or "unknown"),
+        )
+
+    @staticmethod
+    def _cluster_node_label(node_id: str, *, selected: bool) -> Text:
+        label = Text()
+        label.append("▸ " if selected else "  ", style="bold #00E5FF")
+        label.append(node_id, style="bold #FFFFFF" if selected else "bold #E2E8F0")
+        return label
 
     def _render_node_hardware(self) -> None:
         node = self._selected_node()
         table = self.query_one("#node-hardware", DataTable)
-        table.clear()
         if node is None:
+            table.clear()
             return
         self.query_one("#hardware-title", Static).update(
             f"{self._node_id(node)} HARDWARE  ·  driver {node.get('driver_version') or 'unknown'}  ·  agent {node.get('agent_version') or 'unknown'}"
@@ -711,10 +847,10 @@ class ConstellaTui(App[None]):
         live_gpus = [gpu for gpu in node.get("gpus", []) if isinstance(gpu, dict)]
         hardware = node.get("hardware") if isinstance(node.get("hardware"), dict) else {}
         known_gpus = [gpu for gpu in hardware.get("gpus", []) if isinstance(gpu, dict)]
-        for gpu in live_gpus or known_gpus:
-            if not isinstance(gpu, dict):
-                continue
-            table.add_row(
+        gpus = live_gpus or known_gpus
+        keys = [str(gpu.get("uuid") or gpu.get("index") or 0) for gpu in gpus]
+        rendered_rows: list[tuple[str | Text, ...]] = [
+            (
                 str(int(gpu.get("index") or 0)),
                 str(gpu.get("name") or "unknown"),
                 str(gpu.get("device_type") or "unknown"),
@@ -724,6 +860,24 @@ class ConstellaTui(App[None]):
                 str(gpu.get("compute_mode") or "-"),
                 str(gpu.get("ecc_mode") or "-"),
             )
+            for gpu in gpus
+        ]
+        self._sync_keyed_table(
+            table,
+            keys=keys,
+            rows=rendered_rows,
+            column_keys=(
+                "gpu",
+                "model",
+                "type",
+                "uuid",
+                "pci",
+                "pstate",
+                "compute",
+                "ecc",
+            ),
+            selected_key=None,
+        )
 
     def _render_rankings(self) -> None:
         status = self.query_one("#rankings-status", Static)

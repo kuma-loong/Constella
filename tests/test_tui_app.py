@@ -157,6 +157,11 @@ async def exercise_app() -> None:
         assert len(app.query_one("#nodes", ListView).children) == 1
         assert app.query_one("#gpus", DataTable).row_count == 1
         assert app.query_one("#processes", DataTable).row_count == 1
+        assert app.query_one("#processes", DataTable).cursor_type == "none"
+        assert app.query_one("#node-hardware", DataTable).cursor_type == "none"
+        assert app.query_one("#user-rankings", DataTable).cursor_type == "none"
+        assert app.query_one("#job-rankings", DataTable).cursor_type == "none"
+        assert app.query_one("#anomalies", DataTable).cursor_type == "none"
         assert app.query_one("#state-message", Static).display is False
         assert app.query_one("#connection-status", Static).has_class("live")
 
@@ -201,9 +206,12 @@ async def exercise_gpu_selection_persistence() -> None:
     async with app.run_test(size=(140, 42)) as pilot:
         await pilot.pause(0.2)
         table = app.query_one("#gpus", DataTable)
+        mounted_rows = tuple(id(row) for row in table.rows.values())
         table.move_cursor(row=1)
         await pilot.pause(0.1)
         assert app.selected_gpu_key == "GPU-1"
+        process_table = app.query_one("#processes", DataTable)
+        mounted_process_rows = tuple(id(row) for row in process_table.rows.values())
 
         refreshed = deepcopy(snapshot)
         refreshed["nodes"][0]["gpus"][0]["utilization_gpu"] = 35
@@ -213,6 +221,8 @@ async def exercise_gpu_selection_persistence() -> None:
 
         assert app.selected_gpu_key == "GPU-1"
         assert table.cursor_row == 1
+        assert tuple(id(row) for row in table.rows.values()) == mounted_rows
+        assert tuple(id(row) for row in process_table.rows.values()) == mounted_process_rows
         assert table.get_cell("GPU-1", "gpu").plain.startswith("▸")
 
         await pilot.click("#gpus", offset=(4, 1))
@@ -326,6 +336,58 @@ def _separator_positions(value: str) -> list[int]:
 
 def test_tui_reserves_space_for_growing_realtime_metrics() -> None:
     asyncio.run(exercise_realtime_metric_slots_remain_fixed())
+
+
+async def exercise_cluster_keyboard_mouse_and_refresh_stability() -> None:
+    snapshot = deepcopy(SNAPSHOT)
+    second_node = deepcopy(snapshot["nodes"][0])
+    second_node.update(node_id="gpu-b", hostname="gpu-b")
+    snapshot["nodes"].append(second_node)
+
+    app = ConstellaTui("http://127.0.0.1:8765")
+    app.client = FakeClient()  # type: ignore[assignment]
+    app.client.snapshots = lambda: _single_snapshot(snapshot)  # type: ignore[method-assign]
+    async with app.run_test(size=(140, 42)) as pilot:
+        await pilot.pause(0.2)
+        await pilot.press("2")
+        await pilot.pause()
+        table = app.query_one("#cluster-nodes", DataTable)
+        assert table.has_focus
+
+        await pilot.press("down")
+        await pilot.pause()
+        assert app.selected_node_id == "gpu-b"
+        assert table.cursor_row == 1
+        assert table.get_cell("gpu-b", "node").plain.startswith("▸")
+        mounted_rows = tuple(id(row) for row in table.rows.values())
+        hardware_table = app.query_one("#node-hardware", DataTable)
+        mounted_hardware_rows = tuple(id(row) for row in hardware_table.rows.values())
+
+        for utilization in (35, 66, 91):
+            refreshed = deepcopy(snapshot)
+            refreshed["nodes"][1]["totals"]["avg_gpu_utilization"] = utilization
+            app.snapshot = refreshed
+            app._render_snapshot()
+            await pilot.pause()
+            assert app.selected_node_id == "gpu-b"
+            assert table.cursor_row == 1
+            assert table.get_cell("gpu-b", "node").plain.startswith("▸")
+            assert tuple(id(row) for row in table.rows.values()) == mounted_rows
+            assert (
+                tuple(id(row) for row in hardware_table.rows.values())
+                == mounted_hardware_rows
+            )
+
+        await pilot.click("#cluster-nodes", offset=(4, 1))
+        await pilot.pause()
+        assert app.selected_node_id == "gpu-a"
+        assert table.cursor_row == 0
+        assert table.get_cell("gpu-a", "node").plain.startswith("▸")
+        assert not table.get_cell("gpu-b", "node").plain.startswith("▸")
+
+
+def test_cluster_selection_is_stable_for_keyboard_mouse_and_refresh() -> None:
+    asyncio.run(exercise_cluster_keyboard_mouse_and_refresh_stability())
 
 
 async def exercise_multi_view_navigation() -> None:

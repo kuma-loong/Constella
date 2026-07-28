@@ -134,6 +134,7 @@ Screen {
     background: $selection;
     text-style: bold;
 }
+#gpus > .datatable--hover { background: #192033; }
 
 #gpu-lower-pane {
     width: 100%;
@@ -172,7 +173,20 @@ Screen {
 
 #cluster-view { layout: vertical; }
 #cluster-nodes { height: auto; min-height: 4; max-height: 18; }
+#cluster-nodes > .datatable--cursor {
+    background: $selection;
+    text-style: bold;
+}
+#cluster-nodes > .datatable--hover { background: #192033; }
 #node-hardware { height: 1fr; min-height: 8; }
+
+#processes > .datatable--hover,
+#node-hardware > .datatable--hover,
+#user-rankings > .datatable--hover,
+#job-rankings > .datatable--hover,
+#anomalies > .datatable--hover {
+    background: transparent;
+}
 
 .view-status {
     height: 2;
