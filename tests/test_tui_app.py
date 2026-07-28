@@ -197,6 +197,19 @@ async def exercise_gpu_selection_persistence() -> None:
 
         assert app.selected_gpu_key == "GPU-1"
         assert table.cursor_row == 1
+        assert table.get_cell("GPU-1", "gpu").plain.startswith("▸")
+
+        await pilot.click("#gpus", offset=(4, 1))
+        await pilot.pause()
+        assert app.selected_gpu_key == "GPU-0"
+        assert table.cursor_row == 0
+        assert table.get_cell("GPU-0", "gpu").plain.startswith("▸")
+        assert not table.get_cell("GPU-1", "gpu").plain.startswith("▸")
+
+        await pilot.press("down")
+        await pilot.pause()
+        assert app.selected_gpu_key == "GPU-1"
+        assert table.get_cell("GPU-1", "gpu").plain.startswith("▸")
 
 
 async def _single_snapshot(snapshot):
@@ -322,6 +335,10 @@ async def exercise_multi_view_navigation() -> None:
         await pilot.press("4")
         await pilot.pause(0.2)
         assert "GPU 0" in str(app.query_one("#history-heatmap", Static).content)
+        history_status = str(app.query_one("#history-status", Static).content)
+        assert "N[/] next node" in history_status
+        assert "G[/] next GPU" in history_status
+        assert "time range" in history_status
 
 
 def test_tui_supports_cluster_rankings_and_history_views() -> None:

@@ -130,6 +130,11 @@ Screen {
     max-height: 15;
 }
 
+#gpus > .datatable--cursor {
+    background: $selection;
+    text-style: bold;
+}
+
 #gpu-lower-pane {
     width: 100%;
     height: 1fr;

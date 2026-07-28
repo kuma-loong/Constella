@@ -221,7 +221,7 @@ class ConstellaTui(App[None]):
 
     def _configure_tables(self) -> None:
         self.query_one("#gpus", DataTable).add_columns(
-            "GPU", "MODEL", "UTILIZATION", "MEMORY", "MEM %", "TEMP", "POWER"
+            ("GPU", "gpu"), "MODEL", "UTILIZATION", "MEMORY", "MEM %", "TEMP", "POWER"
         )
         self.query_one("#processes", DataTable).add_columns(
             "PID", "USER", "TASK", "GPU MEM", "RUNTIME", "COMMAND"
@@ -421,13 +421,20 @@ class ConstellaTui(App[None]):
         self._select_node(node_id)
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
-        if self._suspend_table_events or event.row_key is None:
+        self._select_table_row(event.data_table, event.row_key)
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        self._select_table_row(event.data_table, event.row_key)
+
+    def _select_table_row(self, table: DataTable, row_key: object) -> None:
+        if self._suspend_table_events or row_key is None:
             return
-        key = str(event.row_key.value)
-        if event.data_table.id == "gpus":
+        key = str(getattr(row_key, "value", row_key))
+        if table.id == "gpus":
             self.selected_gpu_key = key
+            self._render_gpu_selection_markers()
             self._render_selected_gpu_panel()
-        elif event.data_table.id == "cluster-nodes":
+        elif table.id == "cluster-nodes":
             self._select_node(key, render_overview=False)
             self._render_node_hardware()
 
@@ -542,10 +549,36 @@ class ConstellaTui(App[None]):
         self._suspend_table_events = True
         table.clear()
         for row, gpu in zip(rows, raw_gpus, strict=True):
-            table.add_row(*self._styled_gpu_cells(row.cells, gpu), key=row.key)
+            table.add_row(
+                *self._styled_gpu_cells(
+                    row.cells, gpu, selected=row.key == self.selected_gpu_key
+                ),
+                key=row.key,
+            )
         if rows:
             table.move_cursor(row=selected_row, column=0, animate=False, scroll=False)
         self.call_after_refresh(self._resume_table_events)
+
+    def _render_gpu_selection_markers(self) -> None:
+        table = self.query_one("#gpus", DataTable)
+        node = self._selected_node()
+        if node is None:
+            return
+        mounted_keys = {str(row_key.value) for row_key in table.rows}
+        for gpu in node.get("gpus", []):
+            if not isinstance(gpu, dict):
+                continue
+            key = self._gpu_key(gpu)
+            if key not in mounted_keys:
+                continue
+            table.update_cell(
+                key,
+                "gpu",
+                self._gpu_index_cell(
+                    int(gpu.get("index") or 0), selected=key == self.selected_gpu_key
+                ),
+                update_width=False,
+            )
 
     def _resume_table_events(self) -> None:
         self._suspend_table_events = False
@@ -778,7 +811,9 @@ class ConstellaTui(App[None]):
         series = self._dict_items(payload.get("series"))
         selected = self._history_series(series)
         status.update(
-            f"NODE {self.selected_node_id or 'unknown'}  ·  RANGE {self.history_range}  ·  {len(series)} GPU series  ·  n/g select  ·  [ / ] range"
+            f"NODE {self.selected_node_id or 'unknown'}  ·  RANGE {self.history_range}  ·  "
+            f"{len(series)} GPU series  ·  [bold #00E5FF]N[/] next node  ·  "
+            "[bold #00E5FF]G[/] next GPU  ·  [bold #00E5FF][ / ][/] time range"
         )
         if selected is None:
             gpu_curve.update("No history points for the selected GPU")
@@ -914,7 +949,7 @@ class ConstellaTui(App[None]):
 
     @staticmethod
     def _styled_gpu_cells(
-        cells: tuple[str, ...], gpu: dict[str, Any]
+        cells: tuple[str, ...], gpu: dict[str, Any], *, selected: bool = False
     ) -> tuple[str | Text, ...]:
         utilization = float(gpu.get("utilization_gpu") or 0)
         total_memory = float(gpu.get("memory_total_mb") or 0)
@@ -931,7 +966,7 @@ class ConstellaTui(App[None]):
         utilization_cell.append(meter_text[filled:], style="#121824")
         utilization_cell.append(f"  {utilization_text.strip()}", style=utilization_style)
         return (
-            Text(cells[0], style="bold #E2E8F0"),
+            ConstellaTui._gpu_index_cell(int(cells[0]), selected=selected),
             Text(cells[1], style="#E2E8F0"),
             utilization_cell,
             Text(cells[3], style=memory_style),
@@ -939,6 +974,13 @@ class ConstellaTui(App[None]):
             Text(cells[5], style=temperature_style),
             Text(cells[6], style="#8A99AD"),
         )
+
+    @staticmethod
+    def _gpu_index_cell(index: int, *, selected: bool) -> Text:
+        cell = Text()
+        cell.append("▸ " if selected else "  ", style="bold #00E5FF")
+        cell.append(str(index), style="bold #FFFFFF" if selected else "bold #E2E8F0")
+        return cell
 
     @staticmethod
     def _utilization_style(value: float) -> str:
