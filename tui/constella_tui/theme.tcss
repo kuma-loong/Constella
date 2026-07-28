@@ -1,12 +1,13 @@
-$background: #0c0f0e;
-$surface: #121714;
-$surface-raised: #18201b;
-$line: #2a332d;
-$text: #d7ded9;
-$muted: #7e8d83;
-$accent: #77b86f;
-$warning: #c6a15b;
-$danger: #c87373;
+$background: #090d0b;
+$surface: #101712;
+$surface-raised: #18231b;
+$line: #2d4032;
+$text: #d9e5dc;
+$muted: #809486;
+$accent: #a7e36d;
+$accent-strong: #c9f7a8;
+$warning: #f1c66b;
+$danger: #ff7777;
 
 Screen {
     background: $background;
@@ -43,7 +44,7 @@ Screen {
 
 #summary {
     height: 6;
-    background: $surface;
+    background: #111a14;
     border-bottom: solid $line;
 }
 
@@ -56,8 +57,6 @@ Screen {
 }
 
 .metric:last-child { border-right: none; }
-.metric > .rich-style--bold { color: $text; }
-
 #workspace { height: 1fr; }
 
 #node-pane {
@@ -79,7 +78,7 @@ Screen {
     height: 2;
     padding: 0 1;
     background: $surface-raised;
-    color: $muted;
+    color: $accent;
     text-style: bold;
     content-align: left middle;
 }
@@ -97,8 +96,14 @@ Screen {
     border-left: tall transparent;
 }
 
-#nodes ListItem:hover { background: $surface-raised; color: $text; }
-#nodes ListItem.--highlight { background: $surface-raised; color: $text; border-left: tall $accent; }
+#nodes ListItem:hover { background: #1c2b20; color: $accent-strong; }
+#nodes ListItem.-highlight {
+    background: #223727;
+    color: $accent-strong;
+    border-left: tall $accent;
+    text-style: bold;
+}
+#nodes ListItem.status-online { color: $accent; }
 #nodes ListItem.status-offline, #nodes ListItem.status-stale { color: $danger; }
 #nodes:focus { border: none; }
 
@@ -124,11 +129,14 @@ DataTable {
 
 DataTable > .datatable--header {
     background: $surface;
-    color: $muted;
+    color: $accent;
     text-style: bold;
 }
 
-DataTable > .datatable--cursor { background: $surface-raised; color: $text; }
+DataTable > .datatable--cursor {
+    background: #223727;
+    color: $accent-strong;
+}
 DataTable > .datatable--odd-row { background: #101411; }
 DataTable:focus { border: none; }
 

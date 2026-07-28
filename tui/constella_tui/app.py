@@ -7,6 +7,7 @@ import os
 from typing import Any
 
 from rich.markup import escape
+from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -76,7 +77,7 @@ class ConstellaTui(App[None]):
     def compose(self) -> ComposeResult:
         with Horizontal(id="topbar"):
             yield Static(
-                "[b]CONSTELLA[/b]  |  GPU CLUSTER OBSERVATORY",
+                "[bold #a7e36d]CONSTELLA[/]  |  GPU CLUSTER OBSERVATORY",
                 id="brand",
             )
             yield Static("CONNECTING", id="connection-status", classes="connecting")
@@ -238,14 +239,20 @@ class ConstellaTui(App[None]):
         self._show_data()
         gpu_table = self.query_one("#gpus", DataTable)
         gpu_table.clear()
-        for row in gpu_rows(node):
-            gpu_table.add_row(*row.cells, key=row.key)
+        raw_gpus = [gpu for gpu in node.get("gpus", []) if isinstance(gpu, dict)]
+        for row, gpu in zip(gpu_rows(node), raw_gpus, strict=True):
+            gpu_table.add_row(*self._styled_gpu_cells(row.cells, gpu), key=row.key)
 
         process_table = self.query_one("#processes", DataTable)
         process_table.clear()
         processes = process_rows(node)
         for row in processes:
-            process_table.add_row(*row.cells, key=row.key)
+            cells: list[str | Text] = list(row.cells)
+            cells[1] = Text(row.cells[1], style="bold #d9e5dc")
+            cells[3] = Text(row.cells[3], style="bold #a7e36d")
+            cells[4] = Text(row.cells[4], style="#f1c66b")
+            cells[6] = Text(row.cells[6], style="#9bac9f")
+            process_table.add_row(*cells, key=row.key)
         if not processes:
             process_table.add_row("-", "-", "-", "No active processes", "-", "-", "-")
 
@@ -263,7 +270,48 @@ class ConstellaTui(App[None]):
         self.query_one("#processes", DataTable).clear()
 
     def _update_metric(self, selector: str, label: str, value: str) -> None:
-        self.query_one(selector, Static).update(f"{label}\n[bold]{escape(value)}[/bold]")
+        self.query_one(selector, Static).update(
+            f"[#809486]{label}[/]\n[bold #c9f7a8]{escape(value)}[/]"
+        )
+
+    @staticmethod
+    def _styled_gpu_cells(
+        cells: tuple[str, ...], gpu: dict[str, Any]
+    ) -> tuple[str | Text, ...]:
+        utilization = float(gpu.get("utilization_gpu") or 0)
+        total_memory = float(gpu.get("memory_total_mb") or 0)
+        used_memory = float(gpu.get("memory_used_mb") or 0)
+        memory_load = used_memory / total_memory * 100 if total_memory else 0
+        temperature = float(gpu.get("temperature_c") or 0)
+
+        utilization_style = "#6f806f" if utilization < 10 else "bold #a7e36d"
+        memory_style = ConstellaTui._threshold_style(memory_load, warning=80, danger=94)
+        temperature_style = ConstellaTui._threshold_style(temperature, warning=75, danger=85)
+
+        meter_text, _, utilization_text = cells[2].partition(" ")
+        filled = meter_text.count("█")
+        utilization_cell = Text()
+        utilization_cell.append(meter_text[:filled], style=utilization_style)
+        utilization_cell.append(meter_text[filled:], style="#334238")
+        utilization_cell.append(f"  {utilization_text.strip()}", style=utilization_style)
+
+        return (
+            Text(cells[0], style="bold #d9e5dc"),
+            Text(cells[1], style="#d9e5dc"),
+            utilization_cell,
+            Text(cells[3], style=memory_style),
+            Text(cells[4], style=memory_style),
+            Text(cells[5], style=temperature_style),
+            Text(cells[6], style="#9bac9f"),
+        )
+
+    @staticmethod
+    def _threshold_style(value: float, *, warning: float, danger: float) -> str:
+        if value >= danger:
+            return "bold #ff7777"
+        if value >= warning:
+            return "bold #f1c66b"
+        return "#a7e36d"
 
 
 def build_parser() -> argparse.ArgumentParser:
