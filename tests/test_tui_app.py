@@ -241,6 +241,64 @@ def test_tui_preserves_arrow_selected_node_across_refresh() -> None:
     asyncio.run(exercise_node_arrow_selection_persistence())
 
 
+async def exercise_realtime_metric_slots_remain_fixed() -> None:
+    snapshot = deepcopy(SNAPSHOT)
+    snapshot["seq"] = 9
+    snapshot["nodes"][0]["totals"].update(
+        accelerator_count=9,
+        avg_gpu_utilization=9,
+        memory_used_mb=9 * 1024,
+        active_processes=9,
+    )
+    snapshot["totals"].update(
+        online_node_count=9,
+        node_count=9,
+        accelerator_count=9,
+        avg_gpu_utilization=9,
+        memory_used_mb=9 * 1024,
+    )
+
+    app = ConstellaTui("http://127.0.0.1:8765")
+    app.client = FakeClient()  # type: ignore[assignment]
+    app.client.snapshots = lambda: _single_snapshot(snapshot)  # type: ignore[method-assign]
+    async with app.run_test(size=(140, 42)) as pilot:
+        await pilot.pause(0.2)
+        context_before = app.query_one("#context-bar", Static).content.plain
+        summary_before = app.query_one("#node-summary", Static).content.plain
+
+        refreshed = deepcopy(snapshot)
+        refreshed["seq"] = 10
+        refreshed["nodes"][0]["totals"].update(
+            accelerator_count=10,
+            avg_gpu_utilization=10,
+            memory_used_mb=10 * 1024,
+            active_processes=10,
+        )
+        refreshed["totals"].update(
+            online_node_count=10,
+            node_count=10,
+            accelerator_count=10,
+            avg_gpu_utilization=10,
+            memory_used_mb=10 * 1024,
+        )
+        app.snapshot = refreshed
+        app._render_snapshot()
+        await pilot.pause()
+
+        context_after = app.query_one("#context-bar", Static).content.plain
+        summary_after = app.query_one("#node-summary", Static).content.plain
+        assert _separator_positions(context_before) == _separator_positions(context_after)
+        assert _separator_positions(summary_before) == _separator_positions(summary_after)
+
+
+def _separator_positions(value: str) -> list[int]:
+    return [index for index, character in enumerate(value) if character == "·"]
+
+
+def test_tui_reserves_space_for_growing_realtime_metrics() -> None:
+    asyncio.run(exercise_realtime_metric_slots_remain_fixed())
+
+
 async def exercise_multi_view_navigation() -> None:
     snapshot = deepcopy(SNAPSHOT)
     snapshot["nodes"][0]["gpus"][0]["uuid"] = "GPU-0"

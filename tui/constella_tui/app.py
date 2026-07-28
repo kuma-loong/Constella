@@ -510,13 +510,21 @@ class ConstellaTui(App[None]):
         if node is None:
             return
         totals = node.get("totals") if isinstance(node.get("totals"), dict) else {}
+        gpu_count = int(totals.get("accelerator_count") or totals.get("gpu_count") or 0)
+        utilization = float(totals.get("avg_gpu_utilization") or 0)
+        memory_used = memory(totals.get("memory_used_mb"))
+        process_count = int(totals.get("active_processes") or 0)
         summary = Text()
         summary.append(self._node_id(node), style="bold #E2E8F0")
-        summary.append(f"  {str(node.get('status') or 'offline').upper()}", style="#38BDF8")
-        summary.append(f"  ·  {int(totals.get('accelerator_count') or totals.get('gpu_count') or 0)} GPU", style="#00E5FF")
-        summary.append(f"  ·  {percent(totals.get('avg_gpu_utilization'))} util", style=self._utilization_style(float(totals.get("avg_gpu_utilization") or 0)))
-        summary.append(f"  ·  {memory(totals.get('memory_used_mb'))} used", style="#8A99AD")
-        summary.append(f"  ·  {int(totals.get('active_processes') or 0)} proc", style="#8A99AD")
+        summary.append(
+            f"  {str(node.get('status') or 'offline').upper():<7}", style="#38BDF8"
+        )
+        summary.append(f"  ·  {gpu_count:>3} GPU", style="#00E5FF")
+        summary.append(
+            f"  ·  {percent(utilization):>4} util", style=self._utilization_style(utilization)
+        )
+        summary.append(f"  ·  {memory_used:>10} used", style="#8A99AD")
+        summary.append(f"  ·  {process_count:>3} proc", style="#8A99AD")
         summary.append(f"  ·  {str(node.get('source') or 'unknown')}", style="#8A99AD")
         self.query_one("#node-summary", Static).update(summary)
         self._render_gpu_table(node)
@@ -837,13 +845,21 @@ class ConstellaTui(App[None]):
             return
         totals = self.snapshot.get("totals")
         totals = totals if isinstance(totals, dict) else {}
+        online_nodes = int(totals.get("online_node_count") or 0)
+        node_count = int(totals.get("node_count") or 0)
+        gpu_count = int(totals.get("accelerator_count") or totals.get("gpu_count") or 0)
+        utilization = float(totals.get("avg_gpu_utilization") or 0)
+        memory_used = memory(totals.get("memory_used_mb"))
+        sequence = int(self.snapshot.get("seq") or 0)
         text = Text()
         text.append(f"{self.active_view.upper()}  ", style="bold #00E5FF")
-        text.append(f"{int(totals.get('online_node_count') or 0)}/{int(totals.get('node_count') or 0)} nodes", style="#E2E8F0")
-        text.append(f"  ·  {int(totals.get('accelerator_count') or totals.get('gpu_count') or 0)} GPU", style="#8A99AD")
-        text.append(f"  ·  {percent(totals.get('avg_gpu_utilization'))} util", style=self._utilization_style(float(totals.get("avg_gpu_utilization") or 0)))
-        text.append(f"  ·  {memory(totals.get('memory_used_mb'))} used", style="#8A99AD")
-        text.append(f"  ·  seq {int(self.snapshot.get('seq') or 0)}", style="#59677A")
+        text.append(f"{online_nodes:>3}/{node_count:>3} nodes", style="#E2E8F0")
+        text.append(f"  ·  {gpu_count:>3} GPU", style="#8A99AD")
+        text.append(
+            f"  ·  {percent(utilization):>4} util", style=self._utilization_style(utilization)
+        )
+        text.append(f"  ·  {memory_used:>10} used", style="#8A99AD")
+        text.append(f"  ·  seq {sequence:>8}", style="#59677A")
         context.update(text)
 
     def _selected_node(self) -> dict[str, Any] | None:
