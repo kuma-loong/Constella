@@ -571,27 +571,9 @@ function alignSeries(series: PerformanceSeries[], metric: string) {
   ).sort((a, b) => a - b);
   const data: uPlot.AlignedData = [
     timestamps,
-    ...series.map((item) => interpolatePoints(smoothPoints(item.metrics[metric]?.points || []), timestamps)),
+    ...series.map((item) => interpolatePoints(item.metrics[metric]?.points || [], timestamps)),
   ];
   return { timestamps, data };
-}
-
-function smoothPoints(points: [number, number | null][]): [number, number | null][] {
-  const weights = [1, 2, 3, 2, 1];
-  return points.map((point, index) => {
-    if (index < 2 || index >= points.length - 2) {
-      return point;
-    }
-    const window = points.slice(index - 2, index + 3);
-    if (window.some(([, value]) => value == null)) {
-      return point;
-    }
-    const value = window.reduce(
-      (sum, [, sample], weightIndex) => sum + Number(sample) * weights[weightIndex],
-      0,
-    ) / 9;
-    return [point[0], value];
-  });
 }
 
 function fixedTimeSplits(plot: uPlot, _axisIndex: number, min: number, max: number) {
