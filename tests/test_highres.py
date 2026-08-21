@@ -12,6 +12,7 @@ from constella.highres import (
     GpuSampleRing,
     HighresGpuCache,
     gpu_sample_message,
+    job_performance_curve,
     performance_curves,
     query_jobs,
 )
@@ -498,5 +499,44 @@ def test_highres_sidecar_serves_jobs_from_sqlite_and_memory_cache(tmp_path) -> N
         assert jobs_response.status_code == 200
         assert curve_response.status_code == 200
         assert curve_response.json()["source"] == "high_res_memory"
+    finally:
+        sink.store.close()
+
+
+def test_job_performance_curve_uses_highres_and_marks_device_scope(tmp_path) -> None:
+    sink = AsyncDBSink(SQLiteSinkConfig(path=tmp_path / "constella.db"))
+    sink.store.open()
+    cache = HighresGpuCache(retention_seconds=120.0, min_interval_seconds=1.0)
+    try:
+        base = time.time()
+        for offset in range(-30, 31):
+            sampled_at = base + offset
+            snapshot = make_node_snapshot(sampled_at)
+            for gpu in snapshot.gpus:
+                gpu.performance = AcceleratorPerformance(
+                    profile="nvidia.gpm.v1",
+                    status="available",
+                    sampled_at=sampled_at,
+                    interval_ms=1000.0,
+                    metrics={"nvidia.gpm.sm_active": 30.0 + gpu.index},
+                )
+            cache.add_snapshot(snapshot)
+        sink.store.write_node_snapshot(make_node_snapshot(base))
+        sink.store.write_node_snapshot(make_node_snapshot(base + 10.0))
+        job = query_jobs(sink.store, now=base + 20.0)[0]
+
+        payload = job_performance_curve(
+            sink.store,
+            cache,
+            key=job["job_key"],
+            metrics=["nvidia.gpm.sm_active"],
+            now=base + 20.0,
+        )
+
+        assert payload is not None
+        assert payload["source"] == "high_res_memory"
+        assert payload["device_scope"] is True
+        assert len(payload["series"]) == 2
+        assert "not attributed" in payload["warnings"][0]
     finally:
         sink.store.close()

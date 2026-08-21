@@ -25,6 +25,7 @@ from .highres import (
     csv_values,
     get_job,
     job_curve,
+    job_performance_curve,
     performance_curves,
     query_jobs,
 )
@@ -345,6 +346,27 @@ def create_app(
             db_sink.store,
             app.state.highres_cache,
             key=job_key,
+            padding_seconds=padding_seconds,
+            resolution=resolution,
+        )
+        if payload is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        return payload
+
+    @app.get("/api/highres/jobs/{job_key:path}/performance")
+    async def highres_job_performance(
+        job_key: str,
+        metrics: str | None = None,
+        padding_seconds: float = 20.0,
+        resolution: str = "auto",
+    ) -> dict[str, object]:
+        if db_sink is None:
+            return {"enabled": False, "series": []}
+        payload = job_performance_curve(
+            db_sink.store,
+            app.state.highres_cache,
+            key=job_key,
+            metrics=csv_values(metrics),
             padding_seconds=padding_seconds,
             resolution=resolution,
         )

@@ -10,6 +10,7 @@ from typing import Any
 
 from .analytics import job_key
 from .db import ROLLUP_1H, ROLLUP_2M, ROLLUP_20S, SQLiteStore
+from .performance import NVIDIA_GPM_METRICS, NVIDIA_GPM_PROFILE
 from .performance_highres import NvidiaGpmHighresCache
 from .schema import GpuInfo, NodeSnapshot
 
@@ -391,6 +392,87 @@ def job_curve(
     }
 
 
+def job_performance_curve(
+    store: SQLiteStore,
+    cache: HighresGpuCache,
+    *,
+    key: str,
+    metrics: list[str] | None = None,
+    padding_seconds: float = HIGHRES_DEFAULT_PADDING_SECONDS,
+    resolution: str = "auto",
+    now: float | None = None,
+) -> dict[str, Any] | None:
+    job = get_job(store, key, now=now)
+    if job is None:
+        return None
+    selected = [
+        metric for metric in (metrics or list(NVIDIA_GPM_METRICS)) if metric in NVIDIA_GPM_METRICS
+    ]
+    padding = max(0.0, min(float(padding_seconds), 300.0))
+    range_start = max(0.0, float(job["started_at"]) - padding)
+    range_end = float(job["last_seen_at"]) + padding
+    duration = max(0.0, float(job["duration_seconds"]))
+    resolution_mode, requested_bucket = _normalize_resolution(resolution)
+    warnings = [
+        "performance metrics are device-wide and are not attributed to an individual process"
+    ]
+    concurrent_sessions = _concurrent_session_count(store, job)
+    if concurrent_sessions:
+        warnings.append("other process sessions overlap this GPU time window")
+
+    if resolution_mode == "auto" and duration < HIGHRES_MAX_JOB_SECONDS:
+        highres = _highres_performance_curve(
+            cache,
+            job=job,
+            metrics=selected,
+            range_start=range_start,
+            range_end=range_end,
+        )
+        if highres is not None:
+            return {
+                **highres,
+                "enabled": True,
+                "job": job,
+                "job_key": key,
+                "range_start": range_start,
+                "range_end": range_end,
+                "resolution_mode": resolution_mode,
+                "device_scope": True,
+                "concurrent_session_count": concurrent_sessions,
+                "warnings": warnings,
+            }
+        warnings.append("high-resolution performance cache does not cover the full job window")
+
+    bucket_seconds = (
+        requested_bucket
+        if requested_bucket is not None
+        else _auto_rollup_bucket(range_start=range_start, range_end=range_end)
+    )
+    series = _rollup_performance_curve(
+        store,
+        job=job,
+        metrics=selected,
+        range_start=range_start,
+        range_end=range_end,
+        bucket_seconds=bucket_seconds,
+    )
+    return {
+        "enabled": True,
+        "profile": NVIDIA_GPM_PROFILE,
+        "source": "rollup",
+        "job": job,
+        "job_key": key,
+        "range_start": range_start,
+        "range_end": range_end,
+        "resolution_seconds": bucket_seconds,
+        "resolution_mode": resolution_mode,
+        "device_scope": True,
+        "concurrent_session_count": concurrent_sessions,
+        "warnings": warnings,
+        "series": series,
+    }
+
+
 def _job_rows(
     store: SQLiteStore,
     *,
@@ -585,6 +667,47 @@ def _highres_curve(
     }
 
 
+def _highres_performance_curve(
+    cache: HighresGpuCache,
+    *,
+    job: dict[str, Any],
+    metrics: list[str],
+    range_start: float,
+    range_end: float,
+) -> dict[str, Any] | None:
+    for gpu in job["gpus"]:
+        ring = cache.performance.rings.get((gpu["node_id"], gpu["gpu_uuid"]))
+        if (
+            ring is None
+            or ring.oldest_at is None
+            or ring.newest_at is None
+            or ring.oldest_at > float(job["started_at"])
+            or ring.newest_at < float(job["last_seen_at"])
+        ):
+            return None
+    payload = cache.performance.query(
+        node_id=str(job["node_id"]),
+        gpu_uuids=[str(gpu["gpu_uuid"]) for gpu in job["gpus"]],
+        metrics=metrics,
+        since=range_start,
+        until=range_end,
+        max_points=5000,
+        summary_only=False,
+    )
+    return {
+        **payload,
+        "source": "high_res_memory",
+        "resolution_seconds": min(
+            (
+                ring.observed_interval_seconds()
+                for gpu in job["gpus"]
+                if (ring := cache.rings.get((gpu["node_id"], gpu["gpu_uuid"]))) is not None
+            ),
+            default=None,
+        ),
+    }
+
+
 def _rollup_curve(
     store: SQLiteStore,
     *,
@@ -606,6 +729,93 @@ def _rollup_curve(
         )
         series.append({**gpu, "label": _gpu_label(gpu), "points": points})
     return series
+
+
+def _rollup_performance_curve(
+    store: SQLiteStore,
+    *,
+    job: dict[str, Any],
+    metrics: list[str],
+    range_start: float,
+    range_end: float,
+    bucket_seconds: int,
+) -> list[dict[str, Any]]:
+    series: list[dict[str, Any]] = []
+    limit = _rollup_point_limit(
+        range_start=range_start,
+        range_end=range_end,
+        bucket_seconds=bucket_seconds,
+    )
+    for gpu in job["gpus"]:
+        rows = store.query_nvidia_gpm_history(
+            node_id=gpu["node_id"],
+            gpu_uuid=gpu["gpu_uuid"],
+            since=range_start,
+            until=range_end,
+            bucket_seconds=bucket_seconds,
+            metrics=metrics,
+            limit=limit,
+        )
+        metric_payload: dict[str, Any] = {}
+        for metric in metrics:
+            valid_count = sum(row["metrics"][metric]["valid_count"] for row in rows)
+            expected_count = sum(row["expected_count"] for row in rows)
+            maxima = [
+                row["metrics"][metric]["max"]
+                for row in rows
+                if row["metrics"][metric]["max"] is not None
+            ]
+            weighted = sum(
+                float(row["metrics"][metric]["avg"])
+                * int(row["metrics"][metric]["valid_count"])
+                for row in rows
+                if row["metrics"][metric]["avg"] is not None
+            )
+            metric_payload[metric] = {
+                "points": [
+                    [row["sampled_at"], row["metrics"][metric]["avg"]]
+                    for row in rows
+                ],
+                "summary": {
+                    "avg": round(weighted / valid_count, 3) if valid_count else None,
+                    "min": None,
+                    "max": max(maxima) if maxima else None,
+                    "p95": None,
+                    "sample_count": valid_count,
+                    "expected_count": expected_count,
+                    "coverage": round(valid_count / expected_count * 100.0, 2)
+                    if expected_count
+                    else 0.0,
+                },
+            }
+        series.append({**gpu, "label": _gpu_label(gpu), "metrics": metric_payload})
+    return series
+
+
+def _concurrent_session_count(store: SQLiteStore, job: dict[str, Any]) -> int:
+    session_ids = [str(session["session_id"]) for session in job["sessions"]]
+    exclusions = ", ".join("?" for _ in session_ids)
+    count = 0
+    for gpu in job["gpus"]:
+        params: list[Any] = [
+            gpu["node_id"],
+            gpu["gpu_uuid"],
+            job["last_seen_at"],
+            job["started_at"],
+            *session_ids,
+        ]
+        row = store.connection.execute(
+            f"""
+            SELECT COUNT(DISTINCT session_id)
+            FROM process_gpu_usages
+            WHERE node_id = ? AND gpu_uuid = ?
+              AND first_seen_at <= ? AND last_seen_at >= ?
+              {f"AND session_id NOT IN ({exclusions})" if exclusions else ""}
+            """,
+            params,
+        ).fetchone()
+        count += int(row[0]) if row else 0
+    return count
 
 
 def _normalize_resolution(value: str | None) -> tuple[str, int | None]:
