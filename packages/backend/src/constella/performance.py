@@ -39,3 +39,12 @@ def nvidia_gpm_rollup_enabled() -> bool:
         "no",
         "off",
     }
+
+
+def nvidia_gpm_highres_enabled() -> bool:
+    return os.environ.get("CONSTELLA_NVIDIA_GPM_HIGHRES", "on").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }

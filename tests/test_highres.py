@@ -171,6 +171,17 @@ def test_performance_cache_preserves_missing_samples_as_gaps() -> None:
     assert metric["summary"]["coverage"] == 50.0
 
 
+def test_performance_highres_can_be_disabled_independently(monkeypatch) -> None:
+    monkeypatch.setenv("CONSTELLA_NVIDIA_GPM_HIGHRES", "off")
+    cache = HighresGpuCache(retention_seconds=10.0, min_interval_seconds=1.0)
+
+    payload = performance_curves(cache, node_id="node-a", now=100.0)
+
+    assert payload["enabled"] is False
+    assert payload["series"] == []
+    assert cache.status()["performance"]["enabled"] is False
+
+
 def test_highres_stream_payload_only_adds_declared_performance_profile() -> None:
     snapshot = make_node_snapshot(10.0)
     assert "performance" not in gpu_sample_message(snapshot)["gpus"][0]

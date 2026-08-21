@@ -89,8 +89,9 @@ class NvidiaGpmSampleRing:
 
 
 class NvidiaGpmHighresCache:
-    def __init__(self, *, capacity: int):
+    def __init__(self, *, capacity: int, enabled: bool = True):
         self.capacity = capacity
+        self.enabled = enabled
         self.rings: dict[tuple[str, str], NvidiaGpmSampleRing] = {}
         self.devices: dict[tuple[str, str], dict[str, Any]] = {}
 
@@ -104,7 +105,7 @@ class NvidiaGpmHighresCache:
         sampled_at: float,
         performance: dict[str, Any] | None,
     ) -> None:
-        if not performance or performance.get("profile") != NVIDIA_GPM_PROFILE:
+        if not self.enabled or not performance or performance.get("profile") != NVIDIA_GPM_PROFILE:
             return
         key = (node_id, gpu_uuid)
         ring = self.rings.get(key)
@@ -134,6 +135,15 @@ class NvidiaGpmHighresCache:
         selected_metrics = [
             metric for metric in (metrics or list(NVIDIA_GPM_METRICS)) if metric in NVIDIA_GPM_METRICS
         ]
+        if not self.enabled:
+            return {
+                "enabled": False,
+                "profile": NVIDIA_GPM_PROFILE,
+                "since": since,
+                "until": until,
+                "metrics": selected_metrics,
+                "series": [],
+            }
         selected_uuids = set(gpu_uuids or [])
         series: list[dict[str, Any]] = []
         for key, ring in self.rings.items():
@@ -169,6 +179,7 @@ class NvidiaGpmHighresCache:
         valid_points = sum(ring.count for ring in self.rings.values())
         bytes_per_point = 8 + len(NVIDIA_GPM_METRICS) * 4 + 1
         return {
+            "enabled": self.enabled,
             "profile": NVIDIA_GPM_PROFILE,
             "ring_count": len(self.rings),
             "valid_point_count": valid_points,

@@ -10,7 +10,7 @@ from typing import Any
 
 from .analytics import job_key
 from .db import ROLLUP_1H, ROLLUP_2M, ROLLUP_20S, SQLiteStore
-from .performance import NVIDIA_GPM_METRICS, NVIDIA_GPM_PROFILE
+from .performance import NVIDIA_GPM_METRICS, NVIDIA_GPM_PROFILE, nvidia_gpm_highres_enabled
 from .performance_highres import NvidiaGpmHighresCache
 from .schema import GpuInfo, NodeSnapshot
 
@@ -128,7 +128,10 @@ class HighresGpuCache:
         self.sample_count = 0
         self.dropped_samples = 0
         self.last_sample_at: float | None = None
-        self.performance = NvidiaGpmHighresCache(capacity=self.capacity)
+        self.performance = NvidiaGpmHighresCache(
+            capacity=self.capacity,
+            enabled=nvidia_gpm_highres_enabled(),
+        )
 
     def add_snapshot(self, snapshot: NodeSnapshot) -> None:
         sampled_at = float(snapshot.sampled_at)
