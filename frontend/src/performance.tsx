@@ -114,6 +114,11 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
     [collapsed],
   );
   const metricQuery = requestedMetrics.join(",");
+  const maxPoints = Math.max(
+    250,
+    Math.min(1500, Math.floor(24000 / Math.max(1, gpuUuids.size * requestedMetrics.length))),
+  );
+  const liveRefreshMs = rangeSeconds <= 15 * 60 ? 2000 : rangeSeconds <= 60 * 60 ? 5000 : 10000;
 
   useEffect(() => {
     if (!nodes.length || nodes.some((node) => node.node_id === nodeId)) {
@@ -169,7 +174,7 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
       metrics: metricQuery,
       since: String(until - rangeSeconds),
       until: String(until),
-      max_points: "1500",
+      max_points: String(maxPoints),
     });
     setLoading(true);
     try {
@@ -195,17 +200,19 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
         setLoading(false);
       }
     }
-  }, [gpuUuids, metricQuery, rangeSeconds, selectedNodeCapable, selectedNodeId, visible]);
+  }, [gpuUuids, maxPoints, metricQuery, rangeSeconds, selectedNodeCapable, selectedNodeId, visible]);
 
   useEffect(() => {
     const controller = new AbortController();
     void fetchPerformance(controller.signal);
-    const timer = live && visible ? window.setInterval(() => void fetchPerformance(controller.signal), 2000) : 0;
+    const timer = live && visible
+      ? window.setInterval(() => void fetchPerformance(controller.signal), liveRefreshMs)
+      : 0;
     return () => {
       controller.abort();
       window.clearInterval(timer);
     };
-  }, [fetchPerformance, live, visible]);
+  }, [fetchPerformance, live, liveRefreshMs, visible]);
 
   useEffect(() => {
     if (!selection || !selectedNode || !gpuUuids.size || !metricQuery) {
