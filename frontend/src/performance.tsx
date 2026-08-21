@@ -283,7 +283,7 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
           <select value={nodeId} onChange={(event) => setNodeId(event.currentTarget.value)}>
             {nodes.map((node) => (
               <option key={node.node_id} value={node.node_id}>
-                {node.node_id} · {node.performance_profiles?.includes(PROFILE) ? "GPM" : "base only"}
+                {node.node_id} · {profileLabel(node)}
               </option>
             ))}
           </select>
@@ -572,4 +572,12 @@ function formatClock(timestamp: number) {
 
 function formatStat(value: number | null | undefined) {
   return value == null ? "n/a" : fmtPct(value);
+}
+
+function profileLabel(node: NodeSnapshot) {
+  const profiles = node.performance_profiles || [];
+  if (profiles.includes(PROFILE)) {
+    return "NVIDIA GPM";
+  }
+  return profiles.length ? `unsupported: ${profiles.join(", ")}` : "base telemetry";
 }

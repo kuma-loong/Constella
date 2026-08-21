@@ -471,7 +471,11 @@ export function GpuCard({
     .join(" / ");
   const smClock = gpu.clock_sm_mhz ? `SM ${gpu.clock_sm_mhz} MHz` : "SM clock n/a";
   const memClock = gpu.clock_mem_mhz ? `MEM ${gpu.clock_mem_mhz} MHz` : "MEM clock n/a";
-  const gpm = gpu.performance?.profile === "nvidia.gpm.v1" ? gpu.performance : null;
+  const gpm =
+    node.performance_profiles?.includes("nvidia.gpm.v1") &&
+    gpu.performance?.profile === "nvidia.gpm.v1"
+      ? gpu.performance
+      : null;
   return (
     <article class="gpu-card">
       <div class="gpu-head">
