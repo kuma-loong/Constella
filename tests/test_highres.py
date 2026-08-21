@@ -182,6 +182,25 @@ def test_performance_highres_can_be_disabled_independently(monkeypatch) -> None:
     assert cache.status()["performance"]["enabled"] is False
 
 
+def test_performance_status_reports_preallocated_memory() -> None:
+    cache = HighresGpuCache(retention_seconds=10.0, min_interval_seconds=1.0)
+    snapshot = make_node_snapshot(1.0)
+    snapshot.gpus[0].performance = AcceleratorPerformance(
+        profile="nvidia.gpm.v1",
+        status="warming",
+        sampled_at=1.0,
+        metrics={},
+    )
+    cache.add_snapshot(snapshot)
+
+    status = cache.status()["performance"]
+
+    assert status["capacity_per_gpu"] == 10
+    assert status["valid_point_count"] == 1
+    assert status["approx_bytes"] == 37
+    assert status["allocated_bytes"] == 370
+
+
 def test_highres_stream_payload_only_adds_declared_performance_profile() -> None:
     snapshot = make_node_snapshot(10.0)
     assert "performance" not in gpu_sample_message(snapshot)["gpus"][0]

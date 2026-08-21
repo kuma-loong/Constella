@@ -125,6 +125,11 @@ masks. Raw performance points stay in memory; only 20 second summaries enter SQL
 The `/performance` page queries only expanded metric groups and can request exact
 summary statistics without transferring every raw point.
 
+`/api/highres/status` reports both `performance.approx_bytes` for populated slots and
+`performance.allocated_bytes` for the fixed preallocation. At the default two-hour
+retention and 0.5 second minimum interval, 8 NVIDIA GPUs preallocate about 4.06 MiB
+for the performance arrays.
+
 Curve source selection:
 
 - jobs shorter than 1 hour use high-resolution memory data only when the cache fully covers the padded job window

@@ -182,8 +182,10 @@ class NvidiaGpmHighresCache:
             "enabled": self.enabled,
             "profile": NVIDIA_GPM_PROFILE,
             "ring_count": len(self.rings),
+            "capacity_per_gpu": self.capacity,
             "valid_point_count": valid_points,
             "approx_bytes": valid_points * bytes_per_point,
+            "allocated_bytes": len(self.rings) * self.capacity * bytes_per_point,
         }
 
 
