@@ -10,6 +10,7 @@ from typing import Any
 
 from .analytics import job_key
 from .db import ROLLUP_1H, ROLLUP_2M, ROLLUP_20S, SQLiteStore
+from .performance_highres import NvidiaGpmHighresCache
 from .schema import GpuInfo, NodeSnapshot
 
 HIGHRES_RETENTION_SECONDS = 2 * 60 * 60
@@ -126,6 +127,7 @@ class HighresGpuCache:
         self.sample_count = 0
         self.dropped_samples = 0
         self.last_sample_at: float | None = None
+        self.performance = NvidiaGpmHighresCache(capacity=self.capacity)
 
     def add_snapshot(self, snapshot: NodeSnapshot) -> None:
         sampled_at = float(snapshot.sampled_at)
@@ -136,6 +138,14 @@ class HighresGpuCache:
                 ring = GpuSampleRing(capacity=self.capacity)
                 self.rings[key] = ring
             ring.append(sampled_at=sampled_at, gpu=gpu)
+            self.performance.append(
+                node_id=snapshot.node_id,
+                gpu_uuid=gpu.uuid,
+                gpu_index=gpu.index,
+                name=gpu.name,
+                sampled_at=sampled_at,
+                performance=gpu.performance.to_dict() if gpu.performance is not None else None,
+            )
             self.sample_count += 1
         self.last_sample_at = sampled_at
 
@@ -164,6 +174,16 @@ class HighresGpuCache:
                 ring = GpuSampleRing(capacity=self.capacity)
                 self.rings[key] = ring
             ring.append(sampled_at=sampled_at, gpu=gpu)
+            self.performance.append(
+                node_id=node_id,
+                gpu_uuid=gpu.uuid,
+                gpu_index=gpu.index,
+                name=gpu.name,
+                sampled_at=sampled_at,
+                performance=raw_gpu.get("performance")
+                if isinstance(raw_gpu.get("performance"), dict)
+                else None,
+            )
             self.sample_count += 1
         self.last_sample_at = sampled_at
 
@@ -185,6 +205,7 @@ class HighresGpuCache:
         newest = [ring.newest_at for ring in self.rings.values() if ring.newest_at is not None]
         valid_points = sum(ring.count for ring in self.rings.values())
         bytes_per_point = 8 + 6 * 4
+        performance = self.performance.status()
         return {
             "enabled": True,
             "ring_count": len(self.rings),
@@ -197,7 +218,47 @@ class HighresGpuCache:
             "oldest_sample_at": min(oldest) if oldest else None,
             "newest_sample_at": max(newest) if newest else None,
             "last_sample_at": self.last_sample_at,
+            "performance": performance,
         }
+
+
+def performance_curves(
+    cache: HighresGpuCache,
+    *,
+    node_id: str,
+    gpu_uuids: list[str] | None = None,
+    metrics: list[str] | None = None,
+    since: float | None = None,
+    until: float | None = None,
+    max_points: int = 1500,
+    summary_only: bool = False,
+    now: float | None = None,
+) -> dict[str, Any]:
+    current = time.time() if now is None else now
+    range_end = current if until is None else min(float(until), current)
+    range_start = (
+        max(0.0, range_end - min(15 * 60, cache.retention_seconds))
+        if since is None
+        else max(0.0, float(since))
+    )
+    if range_start > range_end:
+        range_start, range_end = range_end, range_start
+    return cache.performance.query(
+        node_id=node_id,
+        gpu_uuids=gpu_uuids,
+        metrics=metrics,
+        since=range_start,
+        until=range_end,
+        max_points=max(10, min(int(max_points), 5000)),
+        summary_only=summary_only,
+    )
+
+
+def csv_values(value: str | None) -> list[str] | None:
+    if not value:
+        return None
+    values = [item.strip() for item in value.split(",") if item.strip()]
+    return values or None
 
 
 def query_jobs(
@@ -605,6 +666,11 @@ def gpu_sample_message(snapshot: NodeSnapshot) -> dict[str, Any]:
                 "memory_total_mb": gpu.memory_total_mb,
                 "power_watts": gpu.power_watts,
                 "temperature_c": gpu.temperature_c,
+                **(
+                    {"performance": gpu.performance.to_dict()}
+                    if gpu.performance is not None
+                    else {}
+                ),
             }
             for gpu in snapshot.gpus
         ],

@@ -18,8 +18,10 @@ from .db import SQLiteStore
 from .highres import (
     HIGHRES_JOB_LOOKBACK_SECONDS,
     HighresGpuCache,
+    csv_values,
     get_job,
     job_curve,
+    performance_curves,
     query_jobs,
 )
 
@@ -170,6 +172,27 @@ def create_highres_sidecar_app(
             "sidecar": True,
             "stream": app.state.stream_client.status(),
         }
+
+    @app.get("/api/highres/performance")
+    async def highres_performance(
+        node_id: str,
+        gpu_uuid: str | None = None,
+        metrics: str | None = None,
+        since: float | None = None,
+        until: float | None = None,
+        max_points: int = 1500,
+        summary_only: bool = False,
+    ) -> dict[str, object]:
+        return performance_curves(
+            app.state.highres_cache,
+            node_id=node_id,
+            gpu_uuids=csv_values(gpu_uuid),
+            metrics=csv_values(metrics),
+            since=since,
+            until=until,
+            max_points=max_points,
+            summary_only=summary_only,
+        )
 
     @app.get("/api/highres/jobs")
     async def highres_jobs(

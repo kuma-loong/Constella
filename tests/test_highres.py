@@ -11,10 +11,18 @@ from constella.highres import (
     HIGHRES_JOB_LOOKBACK_SECONDS,
     GpuSampleRing,
     HighresGpuCache,
+    gpu_sample_message,
+    performance_curves,
     query_jobs,
 )
 from constella.highres_sidecar import HighresSidecarConfig, create_highres_sidecar_app
-from constella.schema import GpuInfo, GpuProcess, NodeSnapshot, node_totals_from_gpus
+from constella.schema import (
+    AcceleratorPerformance,
+    GpuInfo,
+    GpuProcess,
+    NodeSnapshot,
+    node_totals_from_gpus,
+)
 
 
 def make_node_snapshot(
@@ -96,6 +104,85 @@ def test_gpu_sample_ring_wraps_and_returns_chronological_window() -> None:
     assert ring.oldest_at == 2.0
     assert ring.newest_at == 4.0
     assert [point["sampled_at"] for point in points] == [3.0, 4.0]
+
+
+def test_performance_cache_returns_exact_summary_and_bounded_points() -> None:
+    cache = HighresGpuCache(retention_seconds=10.0, min_interval_seconds=1.0)
+    for sampled_at, value in ((1.0, 10.0), (2.0, 20.0), (3.0, 30.0), (4.0, 40.0)):
+        snapshot = make_node_snapshot(sampled_at)
+        snapshot.gpus[0].performance = AcceleratorPerformance(
+            profile="nvidia.gpm.v1",
+            status="available",
+            sampled_at=sampled_at,
+            interval_ms=1000.0,
+            metrics={"nvidia.gpm.sm_active": value},
+        )
+        cache.add_snapshot(snapshot)
+
+    payload = performance_curves(
+        cache,
+        node_id="node-a",
+        gpu_uuids=["GPU-0"],
+        metrics=["nvidia.gpm.sm_active"],
+        since=1.0,
+        until=4.0,
+        max_points=3,
+        now=4.0,
+    )
+    metric = payload["series"][0]["metrics"]["nvidia.gpm.sm_active"]
+
+    assert metric["summary"] == {
+        "avg": 25.0,
+        "min": 10.0,
+        "max": 40.0,
+        "p95": 40.0,
+        "sample_count": 4,
+        "expected_count": 4,
+        "coverage": 100.0,
+    }
+    assert len(metric["points"]) <= 10
+
+
+def test_performance_cache_preserves_missing_samples_as_gaps() -> None:
+    cache = HighresGpuCache(retention_seconds=10.0, min_interval_seconds=1.0)
+    for sampled_at, status in ((1.0, "available"), (2.0, "error")):
+        snapshot = make_node_snapshot(sampled_at)
+        snapshot.gpus[0].performance = AcceleratorPerformance(
+            profile="nvidia.gpm.v1",
+            status=status,
+            sampled_at=sampled_at,
+            metrics={"nvidia.gpm.sm_active": 50.0} if status == "available" else {},
+        )
+        cache.add_snapshot(snapshot)
+
+    payload = performance_curves(
+        cache,
+        node_id="node-a",
+        gpu_uuids=["GPU-0"],
+        metrics=["nvidia.gpm.sm_active"],
+        since=1.0,
+        until=2.0,
+        now=2.0,
+    )
+    metric = payload["series"][0]["metrics"]["nvidia.gpm.sm_active"]
+
+    assert metric["points"] == [[1.0, 50.0], [2.0, None]]
+    assert metric["summary"]["coverage"] == 50.0
+
+
+def test_highres_stream_payload_only_adds_declared_performance_profile() -> None:
+    snapshot = make_node_snapshot(10.0)
+    assert "performance" not in gpu_sample_message(snapshot)["gpus"][0]
+
+    snapshot.gpus[0].performance = AcceleratorPerformance(
+        profile="nvidia.gpm.v1",
+        status="warming",
+        sampled_at=10.0,
+    )
+    performance = gpu_sample_message(snapshot)["gpus"][0]["performance"]
+
+    assert performance["profile"] == "nvidia.gpm.v1"
+    assert performance["status"] == "warming"
 
 
 def test_query_jobs_groups_sessions_by_existing_job_key(tmp_path) -> None:
@@ -338,6 +425,41 @@ def test_manager_highres_stream_emits_light_gpu_sample() -> None:
             "temperature_c": 0,
         }
     ]
+
+
+def test_manager_performance_endpoint_filters_node_gpu_and_metric() -> None:
+    cache = HighresGpuCache(retention_seconds=120.0, min_interval_seconds=1.0)
+    snapshot = make_node_snapshot(100.0)
+    snapshot.gpus[0].performance = AcceleratorPerformance(
+        profile="nvidia.gpm.v1",
+        status="available",
+        sampled_at=100.0,
+        metrics={"nvidia.gpm.sm_active": 42.5, "nvidia.gpm.tensor_active": 10.0},
+    )
+    cache.add_snapshot(snapshot)
+    client = TestClient(
+        create_app(
+            cluster_state=ClusterState(local_node_id="local"),
+            highres_cache=cache,
+        )
+    )
+
+    response = client.get(
+        "/api/highres/performance",
+        params={
+            "node_id": "node-a",
+            "gpu_uuid": "GPU-0",
+            "metrics": "nvidia.gpm.sm_active",
+            "since": 99.0,
+            "until": 101.0,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["profile"] == "nvidia.gpm.v1"
+    assert [item["gpu_uuid"] for item in payload["series"]] == ["GPU-0"]
+    assert list(payload["series"][0]["metrics"]) == ["nvidia.gpm.sm_active"]
 
 
 class IdleStreamClient:
