@@ -354,6 +354,8 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
         <div class="empty-panel">Select at least one GPU.</div>
       ) : error ? (
         <div class="empty-panel">{error}</div>
+      ) : payload?.enabled === false ? (
+        <div class="empty-panel">High-resolution performance caching is disabled for this service.</div>
       ) : (
         <div class={`performance-groups layout-${layout} ${loading && !payload ? "is-loading" : ""}`}>
           {GROUPS.map((group) => {
