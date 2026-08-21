@@ -29,6 +29,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { createAnalyticsController, type Route } from "./analytics";
 import { clusterRefreshInterval, findNode, sameInterval } from "./cluster-utils";
 import { Fabric, GpuGrid, Header, ProcessSection, Summary } from "./components";
+import { PerformancePage } from "./performance";
 import type { ClusterSnapshot, LiveState, NodeSnapshot, Settings, ThemeMode } from "./types";
 
 const iconSet = {
@@ -171,7 +172,7 @@ export default function App() {
       controller.renderNode(nextRoute);
       createIcons({ icons: iconSet });
       void controller.fetchNode(nextRoute);
-    } else {
+    } else if (nextRoute.kind === "jobs") {
       controller.renderJobs();
       createIcons({ icons: iconSet });
       void controller.fetchJobs();
@@ -360,9 +361,11 @@ export default function App() {
       />
 
       <main class="shell" id="mainContent">
-        <section class="summary-grid">
+        <section class="summary-grid" hidden={route.kind === "performance"}>
           <Summary snapshot={snapshot} route={route} selectedNode={selectedNode} />
         </section>
+
+        <PerformancePage snapshot={snapshot} visible={route.kind === "performance"} />
 
         <section class="fabric-band" hidden={route.kind !== "overview"}>
           {snapshot ? <Fabric snapshot={snapshot} /> : <div class="empty-panel">waiting for cluster fabric</div>}
@@ -398,11 +401,14 @@ function currentRoute(): Route {
   if (path === "/jobs") {
     return { kind: "jobs" };
   }
+  if (path === "/performance") {
+    return { kind: "performance" };
+  }
   return { kind: "overview" };
 }
 
 function isAppPath(pathname: string) {
-  return pathname === "/" || pathname === "/overview" || pathname === "/jobs" || pathname.startsWith("/nodes/");
+  return pathname === "/" || pathname === "/overview" || pathname === "/jobs" || pathname === "/performance" || pathname.startsWith("/nodes/");
 }
 
 function shouldHandleAppLink(event: JSX.TargetedMouseEvent<HTMLDivElement>, link: HTMLAnchorElement | null): link is HTMLAnchorElement {

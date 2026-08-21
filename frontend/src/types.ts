@@ -34,6 +34,15 @@ export type NodeHardware = {
   gpus: GpuHardwareInfo[];
 };
 
+export type AcceleratorPerformance = {
+  profile: string;
+  status: "warming" | "available" | "unsupported" | "error" | string;
+  sampled_at: number;
+  interval_ms?: number | null;
+  metrics: Record<string, number>;
+  error?: string | null;
+};
+
 export type GpuInfo = {
   index: number;
   node_id?: string | null;
@@ -62,6 +71,7 @@ export type GpuInfo = {
   compute_mode?: string | null;
   mig_mode?: string | null;
   ecc_mode?: string | null;
+  performance?: AcceleratorPerformance | null;
   processes: GpuProcess[];
   other_users: OtherUserMemory[];
   error?: string | null;
@@ -101,6 +111,7 @@ export type NodeSnapshot = {
   elapsed_ms?: number;
   history: Record<string, Record<string, number[]>>;
   hardware?: NodeHardware | null;
+  performance_profiles?: string[];
 };
 
 export type ClusterSnapshot = {

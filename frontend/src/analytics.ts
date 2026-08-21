@@ -12,7 +12,11 @@ import {
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
-export type Route = { kind: "overview" } | { kind: "jobs" } | { kind: "node"; nodeId: string };
+export type Route =
+  | { kind: "overview" }
+  | { kind: "jobs" }
+  | { kind: "performance" }
+  | { kind: "node"; nodeId: string };
 
 type JobResolution = "auto" | "20s" | "2m" | "1h";
 
@@ -150,6 +154,7 @@ type JobPoint = Partial<AnalyticsPoint> & {
   memory_used_mb?: number;
   power_watts?: number;
   temperature_c?: number;
+  performance?: Partial<Record<PerformanceMetric, number | null>>;
 };
 
 type JobCurveSeries = {
@@ -177,6 +182,18 @@ type JobCurve = AnalyticsMeta & {
   series?: JobCurveSeries[];
 };
 
+type PerformanceJobCurve = Omit<JobCurve, "series"> & {
+  series?: Array<{
+    node_id: string;
+    gpu_uuid: string;
+    gpu_index: number | null;
+    gpu_name?: string | null;
+    name?: string | null;
+    label?: string;
+    metrics: Partial<Record<PerformanceMetric, { points: [number, number | null][] }>>;
+  }>;
+};
+
 type AnalyticsHeatmap = {
   gpu_uuid: string;
   gpu_index: number | null;
@@ -192,6 +209,17 @@ type NodeMetric =
   | "avg_memory_used_mb"
   | "avg_power_watts"
   | "avg_temperature_c";
+
+type PerformanceMetric =
+  | "nvidia.gpm.sm_active"
+  | "nvidia.gpm.sm_occupancy"
+  | "nvidia.gpm.tensor_active"
+  | "nvidia.gpm.dram_bw_active"
+  | "nvidia.gpm.fp16_non_tensor_active"
+  | "nvidia.gpm.fp32_non_tensor_active"
+  | "nvidia.gpm.fp64_non_tensor_active";
+
+type ChartMetric = NodeMetric | PerformanceMetric;
 
 type AnalyticsControllerOptions = {
   overviewElement: HTMLElement;
@@ -212,6 +240,16 @@ const NODE_METRICS: { key: NodeMetric; label: string; max?: number }[] = [
   { key: "avg_power_watts", label: "Power" },
   { key: "avg_temperature_c", label: "Temp", max: 100 },
 ];
+const PERFORMANCE_METRICS: { key: PerformanceMetric; label: string; max: number }[] = [
+  { key: "nvidia.gpm.sm_active", label: "SM", max: 100 },
+  { key: "nvidia.gpm.sm_occupancy", label: "Occupancy", max: 100 },
+  { key: "nvidia.gpm.tensor_active", label: "Tensor", max: 100 },
+  { key: "nvidia.gpm.dram_bw_active", label: "DRAM", max: 100 },
+  { key: "nvidia.gpm.fp16_non_tensor_active", label: "FP16", max: 100 },
+  { key: "nvidia.gpm.fp32_non_tensor_active", label: "FP32", max: 100 },
+  { key: "nvidia.gpm.fp64_non_tensor_active", label: "FP64", max: 100 },
+];
+const JOB_METRICS = [...NODE_METRICS, ...PERFORMANCE_METRICS];
 const CHART_COLORS = [
   "--chart-1",
   "--chart-2",
@@ -253,7 +291,8 @@ export function createAnalyticsController({
   let jobCurvePayload: JobCurve | null = null;
   let jobCurveKey = "";
   let jobCurveLoading = false;
-  let jobMetric: NodeMetric = "avg_gpu_utilization";
+  let jobCurveRequest = 0;
+  let jobMetric: ChartMetric = "avg_gpu_utilization";
   let jobResolution: JobResolution = "auto";
   const selectedJobGpuUuids = new Set<string>();
   let jobChartExpanded = false;
@@ -314,7 +353,13 @@ export function createAnalyticsController({
       return true;
     }
     if (action === "job-metric" && target.dataset.metric) {
-      jobMetric = target.dataset.metric as NodeMetric;
+      const previousKind = isPerformanceMetric(jobMetric);
+      jobMetric = target.dataset.metric as ChartMetric;
+      if (previousKind !== isPerformanceMetric(jobMetric)) {
+        jobCurvePayload = null;
+        jobCurveKey = "";
+        void fetchJobCurve(selectedJobKey);
+      }
       renderJobs();
       return true;
     }
@@ -514,29 +559,42 @@ export function createAnalyticsController({
   }
 
   async function fetchJobCurve(key: string) {
-    const curveKey = `${key}:${jobResolution}`;
-    if (!key || jobCurveLoading || jobCurveKey === curveKey) {
+    const performance = isPerformanceMetric(jobMetric);
+    const curveKey = `${key}:${jobResolution}:${performance ? "performance" : "base"}`;
+    if (!key || jobCurveKey === curveKey) {
       return;
     }
+    const request = ++jobCurveRequest;
     jobCurveLoading = true;
     renderJobs();
     try {
       const params = new URLSearchParams({ resolution: jobResolution });
-      const response = await fetch(`/api/highres/jobs/${encodeURIComponent(key)}/gpu?${params.toString()}`, {
+      if (performance) {
+        params.set("metrics", PERFORMANCE_METRICS.map((item) => item.key).join(","));
+      }
+      const endpoint = performance ? "performance" : "gpu";
+      const response = await fetch(`/api/highres/jobs/${encodeURIComponent(key)}/${endpoint}?${params.toString()}`, {
         cache: "no-store",
       });
       if (!response.ok) {
         throw new Error(`job curve failed: ${response.status}`);
       }
-      jobCurvePayload = (await response.json()) as JobCurve;
-      jobCurveKey = curveKey;
+      const nextPayload = (await response.json()) as JobCurve | PerformanceJobCurve;
+      if (request === jobCurveRequest) {
+        jobCurvePayload = performance ? normalizePerformanceJobCurve(nextPayload as PerformanceJobCurve) : nextPayload as JobCurve;
+        jobCurveKey = curveKey;
+      }
     } catch {
-      jobCurvePayload = { enabled: false, series: [] };
-      jobCurveKey = curveKey;
+      if (request === jobCurveRequest) {
+        jobCurvePayload = { enabled: false, series: [] };
+        jobCurveKey = curveKey;
+      }
     } finally {
-      jobCurveLoading = false;
-      renderJobs();
-      renderIcons();
+      if (request === jobCurveRequest) {
+        jobCurveLoading = false;
+        renderJobs();
+        renderIcons();
+      }
     }
   }
 
@@ -833,7 +891,7 @@ export function createAnalyticsController({
     `;
   }
 
-  function jobLineChart(series: JobCurveSeries[], metric: NodeMetric) {
+  function jobLineChart(series: JobCurveSeries[], metric: ChartMetric) {
     const hasPoints = selectedJobSeries(series).some((item) => item.points.length);
     return `
       <div class="chart-wrap job-chart-wrap">
@@ -850,7 +908,7 @@ export function createAnalyticsController({
     `;
   }
 
-  function mountJobChart(series: JobCurveSeries[], metric: NodeMetric) {
+  function mountJobChart(series: JobCurveSeries[], metric: ChartMetric) {
     const inline = mountMetricChart({
       target: jobElement.querySelector<HTMLElement>("[data-job-chart]"),
       series,
@@ -916,7 +974,7 @@ export function createAnalyticsController({
     `;
   }
 
-  function expandedJobChart(series: JobCurveSeries[], metric: NodeMetric) {
+  function expandedJobChart(series: JobCurveSeries[], metric: ChartMetric) {
     return `
       <div class="chart-modal-backdrop" role="presentation">
         <section class="chart-modal" role="dialog" aria-modal="true" aria-label="${escapeAttr(metricLabel(metric))} job curve expanded">
@@ -1076,10 +1134,11 @@ export function createAnalyticsController({
   };
 }
 
-function metricButtonsForAction(selected: NodeMetric, action: string) {
+function metricButtonsForAction(selected: ChartMetric, action: string) {
+  const metrics = action === "job-metric" ? JOB_METRICS : NODE_METRICS;
   return `
-    <div class="segmented metric-tabs" role="group">
-      ${NODE_METRICS.map(
+    <div class="segmented metric-tabs ${action === "job-metric" ? "job-metric-tabs" : ""}" role="group">
+      ${metrics.map(
         (metric) => `
           <button
             class="${metric.key === selected ? "is-active" : ""}"
@@ -1125,9 +1184,9 @@ function mountMetricChart<T extends { points: P[] }, P>({
 }: {
   target: HTMLElement | null;
   series: T[];
-  metric: NodeMetric;
-  alignedData: (series: T[], metric: NodeMetric) => { starts: number[]; data: uPlot.AlignedData };
-  valueAt: (point: P, metric: NodeMetric) => number;
+  metric: ChartMetric;
+  alignedData: (series: T[], metric: ChartMetric) => { starts: number[]; data: uPlot.AlignedData };
+  valueAt: (point: P, metric: ChartMetric) => number | null;
   labels: (item: T, index: number) => string;
   show?: (item: T) => boolean;
   height: number;
@@ -1141,10 +1200,11 @@ function mountMetricChart<T extends { points: P[] }, P>({
   if (!chartData.starts.length) {
     return null;
   }
-  const metricDef = NODE_METRICS.find((item) => item.key === metric) || NODE_METRICS[0];
+  const metricDef = JOB_METRICS.find((item) => item.key === metric) || NODE_METRICS[0];
   const visibleValues = plotSeries
     .filter((item) => (show ? show(item) : true))
-    .flatMap((item) => item.points.map((point) => valueAt(point, metric)));
+    .flatMap((item) => item.points.map((point) => valueAt(point, metric)))
+    .filter((value): value is number => value !== null && Number.isFinite(value));
   const maxValue = metricDef.max || Math.max(1, ...visibleValues) * 1.08;
   const colors = chartColors();
   const resizeTarget = minPointWidth ? target.parentElement || target : target;
@@ -1500,15 +1560,15 @@ function heatmapCell(row: HourlyHeatRow, cell: HourlyHeatCell) {
   `;
 }
 
-function metricValue(point: AnalyticsPoint, metric: NodeMetric) {
-  return Number(point[metric] || 0);
+function metricValue(point: AnalyticsPoint, metric: ChartMetric) {
+  return isPerformanceMetric(metric) ? 0 : Number(point[metric] || 0);
 }
 
-function metricLabel(metric: NodeMetric) {
-  return NODE_METRICS.find((item) => item.key === metric)?.label || "GPU";
+function metricLabel(metric: ChartMetric) {
+  return JOB_METRICS.find((item) => item.key === metric)?.label || "GPU";
 }
 
-function alignedChartData(series: AnalyticsSeries[], metric: NodeMetric) {
+function alignedChartData(series: AnalyticsSeries[], metric: ChartMetric) {
   const starts = Array.from(
     new Set(series.flatMap((item) => item.points.map((point) => point.bucket_start))),
   ).sort((a, b) => a - b);
@@ -1522,7 +1582,7 @@ function alignedChartData(series: AnalyticsSeries[], metric: NodeMetric) {
   return { starts, data };
 }
 
-function alignedJobChartData(series: JobCurveSeries[], metric: NodeMetric) {
+function alignedJobChartData(series: JobCurveSeries[], metric: ChartMetric) {
   const starts = Array.from(
     new Set(series.flatMap((item) => item.points.map((point) => point.bucket_start))),
   ).sort((a, b) => a - b);
@@ -1536,7 +1596,11 @@ function alignedJobChartData(series: JobCurveSeries[], metric: NodeMetric) {
   return { starts, data };
 }
 
-function jobMetricValue(point: JobPoint, metric: NodeMetric) {
+function jobMetricValue(point: JobPoint, metric: ChartMetric) {
+  if (isPerformanceMetric(metric)) {
+    const value = point.performance?.[metric];
+    return value === null || value === undefined ? null : Number(value);
+  }
   if (metric === "avg_gpu_utilization") {
     return Number(point.avg_gpu_utilization ?? point.utilization_gpu ?? 0);
   }
@@ -1547,6 +1611,48 @@ function jobMetricValue(point: JobPoint, metric: NodeMetric) {
     return Number(point.avg_power_watts ?? point.power_watts ?? 0);
   }
   return Number(point.avg_temperature_c ?? point.temperature_c ?? 0);
+}
+
+function isPerformanceMetric(metric: ChartMetric): metric is PerformanceMetric {
+  return metric.startsWith("nvidia.gpm.");
+}
+
+function normalizePerformanceJobCurve(payload: PerformanceJobCurve): JobCurve {
+  return {
+    ...payload,
+    series: (payload.series || []).map((item) => {
+      const starts = Array.from(
+        new Set(
+          PERFORMANCE_METRICS.flatMap((definition) =>
+            (item.metrics[definition.key]?.points || []).map((point) => point[0]),
+          ),
+        ),
+      ).sort((a, b) => a - b);
+      const values = new Map(
+        PERFORMANCE_METRICS.map((definition) => [
+          definition.key,
+          new Map(item.metrics[definition.key]?.points || []),
+        ]),
+      );
+      return {
+        node_id: item.node_id,
+        gpu_uuid: item.gpu_uuid,
+        gpu_index: item.gpu_index,
+        gpu_name: item.gpu_name ?? item.name ?? null,
+        label: item.label || `GPU${item.gpu_index ?? "?"}`,
+        points: starts.map((bucket_start) => ({
+          bucket_start,
+          sampled_at: bucket_start,
+          performance: Object.fromEntries(
+            PERFORMANCE_METRICS.map((definition) => [
+              definition.key,
+              values.get(definition.key)?.get(bucket_start) ?? null,
+            ]),
+          ) as Partial<Record<PerformanceMetric, number | null>>,
+        })),
+      };
+    }),
+  };
 }
 
 function chartCss() {
@@ -1596,7 +1702,7 @@ function chartMaxXAxisLabels(width: number) {
   return Math.max(2, Math.floor(width / chartAxisSpace()));
 }
 
-function chartYAxisSize(metric: NodeMetric) {
+function chartYAxisSize(metric: ChartMetric) {
   if (metric === "avg_memory_used_mb") {
     return 82;
   }
@@ -1611,11 +1717,11 @@ function sparseAxisLabels<T>(ticks: T[], maxLabels: number, format: (value: T) =
   return ticks.map((value, index) => (index === 0 || index === ticks.length - 1 || index % step === 0 ? format(value) : ""));
 }
 
-function formatMetricTick(value: number, metric: NodeMetric) {
+function formatMetricTick(value: number, metric: ChartMetric) {
   if (metric === "avg_memory_used_mb") {
     return fmtGiB(value);
   }
-  if (metric === "avg_gpu_utilization") {
+  if (metric === "avg_gpu_utilization" || isPerformanceMetric(metric)) {
     return fmtPct(value);
   }
   if (metric === "avg_power_watts") {

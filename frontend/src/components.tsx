@@ -141,6 +141,7 @@ export function RefreshControl({
 export function Nav({ snapshot, route }: { snapshot: ClusterSnapshot | null; route: Route }) {
   const overviewActive = route.kind === "overview";
   const jobsActive = route.kind === "jobs";
+  const performanceActive = route.kind === "performance";
   return (
     <nav class="top-nav" aria-label="Primary navigation">
       <div class="nav-row nav-row-primary">
@@ -151,6 +152,10 @@ export function Nav({ snapshot, route }: { snapshot: ClusterSnapshot | null; rou
         <a class={`nav-link ${jobsActive ? "is-active" : ""}`} aria-current={jobsActive ? "page" : undefined} href="/jobs">
           <Icon name="line-chart" />
           <span>Jobs</span>
+        </a>
+        <a class={`nav-link ${performanceActive ? "is-active" : ""}`} aria-current={performanceActive ? "page" : undefined} href="/performance">
+          <Icon name="activity" />
+          <span>Performance</span>
         </a>
       </div>
       <div class="nav-row nav-row-nodes" aria-label="Nodes">
@@ -466,6 +471,7 @@ export function GpuCard({
     .join(" / ");
   const smClock = gpu.clock_sm_mhz ? `SM ${gpu.clock_sm_mhz} MHz` : "SM clock n/a";
   const memClock = gpu.clock_mem_mhz ? `MEM ${gpu.clock_mem_mhz} MHz` : "MEM clock n/a";
+  const gpm = gpu.performance?.profile === "nvidia.gpm.v1" ? gpu.performance : null;
   return (
     <article class="gpu-card">
       <div class="gpu-head">
@@ -480,6 +486,7 @@ export function GpuCard({
       </div>
 
       <div class="spark-wrap">
+        <span class="spark-label">GPU Active</span>
         <Sparkline values={history.gpu || []} color="var(--accent)" max={100} />
       </div>
 
@@ -499,25 +506,47 @@ export function GpuCard({
         />
       </div>
 
-      <div class="mini-stats">
-        <span>
-          <Icon name="gauge" />
-          {fmtPct(gpu.utilization_mem)} mem util
-        </span>
-        <span>
-          <Icon name="clock-3" />
-          {smClock}
-        </span>
-        <span>
-          <Icon name="server" />
-          {node.status} / {fmtLatency(node)}
-        </span>
-        <span>
-          <Icon name="cpu" />
-          {memClock}
-        </span>
-      </div>
+      {gpm ? (
+        <a
+          class={`performance-stats is-${gpm.status}`}
+          href={`/performance?node=${encodeURIComponent(node.node_id)}&gpu=${encodeURIComponent(gpu.uuid)}`}
+          aria-label={`Open GPU ${gpu.index} performance details`}
+        >
+          <PerformanceStat label="SM Active" value={gpm.metrics["nvidia.gpm.sm_active"]} status={gpm.status} />
+          <PerformanceStat label="Occupancy" value={gpm.metrics["nvidia.gpm.sm_occupancy"]} status={gpm.status} />
+          <PerformanceStat label="Tensor" value={gpm.metrics["nvidia.gpm.tensor_active"]} status={gpm.status} />
+          <PerformanceStat label="DRAM BW" value={gpm.metrics["nvidia.gpm.dram_bw_active"]} status={gpm.status} />
+        </a>
+      ) : (
+        <div class="mini-stats">
+          <span>
+            <Icon name="gauge" />
+            {fmtPct(gpu.utilization_mem)} mem util
+          </span>
+          <span>
+            <Icon name="clock-3" />
+            {smClock}
+          </span>
+          <span>
+            <Icon name="server" />
+            {node.status} / {fmtLatency(node)}
+          </span>
+          <span>
+            <Icon name="cpu" />
+            {memClock}
+          </span>
+        </div>
+      )}
     </article>
+  );
+}
+
+function PerformanceStat({ label, value, status }: { label: string; value?: number; status: string }) {
+  return (
+    <span>
+      <small>{label}</small>
+      <strong>{status === "available" && Number.isFinite(value) ? fmtPct(value || 0) : status}</strong>
+    </span>
   );
 }
 
