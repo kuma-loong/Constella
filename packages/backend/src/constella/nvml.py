@@ -10,6 +10,7 @@ import time
 
 from . import nvidia_smi
 from .nvml_gpm import NvidiaGpmProvider
+from .performance import NVIDIA_GPM_PROFILE
 from .procfs import (
     process_cmdline,
     process_exe,
@@ -18,6 +19,7 @@ from .procfs import (
     process_start_time_seconds,
 )
 from .schema import (
+    AcceleratorPerformance,
     GpuHardwareInfo,
     GpuInfo,
     GpuProcess,
@@ -344,7 +346,10 @@ class NVMLSampler:
         if self._closed:
             return
         self._closed = True
-        self._gpm.close()
+        try:
+            self._gpm.close()
+        except Exception:
+            pass
         try:
             self._lib.nvmlShutdown()
         except Exception:
@@ -458,13 +463,29 @@ class NVMLSampler:
         gpu.compute_mode = COMPUTE_MODE_MAP.get(compute_mode) if compute_mode is not None else None
         gpu.ecc_mode = self._ecc_mode(handle)
         gpu.mig_mode = self._mig_mode(handle)
-        gpu.performance = self._gpm.sample(index, handle, sampled_at=sampled_at)
+        gpu.performance = self._sample_performance(index, handle, sampled_at)
         if collect_processes:
             gpu.processes, gpu.other_users = self._processes(handle, gpu.uuid, process_cache)
             self._process_snapshot[gpu.uuid] = (gpu.processes, gpu.other_users)
         else:
             gpu.processes, gpu.other_users = self._process_snapshot.get(gpu.uuid, ([], []))
         return gpu
+
+    def _sample_performance(
+        self,
+        index: int,
+        handle: ctypes.c_void_p,
+        sampled_at: float,
+    ) -> AcceleratorPerformance:
+        try:
+            return self._gpm.sample(index, handle, sampled_at=sampled_at)
+        except Exception as exc:
+            return AcceleratorPerformance(
+                profile=NVIDIA_GPM_PROFILE,
+                status="error",
+                sampled_at=sampled_at,
+                error=f"GPM sample failed: {exc}",
+            )
 
     def _system_string(self, func_name: str) -> str | None:
         buf = ctypes.create_string_buffer(NVML_SYSTEM_BUFFER_SIZE)

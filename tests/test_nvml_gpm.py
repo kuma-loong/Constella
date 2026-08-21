@@ -26,6 +26,7 @@ class FakeGpmLibrary:
         self.next_sample = 100
         self.freed: list[int] = []
         self.sample_get_calls = 0
+        self.sample_rc = 0
         self.nvmlGpmQueryDeviceSupport = FakeFunction(
             lambda _handle, ptr: self._support(ptr, supported)
         )
@@ -50,7 +51,7 @@ class FakeGpmLibrary:
 
     def _sample(self, _handle: ctypes.c_void_p, _sample: ctypes.c_void_p) -> int:
         self.sample_get_calls += 1
-        return 0
+        return self.sample_rc
 
     @staticmethod
     def _metrics(ptr: Any) -> int:
@@ -88,6 +89,40 @@ def test_gpm_provider_reports_unsupported_without_allocating() -> None:
     assert result.status == "unsupported"
     assert lib.sample_get_calls == 0
     assert lib.freed == []
+
+
+def test_gpm_provider_waits_for_minimum_sample_interval() -> None:
+    lib = FakeGpmLibrary()
+    provider = NvidiaGpmProvider(lib)
+
+    first = provider.sample(0, ctypes.c_void_p(1), sampled_at=10.0, monotonic_at=1.0)
+    early = provider.sample(0, ctypes.c_void_p(1), sampled_at=10.05, monotonic_at=1.05)
+    ready = provider.sample(0, ctypes.c_void_p(1), sampled_at=10.2, monotonic_at=1.2)
+
+    assert first.status == "warming"
+    assert early.status == "warming"
+    assert early.interval_ms == 50.0
+    assert ready.status == "available"
+    assert ready.interval_ms == 200.0
+    assert lib.sample_get_calls == 3
+
+
+def test_gpm_provider_circuit_breaker_retries_after_cooldown() -> None:
+    lib = FakeGpmLibrary()
+    lib.sample_rc = 1
+    provider = NvidiaGpmProvider(lib, retry_seconds=10.0)
+
+    for now in (1.0, 2.0, 3.0):
+        assert provider.sample(0, ctypes.c_void_p(1), sampled_at=now, monotonic_at=now).status == "error"
+    pending = provider.sample(0, ctypes.c_void_p(1), sampled_at=4.0, monotonic_at=4.0)
+    assert pending.status == "error"
+    assert pending.error == "GPM retry pending"
+    assert lib.sample_get_calls == 3
+
+    lib.sample_rc = 0
+    retried = provider.sample(0, ctypes.c_void_p(1), sampled_at=13.0, monotonic_at=13.0)
+    assert retried.status == "warming"
+    assert lib.sample_get_calls == 4
 
 
 def test_gpm_provider_without_symbols_is_isolated() -> None:

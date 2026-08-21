@@ -202,3 +202,15 @@ def test_cluster_state_preserves_declared_and_unknown_performance_profiles() -> 
     assert node.performance_profiles == ["future.vendor.v1", "nvidia.gpm.v1"]
     assert node.gpus[0].performance is not None
     assert node.gpus[0].performance.metrics["nvidia.gpm.sm_active"] == 42.5
+
+
+def test_cluster_state_accepts_legacy_agent_without_performance_profiles() -> None:
+    state = ClusterState(local_node_id="manager")
+    hello = AgentHello(node_id="legacy-node", hostname="legacy-host", capabilities={})
+
+    state.register_hello(hello, now=10.0)
+    state.ingest_sample(sample_message("legacy-node", 1), received_at=11.0)
+
+    node = state.snapshot(now=11.0).nodes[0]
+    assert node.performance_profiles == []
+    assert node.gpus[0].performance is None

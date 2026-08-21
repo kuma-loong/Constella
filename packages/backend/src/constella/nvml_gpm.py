@@ -73,7 +73,10 @@ class NvidiaGpmProvider:
         self._lib = lib
         self._retry_seconds = retry_seconds
         self._states: dict[int, _DeviceState] = {}
-        self._available = nvidia_gpm_enabled() and self._setup_functions()
+        try:
+            self._available = nvidia_gpm_enabled() and self._setup_functions()
+        except Exception:
+            self._available = False
 
     @property
     def available(self) -> bool:
@@ -116,15 +119,22 @@ class NvidiaGpmProvider:
                 raise RuntimeError(f"nvmlGpmSampleGet failed with code {rc}")
 
             previous_at = state.previous_at
-            state.previous_at = now
             if previous_at is None:
+                state.previous_at = now
                 state.current = 1 - state.current
                 state.errors = 0
                 return self._result("warming", sampled_at=sampled_at)
 
             previous = state.samples[1 - state.current]
             interval_ms = max(0.0, (now - previous_at) * 1000.0)
+            if interval_ms < 100.0:
+                return self._result(
+                    "warming",
+                    sampled_at=sampled_at,
+                    interval_ms=round(interval_ms, 1),
+                )
             metrics = self._metrics(previous, target)
+            state.previous_at = now
             state.current = 1 - state.current
             state.errors = 0
             if not metrics:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from constella.collector import ALLOWED_REFRESH_INTERVALS, SnapshotCollector
-from constella.schema import Snapshot
+from constella.schema import GpuInfo, Snapshot
 
 
 def test_collector_accepts_allowed_refresh_intervals() -> None:
@@ -87,3 +87,29 @@ def test_nvidia_collector_does_not_fall_back_to_npu(monkeypatch: pytest.MonkeyPa
     snapshot = SnapshotCollector(device_type="nvidia")._sample_once()
     assert not snapshot.ok
     assert "npu-smi" not in (snapshot.error or "")
+
+
+def test_nvidia_collector_keeps_base_fallback_when_nvml_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingNvml:
+        def __init__(self, **_: object) -> None:
+            raise RuntimeError("no NVML")
+
+    expected = Snapshot(
+        ok=True,
+        source="nvidia-smi",
+        hostname="gpu-node",
+        timestamp=1.0,
+        elapsed_ms=1.0,
+        gpus=[GpuInfo(index=0, uuid="GPU-0", utilization_gpu=42)],
+    )
+
+    monkeypatch.setattr("constella.collector.NVMLSampler", FailingNvml)
+    monkeypatch.setattr("constella.collector.nvidia_smi.sample", lambda **_: expected)
+
+    snapshot = SnapshotCollector(device_type="nvidia")._sample_once()
+
+    assert snapshot is expected
+    assert snapshot.gpus[0].utilization_gpu == 42
+    assert snapshot.gpus[0].performance is None
