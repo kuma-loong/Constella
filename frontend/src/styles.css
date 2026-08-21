@@ -1316,7 +1316,7 @@ a:focus-visible {
 
 .performance-plot {
   width: calc(100% - 24px);
-  min-height: 238px;
+  min-height: 300px;
   margin: 4px 12px 0;
   overflow: hidden;
 }

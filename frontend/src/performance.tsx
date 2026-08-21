@@ -16,6 +16,7 @@ const COLORS = [
   "--chart-8",
 ];
 const COLLAPSE_KEY = "constella.performance.collapsed";
+const CHART_HEIGHT = 300;
 
 type MetricDefinition = { id: string; label: string; description: string };
 type MetricGroup = { id: string; label: string; metrics: MetricDefinition[] };
@@ -427,7 +428,7 @@ function PerformanceChart({
     const chart = new uPlot(
       {
         width: Math.max(320, target.clientWidth),
-        height: 238,
+        height: CHART_HEIGHT,
         padding: [8, 8, 0, 0],
         scales: { x: { time: true }, y: { range: [0, 100] } },
         axes: [
@@ -489,7 +490,7 @@ function PerformanceChart({
     );
     chartRef.current = chart;
     const resize = new ResizeObserver(([entry]) => {
-      chart.setSize({ width: Math.max(320, Math.floor(entry.contentRect.width)), height: 238 });
+      chart.setSize({ width: Math.max(320, Math.floor(entry.contentRect.width)), height: CHART_HEIGHT });
     });
     resize.observe(target);
     resizeRef.current = resize;
