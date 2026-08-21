@@ -221,8 +221,9 @@ def _downsample_minmax(
 ) -> list[list[float | None]]:
     if len(timeline) <= max_points:
         return [[sampled_at, value] for sampled_at, value in timeline]
-    bucket_size = max(1, math.ceil(len(timeline) / max(1, max_points // 2)))
-    points: list[tuple[float, float | None]] = []
+    bucket_count = max(1, (max_points - 2) // 3)
+    bucket_size = max(1, math.ceil(len(timeline) / bucket_count))
+    points: list[tuple[float, float | None]] = [timeline[0], timeline[-1]]
     for start in range(0, len(timeline), bucket_size):
         bucket = timeline[start : start + bucket_size]
         valid = [item for item in bucket if item[1] is not None]
@@ -235,5 +236,5 @@ def _downsample_minmax(
         if len(valid) != len(bucket):
             missing = next(item for item in bucket if item[1] is None)
             points.append(missing)
-    points.sort(key=lambda item: item[0])
-    return [[sampled_at, value] for sampled_at, value in points[:max_points]]
+    unique = sorted(set(points), key=lambda item: item[0])
+    return [[sampled_at, value] for sampled_at, value in unique]

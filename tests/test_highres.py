@@ -201,6 +201,39 @@ def test_performance_status_reports_preallocated_memory() -> None:
     assert status["allocated_bytes"] == 370
 
 
+def test_performance_downsampling_keeps_tail_peaks_and_gaps() -> None:
+    cache = HighresGpuCache(retention_seconds=60.0, min_interval_seconds=1.0)
+    for sampled_at in range(1, 31):
+        snapshot = make_node_snapshot(float(sampled_at))
+        available = sampled_at % 3 != 0
+        snapshot.gpus[0].performance = AcceleratorPerformance(
+            profile="nvidia.gpm.v1",
+            status="available" if available else "error",
+            sampled_at=float(sampled_at),
+            metrics={"nvidia.gpm.sm_active": 99.0 if sampled_at == 29 else float(sampled_at)}
+            if available
+            else {},
+        )
+        cache.add_snapshot(snapshot)
+
+    payload = performance_curves(
+        cache,
+        node_id="node-a",
+        metrics=["nvidia.gpm.sm_active"],
+        since=1.0,
+        until=30.0,
+        max_points=10,
+        now=30.0,
+    )
+    points = payload["series"][0]["metrics"]["nvidia.gpm.sm_active"]["points"]
+
+    assert len(points) <= 10
+    assert points[0] == [1.0, 1.0]
+    assert points[-1] == [30.0, None]
+    assert [29.0, 99.0] in points
+    assert any(value is None for _, value in points)
+
+
 def test_highres_stream_payload_only_adds_declared_performance_profile() -> None:
     snapshot = make_node_snapshot(10.0)
     assert "performance" not in gpu_sample_message(snapshot)["gpus"][0]
