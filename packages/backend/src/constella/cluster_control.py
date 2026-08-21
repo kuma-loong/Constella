@@ -20,7 +20,9 @@ AGENT_RUNTIME_MODULES = (
     "dcmi.py",
     "npu.py",
     "nvml.py",
+    "nvml_gpm.py",
     "nvidia_smi.py",
+    "performance.py",
     "procfs.py",
     "schema.py",
 )

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 from constella.cluster_control import (
@@ -147,6 +149,23 @@ def test_prepare_agent_runtime_contains_only_agent_modules(tmp_path) -> None:
     assert not (runtime / "constella" / "app.py").exists()
     assert not (runtime / "constella" / "cli.py").exists()
     assert not list(runtime.rglob("*.so"))
+
+
+def test_prepared_agent_runtime_imports_entrypoint(tmp_path) -> None:
+    project_root = Path(__file__).resolve().parents[1] / "packages" / "backend"
+    runtime = prepare_agent_runtime(project_root, build_root=tmp_path)
+    env = {**os.environ, "PYTHONPATH": str(runtime)}
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import constella.agent_main"],
+        cwd=runtime,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_ssh_command_includes_user_and_port() -> None:
