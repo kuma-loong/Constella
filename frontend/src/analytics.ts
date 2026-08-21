@@ -352,17 +352,6 @@ export function createAnalyticsController({
       void fetchJobCurve(selectedJobKey);
       return true;
     }
-    if (action === "job-metric" && target.dataset.metric) {
-      const previousKind = isPerformanceMetric(jobMetric);
-      jobMetric = target.dataset.metric as ChartMetric;
-      if (previousKind !== isPerformanceMetric(jobMetric)) {
-        jobCurvePayload = null;
-        jobCurveKey = "";
-        void fetchJobCurve(selectedJobKey);
-      }
-      renderJobs();
-      return true;
-    }
     if (action === "job-resolution" && target.dataset.resolution) {
       jobResolution = normalizeJobResolution(target.dataset.resolution);
       jobCurvePayload = null;
@@ -400,6 +389,27 @@ export function createAnalyticsController({
       return true;
     }
     return false;
+  }
+
+  function handleChange(target: HTMLSelectElement) {
+    if (!target.matches("[data-job-metric]")) {
+      return false;
+    }
+    const nextMetric = target.value as ChartMetric;
+    if (!JOB_METRICS.some((item) => item.key === nextMetric) || nextMetric === jobMetric) {
+      return false;
+    }
+    const kindChanged = isPerformanceMetric(jobMetric) !== isPerformanceMetric(nextMetric);
+    jobMetric = nextMetric;
+    if (kindChanged) {
+      jobCurvePayload = null;
+      jobCurveKey = "";
+    }
+    renderJobs();
+    if (kindChanged && selectedJobKey) {
+      void fetchJobCurve(selectedJobKey);
+    }
+    return true;
   }
 
   function handleKeyDown(event: KeyboardEvent) {
@@ -681,7 +691,7 @@ export function createAnalyticsController({
             <input data-job-query type="search" value="${escapeAttr(jobQuery)}" placeholder="user, task, command, pid" />
           </label>
           <div class="job-toolbar-buttons">
-            ${metricButtonsForAction(jobMetric, "job-metric")}
+            ${jobMetricSelect(jobMetric)}
             <button class="icon-button" type="button" data-analytics-action="job-search" aria-label="Search jobs" title="Search jobs">
               <i data-lucide="search"></i>
             </button>
@@ -1124,6 +1134,7 @@ export function createAnalyticsController({
 
   return {
     handleClick,
+    handleChange,
     handleKeyDown,
     fetchOverview,
     fetchNode,
@@ -1135,10 +1146,9 @@ export function createAnalyticsController({
 }
 
 function metricButtonsForAction(selected: ChartMetric, action: string) {
-  const metrics = action === "job-metric" ? JOB_METRICS : NODE_METRICS;
   return `
-    <div class="segmented metric-tabs ${action === "job-metric" ? "job-metric-tabs" : ""}" role="group">
-      ${metrics.map(
+    <div class="segmented metric-tabs" role="group">
+      ${NODE_METRICS.map(
         (metric) => `
           <button
             class="${metric.key === selected ? "is-active" : ""}"
@@ -1150,6 +1160,21 @@ function metricButtonsForAction(selected: ChartMetric, action: string) {
         `,
       ).join("")}
     </div>
+  `;
+}
+
+function jobMetricSelect(selected: ChartMetric) {
+  const options = (metrics: readonly { key: ChartMetric; label: string }[]) => metrics.map(
+    (metric) => `<option value="${escapeAttr(metric.key)}"${metric.key === selected ? " selected" : ""}>${escapeHtml(metric.label)}</option>`,
+  ).join("");
+  return `
+    <label class="job-metric-select">
+      <span>Metric</span>
+      <select data-job-metric aria-label="Job curve metric">
+        <optgroup label="Base telemetry">${options(NODE_METRICS)}</optgroup>
+        <optgroup label="NVIDIA GPM">${options(PERFORMANCE_METRICS)}</optgroup>
+      </select>
+    </label>
   `;
 }
 

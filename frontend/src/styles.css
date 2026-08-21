@@ -1329,11 +1329,69 @@ a:focus-visible {
   font-size: 12px;
 }
 
+.performance-plot-wrap {
+  position: relative;
+  min-width: 0;
+}
+
 .performance-plot {
   width: calc(100% - 24px);
   min-height: 238px;
   margin: 4px 12px 0;
   overflow: hidden;
+}
+
+.performance-tooltip {
+  position: absolute;
+  z-index: 6;
+  display: grid;
+  gap: 7px;
+  min-width: 168px;
+  padding: 10px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  backdrop-filter: blur(10px);
+}
+
+.performance-tooltip[hidden] {
+  display: none;
+}
+
+.performance-tooltip > strong {
+  padding-bottom: 2px;
+  color: var(--text-soft);
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.performance-tooltip > span {
+  display: grid;
+  grid-template-columns: 7px 1fr auto;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+
+.performance-tooltip i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.performance-tooltip b,
+.performance-tooltip em {
+  font-style: normal;
+}
+
+.performance-tooltip em {
+  color: var(--text-soft);
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
+  font-weight: 720;
 }
 
 .performance-no-data {
@@ -1782,17 +1840,18 @@ svg {
 .job-search-actions {
   flex: 1 1 700px;
   display: grid;
-  grid-template-columns: minmax(340px, 680px) auto;
-  justify-content: center;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  justify-content: stretch;
   align-items: end;
   gap: 12px;
+  min-width: 0;
   flex-wrap: nowrap;
 }
 
 .job-search {
   display: grid;
   gap: 6px;
-  min-width: min(680px, 100%);
+  min-width: 0;
   color: var(--muted);
   font-size: 12px;
   font-weight: 760;
@@ -1823,10 +1882,39 @@ svg {
   min-width: 0;
 }
 
-.job-metric-tabs {
-  max-width: min(58vw, 720px);
-  overflow-x: auto;
-  scrollbar-width: thin;
+.job-metric-select {
+  display: grid;
+  grid-template-columns: auto minmax(148px, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 220px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.job-metric-select > span {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.job-metric-select select {
+  width: 100%;
+  height: 38px;
+  padding: 0 34px 0 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  color: var(--text);
+  background: var(--surface);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.job-metric-select select:focus-visible {
+  border-color: var(--accent);
+  box-shadow: var(--focus);
 }
 
 .job-feature-note {
@@ -2428,6 +2516,10 @@ svg {
   .job-toolbar-buttons {
     display: grid;
     grid-template-columns: 1fr auto auto;
+  }
+
+  .job-metric-select {
+    min-width: 0;
   }
 
   .segmented {

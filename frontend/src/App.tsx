@@ -342,8 +342,16 @@ export default function App() {
     }
   }
 
+  function handleAppChange(event: JSX.TargetedEvent<HTMLDivElement, Event>) {
+    const target = event.target as HTMLElement;
+    const select = target.closest("select[data-job-metric]") as HTMLSelectElement | null;
+    if (select) {
+      analyticsRef.current?.handleChange(select);
+    }
+  }
+
   return (
-    <div onClick={handleAppClick} onKeyDown={handleAppKeyDown}>
+    <div onClick={handleAppClick} onChange={handleAppChange} onKeyDown={handleAppKeyDown}>
       <Header
         snapshot={snapshot}
         route={route}

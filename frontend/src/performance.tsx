@@ -420,9 +420,15 @@ function PerformanceChart({
   onToggle: () => void;
 }) {
   const targetRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const hoveredRef = useRef(false);
   const chartRef = useRef<uPlot | null>(null);
   const resizeRef = useRef<ResizeObserver | null>(null);
   const aligned = useMemo(() => alignSeries(series, definition.id), [definition.id, series]);
+  const alignedRef = useRef(aligned);
+  const seriesRef = useRef(series);
+  alignedRef.current = aligned;
+  seriesRef.current = series;
 
   useEffect(() => {
     if (collapsed || !targetRef.current || aligned.timestamps.length === 0) {
@@ -445,6 +451,16 @@ function PerformanceChart({
           sync: { key: "constella-performance" },
         },
         hooks: {
+          setCursor: [
+            (plot) => updatePerformanceTooltip(
+              plot,
+              tooltipRef.current,
+              hoveredRef.current,
+              alignedRef.current,
+              seriesRef.current,
+              definition.id,
+            ),
+          ],
           setSelect: [
             (plot) => {
               if (plot.select.width < 4) {
@@ -480,6 +496,9 @@ function PerformanceChart({
     resizeRef.current = resize;
     return () => {
       resize.disconnect();
+      if (tooltipRef.current) {
+        tooltipRef.current.hidden = true;
+      }
       chart.destroy();
       chartRef.current = null;
     };
@@ -511,7 +530,22 @@ function PerformanceChart({
       </button>
       {!collapsed ? (
         <>
-          {aligned.timestamps.length ? <div ref={targetRef} class="performance-plot uplot-theme" /> : <div class="performance-no-data">No valid samples in this range</div>}
+          {aligned.timestamps.length ? (
+            <div class="performance-plot-wrap">
+              <div
+                ref={targetRef}
+                class="performance-plot uplot-theme"
+                onPointerEnter={() => { hoveredRef.current = true; }}
+                onPointerLeave={() => {
+                  hoveredRef.current = false;
+                  if (tooltipRef.current) {
+                    tooltipRef.current.hidden = true;
+                  }
+                }}
+              />
+              <div ref={tooltipRef} class="performance-tooltip" hidden />
+            </div>
+          ) : <div class="performance-no-data">No valid samples in this range</div>}
           <div class="performance-summary">
             {statsSeries.map((item, index) => {
               const summary = item.metrics[definition.id]?.summary;
@@ -544,6 +578,71 @@ function alignSeries(series: PerformanceSeries[], metric: string) {
   return { timestamps, data };
 }
 
+function updatePerformanceTooltip(
+  plot: uPlot,
+  tooltip: HTMLDivElement | null,
+  hovered: boolean,
+  aligned: ReturnType<typeof alignSeries>,
+  series: PerformanceSeries[],
+  metric: string,
+) {
+  if (!tooltip || !hovered) {
+    if (tooltip) {
+      tooltip.hidden = true;
+    }
+    return;
+  }
+  const index = plot.cursor.idx;
+  const cursorLeft = plot.cursor.left;
+  if (index == null || cursorLeft == null || cursorLeft < 0 || index >= aligned.timestamps.length) {
+    tooltip.hidden = true;
+    return;
+  }
+
+  const timestamp = document.createElement("strong");
+  timestamp.textContent = formatTooltipTime(aligned.timestamps[index]);
+  const rows = series.map((item, seriesIndex) => {
+    const row = document.createElement("span");
+    const dot = document.createElement("i");
+    dot.style.background = `var(${COLORS[seriesIndex % COLORS.length]})`;
+    const label = document.createElement("b");
+    label.textContent = `GPU${item.gpu_index}`;
+    const value = document.createElement("em");
+    const point = nearestPointValue(item.metrics[metric]?.points || [], aligned.timestamps[index]);
+    value.textContent = point == null ? "n/a" : fmtPct(Number(point));
+    row.append(dot, label, value);
+    return row;
+  });
+  tooltip.replaceChildren(timestamp, ...rows);
+  tooltip.hidden = false;
+
+  const targetLeft = cursorLeft + 24;
+  const maxLeft = Math.max(8, plot.width - tooltip.offsetWidth - 8);
+  tooltip.style.left = `${Math.max(8, Math.min(targetLeft, maxLeft))}px`;
+  const cursorTop = plot.cursor.top ?? 0;
+  const maxTop = Math.max(8, plot.height - tooltip.offsetHeight - 8);
+  tooltip.style.top = `${Math.max(8, Math.min(cursorTop + 20, maxTop))}px`;
+}
+
+function nearestPointValue(points: [number, number | null][], timestamp: number) {
+  if (!points.length) {
+    return null;
+  }
+  let low = 0;
+  let high = points.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (points[middle][0] < timestamp) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
+  }
+  const before = points[Math.max(0, low - 1)];
+  const after = points[Math.min(points.length - 1, low)];
+  return timestamp - before[0] <= after[0] - timestamp ? before[1] : after[1];
+}
+
 function toggleValue(values: Set<string>, value: string) {
   const next = new Set(values);
   next.has(value) ? next.delete(value) : next.add(value);
@@ -570,6 +669,17 @@ function readGpuSelection(nodeId: string): string[] {
 
 function formatClock(timestamp: number) {
   return new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(timestamp * 1000);
+}
+
+function formatTooltipTime(timestamp: number) {
+  return new Intl.DateTimeFormat("en-GB", {
+    month: "short",
+    day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",

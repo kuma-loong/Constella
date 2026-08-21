@@ -94,6 +94,8 @@ SM Active 仅作为性能区指标，用于解释 GPU 活跃时计算资源的�
 
 ## Highres Performance 页面
 
+图表悬停时使用共享十字线和浮层同步展示采样时间及各 GPU 的精确值；拖拽选择仍用于计算选定时间段的均值、峰值、P95 和覆盖率，两种交互互不冲突。
+
 新增 `/performance` 页面，以分类平铺的方式同时展示多张曲线：
 
 - Compute：SM Active、SM Occupancy、Tensor Active
