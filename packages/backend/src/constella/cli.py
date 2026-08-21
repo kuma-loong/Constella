@@ -338,13 +338,17 @@ def main(argv: list[str] | None = None) -> None:
                 for key, value in result.items():
                     print(f"{key}: {value}")
             elif args.db_command == "rollup":
-                count = store.rollup_gpu_metric_rollups(
+                gpu_count = store.rollup_gpu_metric_rollups(
+                    from_bucket_seconds=args.from_bucket_seconds,
+                    to_bucket_seconds=args.to_bucket_seconds,
+                )
+                performance_count = store.rollup_nvidia_gpm_rollups(
                     from_bucket_seconds=args.from_bucket_seconds,
                     to_bucket_seconds=args.to_bucket_seconds,
                 )
                 print(
                     "rolled up "
-                    f"{count} GPU buckets "
+                    f"{gpu_count} GPU buckets and {performance_count} NVIDIA GPM buckets "
                     f"{args.from_bucket_seconds}s -> {args.to_bucket_seconds}s"
                 )
             elif args.db_command == "migrate-samples":

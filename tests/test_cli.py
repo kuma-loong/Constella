@@ -3,6 +3,9 @@ from __future__ import annotations
 import pytest
 
 from constella import cli
+from constella.db import SQLiteStore
+from constella.performance_rollup import NvidiaGpmRollupBucket
+from constella.schema import AcceleratorPerformance
 
 
 def test_serve_configures_graceful_shutdown_timeout(monkeypatch) -> None:
@@ -72,3 +75,40 @@ def test_tui_command_starts_textual_app(monkeypatch) -> None:
 def test_tui_command_rejects_invalid_reconnect_delay(delay: str) -> None:
     with pytest.raises(SystemExit):
         cli.main(["tui", "--reconnect-delay", delay])
+
+
+def test_db_rollup_includes_nvidia_gpm(tmp_path, capsys) -> None:
+    path = tmp_path / "constella.db"
+    store = SQLiteStore(path)
+    store.open()
+    bucket = NvidiaGpmRollupBucket(
+        bucket_start=20.0,
+        node_id="node-a",
+        gpu_uuid="GPU-0",
+    )
+    bucket.add(
+        AcceleratorPerformance(
+            profile="nvidia.gpm.v1",
+            status="available",
+            sampled_at=21.0,
+            interval_ms=1000.0,
+            metrics={"nvidia.gpm.sm_active": 42.0},
+        )
+    )
+    store.upsert_nvidia_gpm_rollups([bucket.to_row(20)])
+    store.close()
+
+    cli.main(
+        [
+            "db",
+            "rollup",
+            "--path",
+            str(path),
+            "--from-bucket-seconds",
+            "20",
+            "--to-bucket-seconds",
+            "120",
+        ]
+    )
+
+    assert "1 NVIDIA GPM buckets" in capsys.readouterr().out
