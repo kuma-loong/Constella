@@ -1311,23 +1311,28 @@ a:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  min-height: 48px;
-  padding: 9px 13px;
+  min-height: 58px;
+  padding: 12px 14px;
 }
 
 .performance-chart-head > span {
   display: grid;
-  gap: 2px;
+  gap: 4px;
 }
 
 .performance-chart-head strong {
-  font-size: 13px;
+  font-size: 15px;
+}
+
+.performance-chart-head small,
+.performance-chart-head em {
+  font-size: 12px;
 }
 
 .performance-plot {
-  width: calc(100% - 20px);
+  width: calc(100% - 24px);
   min-height: 238px;
-  margin: 0 10px;
+  margin: 4px 12px 0;
   overflow: hidden;
 }
 
@@ -1343,18 +1348,18 @@ a:focus-visible {
 
 .performance-summary {
   display: grid;
-  gap: 4px;
-  padding: 8px 13px 12px;
+  gap: 7px;
+  padding: 13px 14px 17px;
 }
 
 .performance-summary > span {
   display: grid;
-  grid-template-columns: 7px 44px minmax(0, 1fr);
+  grid-template-columns: 8px 48px minmax(0, 1fr);
   align-items: center;
   gap: 7px;
   min-width: 0;
   color: var(--text-soft);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .performance-summary b {
@@ -1366,6 +1371,7 @@ a:focus-visible {
 .performance-summary small {
   overflow: hidden;
   color: var(--muted);
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
