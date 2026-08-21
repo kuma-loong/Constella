@@ -17,6 +17,7 @@ const COLORS = [
 ];
 const COLLAPSE_KEY = "constella.performance.collapsed";
 const CHART_HEIGHT = 300;
+const POINTS_PER_SERIES = 1000;
 
 type MetricDefinition = { id: string; label: string; description: string };
 type MetricGroup = { id: string; label: string; metrics: MetricDefinition[] };
@@ -113,10 +114,6 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
     [collapsed],
   );
   const metricQuery = requestedMetrics.join(",");
-  const maxPoints = Math.max(
-    250,
-    Math.min(1500, Math.floor(24000 / Math.max(1, gpuUuids.size * requestedMetrics.length))),
-  );
   const liveRefreshMs = rangeSeconds <= 15 * 60 ? 2000 : rangeSeconds <= 60 * 60 ? 5000 : 10000;
 
   useEffect(() => {
@@ -173,7 +170,7 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
       metrics: metricQuery,
       since: String(until - rangeSeconds),
       until: String(until),
-      max_points: String(maxPoints),
+      max_points: String(POINTS_PER_SERIES),
     });
     setLoading(true);
     try {
@@ -199,7 +196,7 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
         setLoading(false);
       }
     }
-  }, [gpuUuids, maxPoints, metricQuery, rangeSeconds, selectedNodeCapable, selectedNodeId, visible]);
+  }, [gpuUuids, metricQuery, rangeSeconds, selectedNodeCapable, selectedNodeId, visible]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -436,6 +433,7 @@ function PerformanceChart({
             stroke: css.getPropertyValue("--chart-axis").trim(),
             grid: { stroke: css.getPropertyValue("--chart-grid").trim() },
             splits: fixedTimeSplits,
+            values: (_plot, values) => values.map((value) => formatClock(Number(value))),
           },
           {
             stroke: css.getPropertyValue("--chart-axis").trim(),
@@ -478,8 +476,9 @@ function PerformanceChart({
           ...series.map((item, index) => ({
             label: `GPU${item.gpu_index}`,
             stroke: css.getPropertyValue(COLORS[index % COLORS.length]).trim(),
-            width: 2,
+            width: 1.6,
             spanGaps: false,
+            paths: uPlot.paths.spline?.(),
             points: { show: false },
             value: (_plot: uPlot, value: number | null | undefined) => value == null ? "n/a" : fmtPct(value),
           })),
@@ -572,9 +571,27 @@ function alignSeries(series: PerformanceSeries[], metric: string) {
   ).sort((a, b) => a - b);
   const data: uPlot.AlignedData = [
     timestamps,
-    ...series.map((item) => interpolatePoints(item.metrics[metric]?.points || [], timestamps)),
+    ...series.map((item) => interpolatePoints(smoothPoints(item.metrics[metric]?.points || []), timestamps)),
   ];
   return { timestamps, data };
+}
+
+function smoothPoints(points: [number, number | null][]): [number, number | null][] {
+  const weights = [1, 2, 3, 2, 1];
+  return points.map((point, index) => {
+    if (index < 2 || index >= points.length - 2) {
+      return point;
+    }
+    const window = points.slice(index - 2, index + 3);
+    if (window.some(([, value]) => value == null)) {
+      return point;
+    }
+    const value = window.reduce(
+      (sum, [, sample], weightIndex) => sum + Number(sample) * weights[weightIndex],
+      0,
+    ) / 9;
+    return [point[0], value];
+  });
 }
 
 function fixedTimeSplits(plot: uPlot, _axisIndex: number, min: number, max: number) {
