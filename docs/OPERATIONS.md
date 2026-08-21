@@ -152,6 +152,23 @@ curl -s http://127.0.0.1:8765/api/analytics/node/<node_id>
 http://127.0.0.1:8765/jobs
 ```
 
+支持 NVML GPM 的 NVIDIA 节点还会提供性能分析页面：
+
+```text
+http://127.0.0.1:8765/performance
+```
+
+默认自动探测 GPM。需要排障或控制存储时可分别关闭采集和持久化：
+
+```bash
+CONSTELLA_NVML_GPM=off ./scripts/service/start.sh
+CONSTELLA_NVIDIA_GPM_HIGHRES=off ./scripts/service/start.sh
+CONSTELLA_NVIDIA_GPM_ROLLUP=off DB_PATH=run/constella.db ./scripts/service/start.sh
+```
+
+三个开关均只影响 NVIDIA GPM 能力，不影响基础 NVML、`nvidia-smi` 回退或
+Ascend DCMI/`npu-smi` 路径。
+
 如需使用独立高精度 sidecar，在启动服务时启用：
 
 ```bash

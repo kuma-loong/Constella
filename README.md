@@ -30,7 +30,7 @@
 
 Constella is a lightweight accelerator monitoring platform for labs, AI teams,
 and personal compute servers. It natively supports heterogeneous clusters;
-version 0.1.2 supports NVIDIA GPUs and Ascend NPUs.
+version 0.1.3 supports NVIDIA GPUs and Ascend NPUs.
 
 Unlike terminal tools that only show the current state, Constella automatically
 records accelerator workload history, making it easy to review completed
@@ -68,6 +68,8 @@ without requiring a heavyweight Prometheus/Grafana stack.
 
 - Monitor a standalone server or a small GPU cluster from one Web UI.
 - Track GPU utilization, memory, power, temperature, clocks, processes, users, PIDs, and command fingerprints.
+- On supported NVIDIA GPUs, inspect SM activity, occupancy, aggregate Tensor Core activity,
+  DRAM bandwidth, and non-Tensor FP16/FP32/FP64 pipelines through NVML GPM.
 - Use NVML with `nvidia-smi` fallback for NVIDIA, and DCMI with `npu-smi`
   fallback for Ascend.
 
@@ -161,6 +163,12 @@ DB_PATH=run/constella.db HIGHRES_SIDECAR=1 ./scripts/service/start.sh
 ```
 
 The sidecar listens on `127.0.0.1:8766` by default and subscribes to the manager stream at `ws://127.0.0.1:8765/api/highres/stream`. Simple deployments can skip the sidecar; the manager still exposes the built-in `/api/highres/*` endpoints.
+
+NVML GPM is automatically probed on NVIDIA agents and remains isolated from the
+base NVML path. Set `CONSTELLA_NVML_GPM=off` to disable collection, or
+`CONSTELLA_NVIDIA_GPM_ROLLUP=off` to keep realtime performance data without
+persisting its rollups. `CONSTELLA_NVIDIA_GPM_HIGHRES=off` disables only the
+in-memory performance curves. Ascend agents never initialize the NVIDIA provider.
 
 ## Cluster Mode
 
@@ -289,6 +297,8 @@ distribution and produces all four wheel/source-distribution pairs.
 - `GET /api/highres/jobs`
 - `GET /api/highres/jobs/{job_key}`
 - `GET /api/highres/jobs/{job_key}/gpu`
+- `GET /api/highres/performance`
+- `GET /api/highres/jobs/{job_key}/performance`
 - `GET /api/docs`
 
 When SQLite is not enabled, history, analytics, and job curve search APIs return `enabled:false`; realtime cluster monitoring continues through `/api/cluster/snapshot` and `/ws/cluster`.

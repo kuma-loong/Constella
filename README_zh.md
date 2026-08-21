@@ -29,7 +29,7 @@
 </div>
 
 Constella 是一个面向实验室、AI 团队和个人计算服务器的轻量级加速器监控平台，
-原生支持多种硬件组成的异构集群；0.1.2 版本支持 NVIDIA GPU 与 Ascend NPU。
+原生支持多种硬件组成的异构集群；0.1.3 版本支持 NVIDIA GPU 与 Ascend NPU。
 
 不同于只能查看当前状态的终端工具，Constella 会自动记录加速器任务历史，
 方便在训练或推理结束后回看曲线。它支持单机和小型异构集群，不需要先部署
@@ -66,6 +66,8 @@ Constella 是一个面向实验室、AI 团队和个人计算服务器的轻量�
 
 - 在一个 Web UI 中监控单机或小型 GPU 集群。
 - 查看 GPU 利用率、显存、功耗、温度、时钟、进程、用户、PID 和命令指纹。
+- 在支持的 NVIDIA GPU 上，通过 NVML GPM 查看 SM 活跃度、占用率、Tensor Core
+  合计活跃度、DRAM 带宽以及非 Tensor FP16/FP32/FP64 流水线。
 - NVIDIA 优先使用 NVML 并以 `nvidia-smi` 兜底；Ascend 优先使用 DCMI
   并以 `npu-smi` 兜底。
 
@@ -158,6 +160,12 @@ DB_PATH=run/constella.db HIGHRES_SIDECAR=1 ./scripts/service/start.sh
 ```
 
 sidecar 默认监听 `127.0.0.1:8766`，订阅 manager 的 `ws://127.0.0.1:8765/api/highres/stream`。普通部署可以先不启用 sidecar，manager 进程内置的 `/api/highres/*` 接口仍可工作。
+
+NVIDIA agent 默认自动探测 NVML GPM，且性能 provider 与基础 NVML 路径隔离。
+`CONSTELLA_NVML_GPM=off` 可关闭采集；
+`CONSTELLA_NVIDIA_GPM_ROLLUP=off` 可保留实时性能数据但停止持久化。Ascend agent
+不会初始化 NVIDIA provider。`CONSTELLA_NVIDIA_GPM_HIGHRES=off` 可单独关闭内存中的
+高精度性能曲线。
 
 ## 集群模式
 
@@ -285,6 +293,8 @@ npm run dev
 - `GET /api/highres/jobs`：作业搜索。
 - `GET /api/highres/jobs/{job_key}`：作业详情。
 - `GET /api/highres/jobs/{job_key}/gpu`：作业 GPU 曲线。
+- `GET /api/highres/performance`：NVIDIA GPM 高精度性能曲线和区间统计。
+- `GET /api/highres/jobs/{job_key}/performance`：作业所在设备的性能曲线。
 - `GET /api/docs`：FastAPI OpenAPI 文档。
 
 未启用 SQLite 时，历史、分析和作业曲线搜索 API 返回 `enabled:false`；实时集群监控仍然通过 `/api/cluster/snapshot` 和 `/ws/cluster` 工作。
