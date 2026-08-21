@@ -16,7 +16,6 @@ const COLORS = [
   "--chart-8",
 ];
 const COLLAPSE_KEY = "constella.performance.collapsed";
-const LAYOUT_KEY = "constella.performance.layout";
 
 type MetricDefinition = { id: string; label: string; description: string };
 type MetricGroup = { id: string; label: string; metrics: MetricDefinition[] };
@@ -92,7 +91,6 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
   });
   const [rangeSeconds, setRangeSeconds] = useState(15 * 60);
   const [live, setLive] = useState(true);
-  const [layout, setLayout] = useState<1 | 2>(() => window.localStorage.getItem(LAYOUT_KEY) === "1" ? 1 : 2);
   const [collapsed, setCollapsed] = useState<Set<string>>(readCollapsed);
   const [payload, setPayload] = useState<PerformancePayload | null>(null);
   const [selectionPayload, setSelectionPayload] = useState<PerformancePayload | null>(null);
@@ -332,17 +330,6 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
         <button type="button" class={`live-control ${live ? "is-active" : ""}`} onClick={resumeLive}>
           {live ? "Live" : "Resume live"}
         </button>
-        <button
-          type="button"
-          class="layout-control"
-          onClick={() => {
-            const next = layout === 2 ? 1 : 2;
-            setLayout(next);
-            window.localStorage.setItem(LAYOUT_KEY, String(next));
-          }}
-        >
-          {layout} column{layout === 1 ? "" : "s"}
-        </button>
       </div>
 
       {selection ? (
@@ -364,7 +351,7 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
       ) : payload?.enabled === false ? (
         <div class="empty-panel">High-resolution performance caching is disabled for this service.</div>
       ) : (
-        <div class={`performance-groups layout-${layout} ${loading && !payload ? "is-loading" : ""}`}>
+        <div class={`performance-groups ${loading && !payload ? "is-loading" : ""}`}>
           {GROUPS.map((group) => {
             const groupId = `group:${group.id}`;
             const groupCollapsed = collapsed.has(groupId);
@@ -447,7 +434,9 @@ function PerformanceChart({
           { stroke: css.getPropertyValue("--chart-axis").trim(), grid: { stroke: css.getPropertyValue("--chart-grid").trim() }, values: (_plot, values) => values.map((value) => `${value}%`) },
         ],
         cursor: {
+          y: false,
           drag: { x: true, y: false },
+          points: { show: false },
           sync: { key: "constella-performance" },
         },
         hooks: {
@@ -497,7 +486,7 @@ function PerformanceChart({
     return () => {
       resize.disconnect();
       if (tooltipRef.current) {
-        tooltipRef.current.hidden = true;
+        resetPerformanceInspector(tooltipRef.current);
       }
       chart.destroy();
       chartRef.current = null;
@@ -531,20 +520,22 @@ function PerformanceChart({
       {!collapsed ? (
         <>
           {aligned.timestamps.length ? (
-            <div class="performance-plot-wrap">
-              <div
-                ref={targetRef}
-                class="performance-plot uplot-theme"
-                onPointerEnter={() => { hoveredRef.current = true; }}
-                onPointerLeave={() => {
-                  hoveredRef.current = false;
-                  if (tooltipRef.current) {
-                    tooltipRef.current.hidden = true;
-                  }
-                }}
-              />
-              <div ref={tooltipRef} class="performance-tooltip" hidden />
-            </div>
+            <>
+              <div class="performance-plot-wrap">
+                <div
+                  ref={targetRef}
+                  class="performance-plot uplot-theme"
+                  onPointerEnter={() => { hoveredRef.current = true; }}
+                  onPointerLeave={() => {
+                    hoveredRef.current = false;
+                    if (tooltipRef.current) {
+                      resetPerformanceInspector(tooltipRef.current);
+                    }
+                  }}
+                />
+              </div>
+              <div ref={tooltipRef} class="performance-inspector"><strong>Hover chart to inspect exact samples</strong></div>
+            </>
           ) : <div class="performance-no-data">No valid samples in this range</div>}
           <div class="performance-summary">
             {statsSeries.map((item, index) => {
@@ -570,12 +561,31 @@ function alignSeries(series: PerformanceSeries[], metric: string) {
   ).sort((a, b) => a - b);
   const data: uPlot.AlignedData = [
     timestamps,
-    ...series.map((item) => {
-      const values = new Map(item.metrics[metric]?.points || []);
-      return timestamps.map((timestamp) => values.get(timestamp) ?? null);
-    }),
+    ...series.map((item) => interpolatePoints(item.metrics[metric]?.points || [], timestamps)),
   ];
   return { timestamps, data };
+}
+
+function interpolatePoints(points: [number, number | null][], timestamps: number[]) {
+  if (!points.length) {
+    return timestamps.map(() => null);
+  }
+  let pointIndex = 0;
+  return timestamps.map((timestamp) => {
+    while (pointIndex + 1 < points.length && points[pointIndex + 1][0] <= timestamp) {
+      pointIndex += 1;
+    }
+    const left = points[pointIndex];
+    if (left[0] === timestamp) {
+      return left[1];
+    }
+    const right = points[pointIndex + 1];
+    if (left[0] > timestamp || !right || left[1] == null || right[1] == null) {
+      return null;
+    }
+    const ratio = (timestamp - left[0]) / (right[0] - left[0]);
+    return left[1] + (right[1] - left[1]) * ratio;
+  });
 }
 
 function updatePerformanceTooltip(
@@ -587,15 +597,12 @@ function updatePerformanceTooltip(
   metric: string,
 ) {
   if (!tooltip || !hovered) {
-    if (tooltip) {
-      tooltip.hidden = true;
-    }
     return;
   }
   const index = plot.cursor.idx;
   const cursorLeft = plot.cursor.left;
   if (index == null || cursorLeft == null || cursorLeft < 0 || index >= aligned.timestamps.length) {
-    tooltip.hidden = true;
+    resetPerformanceInspector(tooltip);
     return;
   }
 
@@ -614,14 +621,12 @@ function updatePerformanceTooltip(
     return row;
   });
   tooltip.replaceChildren(timestamp, ...rows);
-  tooltip.hidden = false;
+}
 
-  const targetLeft = cursorLeft + 24;
-  const maxLeft = Math.max(8, plot.width - tooltip.offsetWidth - 8);
-  tooltip.style.left = `${Math.max(8, Math.min(targetLeft, maxLeft))}px`;
-  const cursorTop = plot.cursor.top ?? 0;
-  const maxTop = Math.max(8, plot.height - tooltip.offsetHeight - 8);
-  tooltip.style.top = `${Math.max(8, Math.min(cursorTop + 20, maxTop))}px`;
+function resetPerformanceInspector(inspector: HTMLDivElement) {
+  const message = document.createElement("strong");
+  message.textContent = "Hover chart to inspect exact samples";
+  inspector.replaceChildren(message);
 }
 
 function nearestPointValue(points: [number, number | null][], timestamp: number) {

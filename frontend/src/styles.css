@@ -1228,10 +1228,6 @@ a:focus-visible {
   align-items: start;
 }
 
-.performance-groups.layout-2 {
-  grid-template-columns: 1fr;
-}
-
 .performance-group {
   min-width: 0;
   overflow: hidden;
@@ -1281,18 +1277,6 @@ a:focus-visible {
   display: grid;
 }
 
-.performance-groups.layout-2 .performance-chart-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.performance-groups.layout-2 .performance-chart:only-child {
-  grid-column: 1 / -1;
-}
-
-.performance-groups.layout-2 .performance-chart:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
-}
-
 .performance-chart + .performance-chart {
   border-top: 1px solid var(--border);
 }
@@ -1300,10 +1284,6 @@ a:focus-visible {
 .performance-chart {
   min-width: 0;
   overflow: hidden;
-}
-
-.performance-groups.layout-2 .performance-chart:nth-child(even) {
-  border-left: 1px solid var(--border);
 }
 
 .performance-chart-head {
@@ -1341,35 +1321,28 @@ a:focus-visible {
   overflow: hidden;
 }
 
-.performance-tooltip {
-  position: absolute;
-  z-index: 6;
-  display: grid;
-  gap: 7px;
-  min-width: 168px;
-  padding: 10px 11px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+.performance-inspector {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px 14px;
+  min-height: 43px;
+  margin: 5px 14px 0;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
   color: var(--text);
-  background: color-mix(in srgb, var(--surface) 94%, transparent);
-  box-shadow: var(--shadow);
-  pointer-events: none;
-  backdrop-filter: blur(10px);
+  background: var(--surface-sunken);
 }
 
-.performance-tooltip[hidden] {
-  display: none;
-}
-
-.performance-tooltip > strong {
-  padding-bottom: 2px;
+.performance-inspector > strong {
+  min-width: 116px;
   color: var(--text-soft);
   font-family: "Geist Mono Variable", ui-monospace, monospace;
   font-size: 11px;
   font-weight: 700;
 }
 
-.performance-tooltip > span {
+.performance-inspector > span {
   display: grid;
   grid-template-columns: 7px 1fr auto;
   align-items: center;
@@ -1377,18 +1350,18 @@ a:focus-visible {
   font-size: 12px;
 }
 
-.performance-tooltip i {
+.performance-inspector i {
   width: 7px;
   height: 7px;
   border-radius: 50%;
 }
 
-.performance-tooltip b,
-.performance-tooltip em {
+.performance-inspector b,
+.performance-inspector em {
   font-style: normal;
 }
 
-.performance-tooltip em {
+.performance-inspector em {
   color: var(--text-soft);
   font-family: "Geist Mono Variable", ui-monospace, monospace;
   font-weight: 720;
@@ -2359,17 +2332,6 @@ svg {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .performance-groups.layout-2 {
-    grid-template-columns: 1fr;
-  }
-
-  .performance-groups.layout-2 .performance-chart-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .performance-groups.layout-2 .performance-chart:nth-child(even) {
-    border-left: 0;
-  }
 }
 
 @media (max-width: 760px) {
@@ -2485,8 +2447,7 @@ svg {
   .performance-actions button,
   .performance-ranges,
   .performance-ranges button,
-  .live-control,
-  .layout-control {
+  .live-control {
     width: 100%;
   }
 
