@@ -9,7 +9,14 @@ from fastapi.testclient import TestClient
 from constella.app import create_app
 from constella.cluster import ClusterState
 from constella.db import AsyncDBSink, ROLLUP_20S, ROLLUP_2M, SQLiteSinkConfig, SQLiteStore
-from constella.schema import GpuInfo, GpuProcess, NodeSnapshot, node_totals_from_gpus
+from constella.performance_rollup import NvidiaGpmRollupBucket
+from constella.schema import (
+    AcceleratorPerformance,
+    GpuInfo,
+    GpuProcess,
+    NodeSnapshot,
+    node_totals_from_gpus,
+)
 
 
 def test_store_migrates_existing_gpu_inventory_columns(tmp_path) -> None:
@@ -97,6 +104,22 @@ def make_node_snapshot(sampled_at: float, *, gpu_util: int = 50) -> NodeSnapshot
     )
 
 
+def add_gpm(
+    snapshot: NodeSnapshot,
+    *,
+    sm_active: float | None,
+    status: str = "available",
+) -> NodeSnapshot:
+    snapshot.gpus[0].performance = AcceleratorPerformance(
+        profile="nvidia.gpm.v1",
+        status=status,
+        sampled_at=snapshot.sampled_at,
+        interval_ms=1000.0,
+        metrics={"nvidia.gpm.sm_active": sm_active} if sm_active is not None else {},
+    )
+    return snapshot
+
+
 def test_sqlite_store_writes_sessions_and_multi_gpu_usage(tmp_path) -> None:
     store = SQLiteStore(tmp_path / "constella.db")
     store.open()
@@ -150,6 +173,60 @@ def test_sqlite_sink_flushes_20s_rollup_and_raw_retention(tmp_path) -> None:
         assert rollup["sample_count"] == 2
 
         assert sink.store.prune_raw_snapshots(now=200.0, retention_seconds=50.0) == 2
+    finally:
+        sink.store.close()
+
+
+def test_sqlite_sink_writes_gpm_rollup_with_metric_coverage(tmp_path) -> None:
+    sink = AsyncDBSink(SQLiteSinkConfig(path=tmp_path / "constella.db"))
+    sink.store.open()
+    try:
+        sink._accumulate_snapshot(add_gpm(make_node_snapshot(100.0), sm_active=20.0))
+        sink._accumulate_snapshot(add_gpm(make_node_snapshot(105.0), sm_active=40.0))
+        sink._accumulate_snapshot(
+            add_gpm(make_node_snapshot(110.0), sm_active=None, status="error")
+        )
+
+        assert sink.flush_rollups(now=140.0) == 2
+        points = sink.store.query_nvidia_gpm_history(
+            node_id="node-a",
+            gpu_uuid="GPU-0",
+            since=100.0,
+            until=119.0,
+            bucket_seconds=ROLLUP_20S,
+            metrics=["nvidia.gpm.sm_active"],
+        )
+
+        assert len(points) == 1
+        assert points[0]["expected_count"] == 3
+        assert points[0]["metrics"]["nvidia.gpm.sm_active"] == {
+            "avg": 30.0,
+            "max": 40.0,
+            "valid_count": 2,
+            "coverage": 66.67,
+        }
+    finally:
+        sink.store.close()
+
+
+def test_sqlite_sink_does_not_create_gpm_rollups_for_unsupported_or_npu(tmp_path) -> None:
+    sink = AsyncDBSink(SQLiteSinkConfig(path=tmp_path / "constella.db"))
+    sink.store.open()
+    try:
+        unsupported = add_gpm(
+            make_node_snapshot(100.0), sm_active=None, status="unsupported"
+        )
+        npu = make_node_snapshot(105.0)
+        for gpu in npu.gpus:
+            gpu.device_type = "ascend"
+        sink._accumulate_snapshot(unsupported)
+        sink._accumulate_snapshot(npu)
+        sink.flush_rollups(now=140.0)
+
+        count = sink.store.connection.execute(
+            "SELECT COUNT(*) FROM nvidia_gpm_rollups"
+        ).fetchone()[0]
+        assert count == 0
     finally:
         sink.store.close()
 
@@ -295,6 +372,61 @@ def test_sqlite_store_rollup_uses_sample_count_weighting(tmp_path) -> None:
         assert round(rollup["avg_memory_used_mb"], 1) == 25.0
         assert rollup["max_memory_used_mb"] == 40
         assert rollup["sample_count"] == 4
+    finally:
+        store.close()
+
+
+def test_sqlite_store_gpm_rollup_weights_each_metric_by_valid_count(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "constella.db")
+    store.open()
+    try:
+        first = NvidiaGpmRollupBucket(0.0, "node-a", "GPU-0")
+        first.add(
+            AcceleratorPerformance(
+                profile="nvidia.gpm.v1",
+                status="available",
+                sampled_at=0.0,
+                metrics={"nvidia.gpm.sm_active": 20.0},
+            )
+        )
+        second = NvidiaGpmRollupBucket(20.0, "node-a", "GPU-0")
+        for value in (70.0, 80.0, 90.0):
+            second.add(
+                AcceleratorPerformance(
+                    profile="nvidia.gpm.v1",
+                    status="available",
+                    sampled_at=20.0,
+                    metrics={"nvidia.gpm.sm_active": value},
+                )
+            )
+        store.upsert_nvidia_gpm_rollups(
+            [first.to_row(ROLLUP_20S), second.to_row(ROLLUP_20S)]
+        )
+
+        assert (
+            store.rollup_nvidia_gpm_rollups(
+                from_bucket_seconds=ROLLUP_20S,
+                to_bucket_seconds=ROLLUP_2M,
+                now=400.0,
+            )
+            == 1
+        )
+        point = store.query_nvidia_gpm_history(
+            node_id="node-a",
+            gpu_uuid="GPU-0",
+            since=0.0,
+            until=119.0,
+            bucket_seconds=ROLLUP_2M,
+            metrics=["nvidia.gpm.sm_active"],
+        )[0]
+
+        assert point["expected_count"] == 4
+        assert point["metrics"]["nvidia.gpm.sm_active"] == {
+            "avg": 65.0,
+            "max": 90.0,
+            "valid_count": 4,
+            "coverage": 100.0,
+        }
     finally:
         store.close()
 

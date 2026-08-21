@@ -30,3 +30,12 @@ def nvidia_gpm_enabled() -> bool:
         "no",
         "off",
     }
+
+
+def nvidia_gpm_rollup_enabled() -> bool:
+    return os.environ.get("CONSTELLA_NVIDIA_GPM_ROLLUP", "on").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }

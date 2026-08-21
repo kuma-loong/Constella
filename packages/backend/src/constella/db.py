@@ -10,6 +10,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .performance import NVIDIA_GPM_PROFILE, nvidia_gpm_rollup_enabled
+from .performance_rollup import (
+    NVIDIA_GPM_ROLLUP_METRICS,
+    NvidiaGpmRollupBucket,
+    nvidia_gpm_row_columns,
+    nvidia_gpm_table_sql,
+)
 from .schema import GpuInfo, GpuProcess, NodeSnapshot, process_session_id
 
 logger = logging.getLogger(__name__)
@@ -213,6 +220,7 @@ class SQLiteStore:
             );
             """
         )
+        con.executescript(nvidia_gpm_table_sql())
         self._ensure_column("gpus", "device_type", "TEXT NOT NULL DEFAULT 'nvidia'")
         self._ensure_column("gpus", "card_id", "TEXT")
         self._ensure_column("gpus", "die_id", "INTEGER")
@@ -353,6 +361,22 @@ class SQLiteStore:
                 )
         return len(rows)
 
+    def upsert_nvidia_gpm_rollups(self, rows: list[dict[str, Any]]) -> int:
+        if not rows:
+            return 0
+        columns = nvidia_gpm_row_columns()
+        updates = ", ".join(f"{column}=excluded.{column}" for column in columns[4:])
+        placeholders = ", ".join("?" for _ in columns)
+        sql = f"""
+            INSERT INTO nvidia_gpm_rollups ({", ".join(columns)})
+            VALUES ({placeholders})
+            ON CONFLICT(bucket_start, bucket_seconds, node_id, gpu_uuid) DO UPDATE SET
+              {updates}
+        """
+        with self._con():
+            self._con().executemany(sql, [tuple(row[column] for column in columns) for row in rows])
+        return len(rows)
+
     def close_stale_sessions(self, *, now: float, stale_after_seconds: float = 60.0) -> int:
         con = self._con()
         cutoff = now - stale_after_seconds
@@ -461,6 +485,69 @@ class SQLiteStore:
             [_rollup_row_from_sql(row, bucket_seconds=to_bucket_seconds) for row in rows]
         )
 
+    def rollup_nvidia_gpm_rollups(
+        self,
+        *,
+        from_bucket_seconds: int,
+        to_bucket_seconds: int,
+        now: float | None = None,
+    ) -> int:
+        if ROLLUP_SOURCE_BUCKETS.get(to_bucket_seconds) != from_bucket_seconds:
+            raise ValueError(
+                f"unsupported rollup path: {from_bucket_seconds} -> {to_bucket_seconds}"
+            )
+        select_metrics = ",\n".join(
+            (
+                f"CASE WHEN SUM({stem}_count) > 0 "
+                f"THEN SUM(avg_{stem} * {stem}_count) / SUM({stem}_count) END "
+                f"AS avg_{stem}, MAX(max_{stem}) AS max_{stem}, "
+                f"SUM({stem}_count) AS {stem}_count"
+            )
+            for stem in NVIDIA_GPM_ROLLUP_METRICS.values()
+        )
+        source_metrics = ", ".join(
+            column
+            for stem in NVIDIA_GPM_ROLLUP_METRICS.values()
+            for column in (f"avg_{stem}", f"max_{stem}", f"{stem}_count")
+        )
+        current_time = time.time() if now is None else now
+        cutoff = current_time - to_bucket_seconds
+        rows = self._con().execute(
+            f"""
+            SELECT
+              target_bucket_start AS bucket_start,
+              node_id,
+              gpu_uuid,
+              SUM(expected_count) AS expected_count,
+              {select_metrics}
+            FROM (
+              SELECT
+                CAST(bucket_start / ? AS INTEGER) * ? AS target_bucket_start,
+                node_id, gpu_uuid, expected_count, {source_metrics}
+              FROM nvidia_gpm_rollups
+              WHERE bucket_seconds = ?
+            )
+            GROUP BY target_bucket_start, node_id, gpu_uuid
+            HAVING target_bucket_start + ? <= ? AND SUM(expected_count) > 0
+            """,
+            (
+                to_bucket_seconds,
+                to_bucket_seconds,
+                from_bucket_seconds,
+                to_bucket_seconds,
+                cutoff,
+            ),
+        ).fetchall()
+        return self.upsert_nvidia_gpm_rollups(
+            [
+                {
+                    **dict(row),
+                    "bucket_seconds": to_bucket_seconds,
+                }
+                for row in rows
+            ]
+        )
+
     def prune_rollups(
         self,
         *,
@@ -478,6 +565,14 @@ class SQLiteStore:
                 cursor = con.execute(
                     """
                     DELETE FROM gpu_metric_rollups
+                    WHERE bucket_seconds = ? AND bucket_start < ?
+                    """,
+                    (bucket, cutoff),
+                )
+                deleted += cursor.rowcount
+                cursor = con.execute(
+                    """
+                    DELETE FROM nvidia_gpm_rollups
                     WHERE bucket_seconds = ? AND bucket_start < ?
                     """,
                     (bucket, cutoff),
@@ -504,6 +599,16 @@ class SQLiteStore:
                 now=current_time,
             ),
             "rollups_1h": self.rollup_gpu_metric_rollups(
+                from_bucket_seconds=ROLLUP_2M,
+                to_bucket_seconds=ROLLUP_1H,
+                now=current_time,
+            ),
+            "nvidia_gpm_rollups_2m": self.rollup_nvidia_gpm_rollups(
+                from_bucket_seconds=ROLLUP_20S,
+                to_bucket_seconds=ROLLUP_2M,
+                now=current_time,
+            ),
+            "nvidia_gpm_rollups_1h": self.rollup_nvidia_gpm_rollups(
                 from_bucket_seconds=ROLLUP_2M,
                 to_bucket_seconds=ROLLUP_1H,
                 now=current_time,
@@ -566,6 +671,55 @@ class SQLiteStore:
             params,
         ).fetchall()
         return [_history_row_from_rollup(row) for row in rows]
+
+    def query_nvidia_gpm_history(
+        self,
+        *,
+        node_id: str,
+        gpu_uuid: str,
+        since: float | None = None,
+        until: float | None = None,
+        bucket_seconds: int | None = None,
+        metrics: list[str] | None = None,
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        bucket = (
+            _select_history_bucket(since=since, until=until)
+            if bucket_seconds is None
+            else _normalize_history_bucket(bucket_seconds)
+        )
+        selected = [
+            metric
+            for metric in (metrics or list(NVIDIA_GPM_ROLLUP_METRICS))
+            if metric in NVIDIA_GPM_ROLLUP_METRICS
+        ]
+        if not selected:
+            return []
+        columns: list[str] = []
+        for metric in selected:
+            stem = NVIDIA_GPM_ROLLUP_METRICS[metric]
+            columns.extend((f"avg_{stem}", f"max_{stem}", f"{stem}_count"))
+        clauses = ["node_id = ?", "gpu_uuid = ?", "bucket_seconds = ?"]
+        params: list[Any] = [node_id, gpu_uuid, bucket]
+        if since is not None:
+            clauses.append("bucket_start >= ?")
+            params.append(float(since))
+        if until is not None:
+            clauses.append("bucket_start <= ?")
+            params.append(float(until))
+        params.append(max(1, min(int(limit), 20000)))
+        rows = self._con().execute(
+            f"""
+            SELECT bucket_start, bucket_seconds, node_id, gpu_uuid, expected_count,
+                   {", ".join(columns)}
+            FROM nvidia_gpm_rollups
+            WHERE {" AND ".join(clauses)}
+            ORDER BY bucket_start ASC
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+        return [_nvidia_gpm_history_row(row, selected) for row in rows]
 
     def query_tasks(
         self,
@@ -716,6 +870,10 @@ class AsyncDBSink:
         self._last_prune_at = 0.0
         self._last_session_close_at = 0.0
         self._rollup_20s: dict[tuple[float, str, str], RollupBucket] = {}
+        self._nvidia_gpm_rollup_20s: dict[
+            tuple[float, str, str], NvidiaGpmRollupBucket
+        ] = {}
+        self.performance_rollups_enabled = nvidia_gpm_rollup_enabled()
         self.dropped_samples = 0
         self.write_errors = 0
         self.consecutive_errors = 0
@@ -771,12 +929,23 @@ class AsyncDBSink:
             if bucket.bucket_start + ROLLUP_20S <= now - ROLLUP_20S:
                 ready.append((key, bucket))
 
+        performance_ready = [
+            (key, bucket)
+            for key, bucket in list(self._nvidia_gpm_rollup_20s.items())
+            if bucket.bucket_start + ROLLUP_20S <= now - ROLLUP_20S
+        ]
         written = self.store.upsert_gpu_metric_rollups(
             [bucket.to_row(ROLLUP_20S) for _, bucket in ready]
+        )
+        self.store.upsert_nvidia_gpm_rollups(
+            [bucket.to_row(ROLLUP_20S) for _, bucket in performance_ready]
         )
         for key, bucket in ready:
             if self._rollup_20s.get(key) is bucket:
                 del self._rollup_20s[key]
+        for key, bucket in performance_ready:
+            if self._nvidia_gpm_rollup_20s.get(key) is bucket:
+                del self._nvidia_gpm_rollup_20s[key]
         return written
 
     def status(self) -> dict[str, Any]:
@@ -795,6 +964,8 @@ class AsyncDBSink:
             "queue_depth": queue_depth,
             "queue_capacity": self.queue.maxsize,
             "pending_rollup_buckets": len(self._rollup_20s),
+            "pending_nvidia_gpm_rollup_buckets": len(self._nvidia_gpm_rollup_20s),
+            "nvidia_gpm_rollups_enabled": self.performance_rollups_enabled,
             "dropped_samples": self.dropped_samples,
             "write_errors": self.write_errors,
             "consecutive_errors": self.consecutive_errors,
@@ -877,6 +1048,23 @@ class AsyncDBSink:
                 )
                 self._rollup_20s[key] = bucket
             bucket.add_gpu(gpu)
+            performance = gpu.performance
+            if (
+                not self.performance_rollups_enabled
+                or performance is None
+                or performance.profile != NVIDIA_GPM_PROFILE
+                or performance.status == "unsupported"
+            ):
+                continue
+            performance_bucket = self._nvidia_gpm_rollup_20s.get(key)
+            if performance_bucket is None:
+                performance_bucket = NvidiaGpmRollupBucket(
+                    bucket_start=bucket_start,
+                    node_id=snapshot.node_id,
+                    gpu_uuid=gpu.uuid,
+                )
+                self._nvidia_gpm_rollup_20s[key] = performance_bucket
+            performance_bucket.add(performance)
 
     def _run_scheduled_maintenance(self, *, now: float) -> None:
         if now - self._last_20s_flush_at >= 10.0:
@@ -888,6 +1076,12 @@ class AsyncDBSink:
                 to_bucket_seconds=ROLLUP_2M,
                 now=now,
             )
+            if self.performance_rollups_enabled:
+                self.store.rollup_nvidia_gpm_rollups(
+                    from_bucket_seconds=ROLLUP_20S,
+                    to_bucket_seconds=ROLLUP_2M,
+                    now=now,
+                )
             self._last_2m_rollup_at = now
         if now - self._last_1h_rollup_at >= 3600.0:
             self.store.rollup_gpu_metric_rollups(
@@ -895,6 +1089,12 @@ class AsyncDBSink:
                 to_bucket_seconds=ROLLUP_1H,
                 now=now,
             )
+            if self.performance_rollups_enabled:
+                self.store.rollup_nvidia_gpm_rollups(
+                    from_bucket_seconds=ROLLUP_2M,
+                    to_bucket_seconds=ROLLUP_1H,
+                    now=now,
+                )
             self._last_1h_rollup_at = now
         if now - self._last_prune_at >= 600.0:
             self.store.prune_rollups(now=now)
@@ -962,6 +1162,29 @@ def _history_row_from_rollup(row: sqlite3.Row) -> dict[str, Any]:
         "avg_temperature_c": row["avg_temperature_c"],
         "max_temperature_c": row["max_temperature_c"],
         "sample_count": row["sample_count"],
+    }
+
+
+def _nvidia_gpm_history_row(row: sqlite3.Row, metrics: list[str]) -> dict[str, Any]:
+    expected = int(row["expected_count"])
+    values: dict[str, Any] = {}
+    for metric in metrics:
+        stem = NVIDIA_GPM_ROLLUP_METRICS[metric]
+        count = int(row[f"{stem}_count"])
+        values[metric] = {
+            "avg": row[f"avg_{stem}"],
+            "max": row[f"max_{stem}"],
+            "valid_count": count,
+            "coverage": round(count / expected * 100.0, 2) if expected else 0.0,
+        }
+    return {
+        "sampled_at": row["bucket_start"],
+        "bucket_start": row["bucket_start"],
+        "bucket_seconds": row["bucket_seconds"],
+        "node_id": row["node_id"],
+        "gpu_uuid": row["gpu_uuid"],
+        "expected_count": expected,
+        "metrics": values,
     }
 
 
