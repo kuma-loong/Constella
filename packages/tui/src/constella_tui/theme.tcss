@@ -142,7 +142,13 @@ Screen {
     border-top: solid $line;
 }
 
-#realtime-pane { width: 2fr; height: 100%; border-right: solid $line; }
+#realtime-pane {
+    width: 2fr;
+    min-width: 30;
+    max-width: 68;
+    height: 100%;
+    border-right: solid $line;
+}
 #process-pane { width: 3fr; height: 100%; }
 
 #realtime-curve, .history-curve {

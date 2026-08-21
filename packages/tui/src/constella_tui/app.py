@@ -31,6 +31,9 @@ VIEW_LABELS = {
 }
 RANKING_RANGES = ("24h", "7d", "30d")
 HISTORY_RANGES = ("1h", "24h", "7d", "30d")
+LIVE_CHART_POINTS = 120
+LIVE_CHART_COLUMNS = LIVE_CHART_POINTS // 2
+LIVE_CHART_STYLE = "#00E5FF"
 
 
 class HelpScreen(ModalScreen[None]):
@@ -683,12 +686,17 @@ class ConstellaTui(App[None]):
         if not values:
             values = [float(gpu.get("utilization_gpu") or 0)]
         chart_widget = self.query_one("#realtime-curve", Static)
-        width = max(12, chart_widget.size.width - 7)
+        width = min(LIVE_CHART_COLUMNS, max(4, chart_widget.size.width - 6))
         height = max(3, chart_widget.size.height - 1)
         chart_widget.update(
             Text(
-                braille_chart(values, width=width, height=height),
-                style=self._utilization_style(float(values[-1] if values else 0)),
+                braille_chart(
+                    values[-LIVE_CHART_POINTS:],
+                    width=width,
+                    height=height,
+                    resample=False,
+                ),
+                style=LIVE_CHART_STYLE,
             )
         )
         self._render_process_table(gpu)

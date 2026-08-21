@@ -5,7 +5,7 @@ from copy import deepcopy
 
 from textual.widgets import ContentSwitcher, DataTable, ListView, Static
 
-from constella_tui.app import ConstellaTui
+from constella_tui.app import LIVE_CHART_STYLE, ConstellaTui
 from constella_tui.client import ClusterConnectionError
 
 
@@ -245,6 +245,28 @@ async def _single_snapshot(snapshot):
 
 def test_tui_preserves_selected_gpu_across_refresh() -> None:
     asyncio.run(exercise_gpu_selection_persistence())
+
+
+async def exercise_live_chart_uses_fixed_points_and_color() -> None:
+    snapshot = deepcopy(SNAPSHOT)
+    gpu = snapshot["nodes"][0]["gpus"][0]
+    gpu.update(uuid="GPU-0", gpu_id="gpu-a:GPU-0")
+    snapshot["nodes"][0]["history"] = {"gpu-a:GPU-0": {"gpu": list(range(121))}}
+
+    app = ConstellaTui("http://127.0.0.1:8765")
+    app.client = FakeClient()  # type: ignore[assignment]
+    app.client.snapshots = lambda: _single_snapshot(snapshot)  # type: ignore[method-assign]
+    async with app.run_test(size=(140, 42)) as pilot:
+        await pilot.pause(0.2)
+        curve = app.query_one("#realtime-curve", Static)
+
+        assert curve.content.style == LIVE_CHART_STYLE
+        assert app.query_one("#realtime-pane").size.width <= 68
+        assert all(len(line) <= 64 for line in curve.content.plain.splitlines())
+
+
+def test_tui_live_chart_uses_fixed_points_and_color() -> None:
+    asyncio.run(exercise_live_chart_uses_fixed_points_and_color())
 
 
 async def exercise_node_arrow_selection_persistence() -> None:

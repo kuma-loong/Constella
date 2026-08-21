@@ -22,6 +22,7 @@ def braille_chart(
     height: int,
     maximum: float = 100.0,
     timestamps: Sequence[float] | None = None,
+    resample: bool = True,
 ) -> str:
     """Render a connected high-resolution dot-matrix curve with Unicode Braille."""
     chart_width = max(4, width)
@@ -29,27 +30,37 @@ def braille_chart(
     pixel_width = chart_width * 2
     pixel_height = chart_height * 4
     grid = [[0 for _ in range(chart_width)] for _ in range(chart_height)]
-    samples = _resample([float(value) for value in values], pixel_width)
-    if not samples:
-        samples = [0.0] * pixel_width
+    raw_values = [float(value) for value in values]
+    if resample:
+        samples: list[float | None] = _resample(raw_values, pixel_width)
+        if not samples:
+            samples = [0.0] * pixel_width
+    else:
+        visible = raw_values[-pixel_width:]
+        samples = [None] * (pixel_width - len(visible)) + visible
 
     points = [
-        (
+        None
+        if value is None
+        else (
             index,
-            round(
-                (1 - min(max(value, 0.0), maximum) / maximum)
-                * (pixel_height - 1)
-            )
+            round((1 - min(max(value, 0.0), maximum) / maximum) * (pixel_height - 1))
             if maximum > 0
             else pixel_height - 1,
         )
         for index, value in enumerate(samples)
     ]
-    for start, end in zip(points, points[1:]):
-        for x, y in _line(start, end):
+    previous: tuple[int, int] | None = None
+    for point in points:
+        if point is None:
+            previous = None
+            continue
+        line = (point,) if previous is None else _line(previous, point)
+        for x, y in line:
             cell_x, dot_x = divmod(x, 2)
             cell_y, dot_y = divmod(y, 4)
             grid[cell_y][cell_x] |= _BRAILLE_BITS[dot_y][dot_x]
+        previous = point
 
     rows = ["".join(chr(0x2800 + bits) for bits in row) for row in grid]
     if chart_height == 2:

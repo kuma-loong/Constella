@@ -23,6 +23,24 @@ def test_braille_chart_handles_empty_data() -> None:
     assert len(braille_chart([], width=6, height=2).splitlines()) == 2
 
 
+def test_braille_chart_can_keep_live_samples_on_fixed_dot_columns() -> None:
+    first = braille_chart([25], width=4, height=2, resample=False).splitlines()
+    second = braille_chart([25, 75], width=4, height=2, resample=False).splitlines()
+
+    assert all(line[4:-1].strip("\u2800") == "" for line in first)
+    assert any(line[-1] != "\u2800" for line in first)
+    assert all(line[4:-1].strip("\u2800") == "" for line in second)
+    assert any(line[-1] != "\u2800" for line in second)
+
+
+def test_braille_chart_fixed_columns_drop_old_samples_without_resampling() -> None:
+    values = list(range(121))
+
+    chart = braille_chart(values, width=60, height=3, resample=False)
+
+    assert all(len(line) == 64 for line in chart.splitlines())
+
+
 def test_braille_chart_adds_aligned_time_axis() -> None:
     chart = braille_chart(
         [10, 90],
