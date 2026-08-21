@@ -74,6 +74,7 @@ def test_agent_protocol_messages_include_required_fields() -> None:
     assert hello["node_id"] == "node-a"
     assert hello["capabilities"]["nvidia_smi_fallback"] is True
     assert hello["capabilities"]["device_type"] == "nvidia"
+    assert hello["capabilities"]["performance_profiles"] == ["nvidia.gpm.v1"]
     assert hello["hardware"]["gpus"][0]["architecture"] == "Hopper"
     assert sample["type"] == "sample"
     assert sample["seq"] == 7

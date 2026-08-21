@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .schema import (
+    AcceleratorPerformance,
     ClusterSnapshot,
     GpuHardwareInfo,
     GpuInfo,
@@ -44,6 +45,7 @@ class NodeRuntime:
     agent_version: str | None = None
     connection_id: object | None = None
     hardware: NodeHardware | None = None
+    performance_profiles: list[str] = field(default_factory=list)
 
 
 class HistoryAccumulator:
@@ -135,6 +137,7 @@ class ClusterState:
                 source="none",
                 agent_version=hello.agent_version,
                 hardware=hello.hardware,
+                performance_profiles=_performance_profiles(hello.capabilities),
             )
             runtime = NodeRuntime(
                 node_id=hello.node_id,
@@ -145,6 +148,7 @@ class ClusterState:
                 agent_version=hello.agent_version,
                 connection_id=connection_id,
                 hardware=hello.hardware,
+                performance_profiles=_performance_profiles(hello.capabilities),
             )
             self.latest_by_node[hello.node_id] = runtime
         else:
@@ -155,9 +159,11 @@ class ClusterState:
             runtime.connection_id = connection_id
             runtime.agent_version = hello.agent_version or runtime.agent_version
             runtime.hardware = hello.hardware or runtime.hardware
+            runtime.performance_profiles = _performance_profiles(hello.capabilities)
             runtime.snapshot.hostname = hello.hostname
             runtime.snapshot.agent_version = runtime.agent_version
             runtime.snapshot.hardware = runtime.hardware
+            runtime.snapshot.performance_profiles = runtime.performance_profiles
         self._bump()
 
     def ingest_sample(
@@ -184,6 +190,7 @@ class ClusterState:
             hostname=runtime.hostname if runtime else None,
             agent_version=runtime.agent_version if runtime else None,
             hardware=runtime.hardware if runtime else None,
+            performance_profiles=runtime.performance_profiles if runtime else None,
         )
         self._history.update(snapshot)
         self.latest_by_node[node_id] = NodeRuntime(
@@ -196,6 +203,7 @@ class ClusterState:
             agent_version=snapshot.agent_version,
             connection_id=connection_id,
             hardware=snapshot.hardware,
+            performance_profiles=snapshot.performance_profiles,
         )
         self._bump()
         return True
@@ -304,6 +312,7 @@ def node_snapshot_from_agent_sample(
     hostname: str | None = None,
     agent_version: str | None = None,
     hardware: NodeHardware | None = None,
+    performance_profiles: list[str] | None = None,
 ) -> NodeSnapshot:
     if message.get("type") != "sample":
         raise ValueError("agent message is not a sample")
@@ -337,6 +346,7 @@ def node_snapshot_from_agent_sample(
         nvml_version=payload.get("nvml_version"),
         elapsed_ms=float(payload.get("elapsed_ms") or 0.0),
         hardware=hardware,
+        performance_profiles=list(performance_profiles or []),
     )
 
 
@@ -395,12 +405,50 @@ def _gpu_from_dict(node_id: str, data: dict[str, Any]) -> GpuInfo:
         compute_mode=data.get("compute_mode"),
         mig_mode=data.get("mig_mode"),
         ecc_mode=data.get("ecc_mode"),
+        performance=_performance_from_dict(data.get("performance")),
         processes=processes,
         other_users=other_users,
         error=data.get("error"),
     )
     gpu.gpu_id = gpu_global_id(node_id, gpu)
     return gpu
+
+
+def _performance_from_dict(payload: Any) -> AcceleratorPerformance | None:
+    if not isinstance(payload, dict):
+        return None
+    profile = str(payload.get("profile") or "").strip()
+    status = str(payload.get("status") or "").strip()
+    if not profile or not status:
+        return None
+    raw_metrics = payload.get("metrics")
+    metrics = {
+        str(key): float(value)
+        for key, value in (raw_metrics.items() if isinstance(raw_metrics, dict) else [])
+        if isinstance(value, (int, float))
+    }
+    try:
+        return AcceleratorPerformance(
+            profile=profile,
+            status=status,
+            sampled_at=float(payload.get("sampled_at") or 0.0),
+            interval_ms=float(payload["interval_ms"])
+            if payload.get("interval_ms") is not None
+            else None,
+            metrics=metrics,
+            error=str(payload["error"]) if payload.get("error") else None,
+        )
+    except (TypeError, ValueError):
+        return None
+
+
+def _performance_profiles(capabilities: dict[str, Any] | None) -> list[str]:
+    if not capabilities:
+        return []
+    profiles = capabilities.get("performance_profiles")
+    if not isinstance(profiles, list):
+        return []
+    return sorted({str(profile) for profile in profiles if str(profile).strip()})
 
 
 def _process_from_dict(data: dict[str, Any]) -> GpuProcess:

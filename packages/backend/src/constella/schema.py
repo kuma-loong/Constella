@@ -9,6 +9,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .performance import PERFORMANCE_STATUSES
+
 
 @dataclass(slots=True)
 class GpuProcess:
@@ -57,6 +59,23 @@ class NodeHardware:
 
 
 @dataclass(slots=True)
+class AcceleratorPerformance:
+    profile: str
+    status: str
+    sampled_at: float
+    interval_ms: float | None = None
+    metrics: dict[str, float] = field(default_factory=dict)
+    error: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.status not in PERFORMANCE_STATUSES:
+            raise ValueError(f"invalid accelerator performance status: {self.status}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
 class GpuInfo:
     index: int
     node_id: str | None = None
@@ -83,6 +102,7 @@ class GpuInfo:
     compute_mode: str | None = None
     mig_mode: str | None = None
     ecc_mode: str | None = None
+    performance: AcceleratorPerformance | None = None
     processes: list[GpuProcess] = field(default_factory=list)
     other_users: list[OtherUserMemory] = field(default_factory=list)
     error: str | None = None
@@ -183,6 +203,7 @@ class NodeSnapshot:
     elapsed_ms: float = 0.0
     history: dict[str, dict[str, list[float]]] = field(default_factory=dict)
     hardware: NodeHardware | None = None
+    performance_profiles: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -204,6 +225,7 @@ class NodeSnapshot:
             "nvml_version": self.nvml_version,
             "elapsed_ms": self.elapsed_ms,
             "history": self.history,
+            "performance_profiles": self.performance_profiles,
         }
 
 
@@ -385,6 +407,9 @@ def snapshot_to_node_snapshot(
         nvml_version=snapshot.nvml_version,
         elapsed_ms=snapshot.elapsed_ms,
         history=history,
+        performance_profiles=sorted(
+            {gpu.performance.profile for gpu in gpus if gpu.performance is not None}
+        ),
     )
 
 

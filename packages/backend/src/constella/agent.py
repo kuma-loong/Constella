@@ -19,6 +19,7 @@ from .cluster import SCHEMA_VERSION
 from .collector import SnapshotCollector, validate_device_type, validate_refresh_interval
 from .dcmi import sample_hardware_inventory as sample_dcmi_hardware_inventory
 from .nvml import sample_hardware_inventory as sample_nvml_hardware_inventory
+from .performance import performance_profiles
 from .schema import NodeHardware, Snapshot, local_node_id
 
 logger = logging.getLogger(__name__)
@@ -270,6 +271,7 @@ def agent_hello(config: AgentConfig, *, hardware: NodeHardware | None = None) ->
             "nvml": config.device_type == "nvidia",
             "nvidia_smi_fallback": config.device_type == "nvidia",
             "process_cmdline": True,
+            "performance_profiles": performance_profiles(config.device_type),
         },
     }
     if hardware is not None:

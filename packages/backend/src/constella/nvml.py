@@ -9,6 +9,7 @@ import subprocess
 import time
 
 from . import nvidia_smi
+from .nvml_gpm import NvidiaGpmProvider
 from .procfs import (
     process_cmdline,
     process_exe,
@@ -332,6 +333,7 @@ class NVMLSampler:
         self._last_process_at = 0.0
         self._next_process_at = 0.0
         self._process_snapshot: dict[str, tuple[list[GpuProcess], list[OtherUserMemory]]] = {}
+        self._gpm = NvidiaGpmProvider(self._lib)
 
     def set_process_interval(self, process_interval: float) -> None:
         self.process_interval = max(1.0, process_interval)
@@ -342,6 +344,7 @@ class NVMLSampler:
         if self._closed:
             return
         self._closed = True
+        self._gpm.close()
         try:
             self._lib.nvmlShutdown()
         except Exception:
@@ -359,10 +362,11 @@ class NVMLSampler:
 
         now = time.monotonic()
         collect_processes = now >= self._next_process_at
+        sampled_at = time.time()
         gpus: list[GpuInfo] = []
         process_cache: list[dict[str, list[GpuProcess]] | None] = [None]
         for index in range(count.value):
-            gpus.append(self._sample_gpu(index, process_cache, collect_processes))
+            gpus.append(self._sample_gpu(index, process_cache, collect_processes, sampled_at))
         if collect_processes:
             self._last_process_at = time.monotonic()
             self._next_process_at = self._last_process_at + self.process_interval
@@ -371,7 +375,7 @@ class NVMLSampler:
             ok=True,
             source="nvml",
             hostname=socket.gethostname(),
-            timestamp=time.time(),
+            timestamp=sampled_at,
             elapsed_ms=round((time.monotonic() - started) * 1000, 1),
             gpus=gpus,
             driver_version=self._system_string("nvmlSystemGetDriverVersion"),
@@ -407,6 +411,7 @@ class NVMLSampler:
         index: int,
         process_cache: list[dict[str, list[GpuProcess]] | None],
         collect_processes: bool,
+        sampled_at: float,
     ) -> GpuInfo:
         handle = ctypes.c_void_p()
         rc = self._lib.nvmlDeviceGetHandleByIndex(index, ctypes.byref(handle))
@@ -453,6 +458,7 @@ class NVMLSampler:
         gpu.compute_mode = COMPUTE_MODE_MAP.get(compute_mode) if compute_mode is not None else None
         gpu.ecc_mode = self._ecc_mode(handle)
         gpu.mig_mode = self._mig_mode(handle)
+        gpu.performance = self._gpm.sample(index, handle, sampled_at=sampled_at)
         if collect_processes:
             gpu.processes, gpu.other_users = self._processes(handle, gpu.uuid, process_cache)
             self._process_snapshot[gpu.uuid] = (gpu.processes, gpu.other_users)

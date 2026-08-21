@@ -177,3 +177,28 @@ def test_cluster_state_keeps_static_hardware_from_hello() -> None:
     assert not hasattr(node.gpus[0], "architecture")
     assert "hardware" not in node.to_dict()
     assert state.snapshot(now=11.0).to_dict()["nodes"][0]["hardware"]["gpus"][0]["architecture"] == "Hopper"
+
+
+def test_cluster_state_preserves_declared_and_unknown_performance_profiles() -> None:
+    state = ClusterState(local_node_id="manager")
+    hello = AgentHello(
+        node_id="node-a",
+        hostname="host-a",
+        capabilities={"performance_profiles": ["nvidia.gpm.v1", "future.vendor.v1"]},
+    )
+    message = sample_message("node-a", 1)
+    message["snapshot"]["gpus"][0]["performance"] = {
+        "profile": "nvidia.gpm.v1",
+        "status": "available",
+        "sampled_at": 101.0,
+        "interval_ms": 1000.0,
+        "metrics": {"nvidia.gpm.sm_active": 42.5},
+    }
+
+    state.register_hello(hello, now=10.0)
+    state.ingest_sample(message, received_at=11.0)
+
+    node = state.snapshot(now=11.0).nodes[0]
+    assert node.performance_profiles == ["future.vendor.v1", "nvidia.gpm.v1"]
+    assert node.gpus[0].performance is not None
+    assert node.gpus[0].performance.metrics["nvidia.gpm.sm_active"] == 42.5

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from constella.schema import (
+    AcceleratorPerformance,
     GpuInfo,
     GpuProcess,
     Snapshot,
@@ -106,6 +107,32 @@ def test_snapshot_wraps_to_node_snapshot_with_stable_gpu_ids() -> None:
     assert node.gpus[0].gpu_id == "node-a:GPU-shared"
     assert set(node.history) == {"node-a:GPU-shared"}
     assert node.totals.memory_used_mb == 10
+
+
+def test_snapshot_keeps_optional_accelerator_performance_profile() -> None:
+    performance = AcceleratorPerformance(
+        profile="nvidia.gpm.v1",
+        status="available",
+        sampled_at=10.0,
+        interval_ms=1000.0,
+        metrics={"nvidia.gpm.sm_active": 42.5},
+    )
+    snapshot = Snapshot(
+        ok=True,
+        source="nvml",
+        hostname="host-a",
+        timestamp=10.0,
+        elapsed_ms=1.0,
+        gpus=[GpuInfo(index=0, uuid="GPU-a", performance=performance)],
+    )
+
+    node = snapshot_to_node_snapshot(snapshot, node_id="node-a")
+
+    assert node.performance_profiles == ["nvidia.gpm.v1"]
+    assert node.gpus[0].performance == performance
+    assert node.to_dict()["gpus"][0]["performance"]["metrics"] == {
+        "nvidia.gpm.sm_active": 42.5
+    }
 
 
 def test_manager_hostname_overrides_local_node_identity(monkeypatch) -> None:
