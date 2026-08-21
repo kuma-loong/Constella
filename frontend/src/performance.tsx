@@ -412,13 +412,14 @@ function PerformanceChart({
   const chartRef = useRef<uPlot | null>(null);
   const resizeRef = useRef<ResizeObserver | null>(null);
   const aligned = useMemo(() => alignSeries(series, definition.id), [definition.id, series]);
+  const hasData = aligned.timestamps.length > 0;
   const alignedRef = useRef(aligned);
   const seriesRef = useRef(series);
   alignedRef.current = aligned;
   seriesRef.current = series;
 
   useEffect(() => {
-    if (collapsed || !targetRef.current || aligned.timestamps.length === 0) {
+    if (collapsed || !targetRef.current || !hasData) {
       return;
     }
     const target = targetRef.current;
@@ -430,8 +431,17 @@ function PerformanceChart({
         padding: [8, 8, 0, 0],
         scales: { x: { time: true }, y: { range: [0, 100] } },
         axes: [
-          { stroke: css.getPropertyValue("--chart-axis").trim(), grid: { stroke: css.getPropertyValue("--chart-grid").trim() } },
-          { stroke: css.getPropertyValue("--chart-axis").trim(), grid: { stroke: css.getPropertyValue("--chart-grid").trim() }, values: (_plot, values) => values.map((value) => `${value}%`) },
+          {
+            stroke: css.getPropertyValue("--chart-axis").trim(),
+            grid: { stroke: css.getPropertyValue("--chart-grid").trim() },
+            splits: fixedTimeSplits,
+          },
+          {
+            stroke: css.getPropertyValue("--chart-axis").trim(),
+            grid: { stroke: css.getPropertyValue("--chart-grid").trim() },
+            splits: [0, 20, 40, 60, 80, 100],
+            values: (_plot, values) => values.map((value) => `${value}%`),
+          },
         ],
         cursor: {
           y: false,
@@ -491,7 +501,7 @@ function PerformanceChart({
       chart.destroy();
       chartRef.current = null;
     };
-  }, [collapsed, definition.id, series.map((item) => item.gpu_uuid).join(",")]);
+  }, [collapsed, definition.id, hasData, series.map((item) => item.gpu_uuid).join(",")]);
 
   useEffect(() => {
     chartRef.current?.setData(aligned.data);
@@ -564,6 +574,12 @@ function alignSeries(series: PerformanceSeries[], metric: string) {
     ...series.map((item) => interpolatePoints(item.metrics[metric]?.points || [], timestamps)),
   ];
   return { timestamps, data };
+}
+
+function fixedTimeSplits(plot: uPlot, _axisIndex: number, min: number, max: number) {
+  const segments = Math.max(2, Math.min(8, Math.floor(plot.width / 180)));
+  const step = (max - min) / segments;
+  return Array.from({ length: segments - 1 }, (_, index) => min + step * (index + 1));
 }
 
 function interpolatePoints(points: [number, number | null][], timestamps: number[]) {
