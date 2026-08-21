@@ -973,25 +973,9 @@ a:focus-visible {
 }
 
 .spark-wrap {
-  position: relative;
   height: 82px;
   margin: 16px 0 10px;
   background-size: 100% 26px, 30px 100%, auto;
-}
-
-.spark-label {
-  position: absolute;
-  top: 7px;
-  left: 9px;
-  z-index: 1;
-  padding: 2px 5px;
-  border-radius: 4px;
-  color: var(--muted);
-  background: color-mix(in srgb, var(--surface-sunken) 82%, transparent);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .spark {

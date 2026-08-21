@@ -486,7 +486,6 @@ export function GpuCard({
       </div>
 
       <div class="spark-wrap">
-        <span class="spark-label">GPU Active</span>
         <Sparkline values={history.gpu || []} color="var(--accent)" max={100} />
       </div>
 
