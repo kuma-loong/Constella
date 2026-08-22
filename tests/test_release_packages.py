@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.1.2"
+VERSION = "0.1.3rc1"
 
 
 def load_project(path: str) -> dict[str, object]:
@@ -22,11 +22,15 @@ def test_release_distribution_dependency_matrix() -> None:
     assert {project["version"] for project in (full, backend, web, tui)} == {VERSION}
     assert backend["name"] == "constella-gpu-backend"
     assert web["dependencies"] == [f"constella-gpu-backend=={VERSION}"]
-    assert f"constella-gpu-backend=={VERSION}" in tui["dependencies"]
+    assert tui["dependencies"] == ["textual>=8.0.0,<9", "websockets>=13.0"]
     assert full["dependencies"] == [
         f"constella-gpu-tui=={VERSION}",
         f"constella-gpu-web=={VERSION}",
     ]
+    assert backend["scripts"] == {"constella": "constella.cli:main"}
+    assert tui["scripts"] == {"constella-tui": "constella_tui.app:main"}
+    assert "scripts" not in web
+    assert "scripts" not in full
 
 
 def test_release_distribution_module_ownership() -> None:

@@ -141,6 +141,9 @@ TUI 与 Web UI 复用同一条实时集群数据流。远程管理端可通过
 `constella tui --url https://gpu.example.com` 连接，也可以使用等价入口
 `constella-tui`。
 
+TUI 的第五个视图以紧凑点图展示 NVIDIA GPM 高分辨率性能指标，并与其他视图
+复用节点、GPU 和时间范围交互。
+
 如果服务运行在远端服务器，在本地电脑转发端口：
 
 ```bash

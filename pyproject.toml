@@ -1,13 +1,13 @@
 [project]
 name = "constella-gpu"
-version = "0.1.2"
+version = "0.1.3rc1"
 description = "Full Constella distribution with backend, Web UI, and terminal UI."
 readme = "PYPI.md"
 requires-python = ">=3.10"
 license = "MIT"
 keywords = ["gpu", "nvidia", "ascend", "monitoring", "textual", "tui", "web"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Framework :: FastAPI",
     "License :: OSI Approved :: MIT License",
@@ -20,8 +20,8 @@ classifiers = [
     "Topic :: System :: Monitoring",
 ]
 dependencies = [
-    "constella-gpu-tui==0.1.2",
-    "constella-gpu-web==0.1.2",
+    "constella-gpu-tui==0.1.3rc1",
+    "constella-gpu-web==0.1.3rc1",
 ]
 
 [project.urls]
@@ -47,6 +47,7 @@ packages = ["src/constella_gpu"]
 [tool.hatch.build.targets.sdist]
 include = [
     "/LICENSE",
+    "/CHANGELOG.md",
     "/PYPI.md",
     "/pyproject.toml",
     "/src/constella_gpu",

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-__version__ = "0.1.2"
+__version__ = "0.1.3rc1"
 
 
 def frontend_dist() -> Path:

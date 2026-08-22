@@ -16,7 +16,7 @@ _BRAILLE_BITS = (
 
 
 def braille_chart(
-    values: Sequence[float],
+    values: Sequence[float | None],
     *,
     width: int,
     height: int,
@@ -30,7 +30,7 @@ def braille_chart(
     pixel_width = chart_width * 2
     pixel_height = chart_height * 4
     grid = [[0 for _ in range(chart_width)] for _ in range(chart_height)]
-    raw_values = [float(value) for value in values]
+    raw_values = [None if value is None else float(value) for value in values]
     if resample:
         samples: list[float | None] = _resample(raw_values, pixel_width)
         if not samples:
@@ -183,7 +183,7 @@ def _heat_style(value: float) -> str:
     return "#2B334A"
 
 
-def _resample(values: list[float], count: int) -> list[float]:
+def _resample(values: list[float | None], count: int) -> list[float | None]:
     if not values or count <= 0:
         return []
     if len(values) == 1:
@@ -191,13 +191,18 @@ def _resample(values: list[float], count: int) -> list[float]:
     if count == 1:
         return [values[-1]]
     scale = (len(values) - 1) / (count - 1)
-    result: list[float] = []
+    result: list[float | None] = []
     for index in range(count):
         position = index * scale
         left = int(position)
         right = min(left + 1, len(values) - 1)
         fraction = position - left
-        result.append(values[left] * (1 - fraction) + values[right] * fraction)
+        left_value = values[left]
+        right_value = values[right]
+        if left_value is None or right_value is None:
+            result.append(None)
+        else:
+            result.append(left_value * (1 - fraction) + right_value * fraction)
     return result
 
 

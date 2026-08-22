@@ -1,9 +1,9 @@
 # PyPI CLI Usage
 
-This document covers the CLI installed by any Constella distribution. The
-`constella-gpu-backend` package provides the command; the full, Web, and TUI
-distributions include that backend dependency. Source deployments can keep
-using `scripts/service/*`.
+This document covers the server CLI installed by the backend, Web, and full
+Constella distributions. The standalone TUI distribution does not include the
+backend dependency or the `constella` server command. Source deployments can
+keep using `scripts/service/*`.
 
 ## Recommended One-Command Service
 
@@ -41,7 +41,7 @@ constella service stop
 
 ## Terminal UI
 
-Open the realtime terminal client after the manager is running:
+The full distribution provides both equivalent entry points:
 
 ```bash
 constella tui
@@ -49,7 +49,8 @@ constella tui
 constella-tui
 ```
 
-Both commands connect to `http://127.0.0.1:8765` by default and consume the
+The standalone TUI package provides only `constella-tui`. These commands connect
+to `http://127.0.0.1:8765` by default and consume the
 existing read-only `/ws/cluster` stream and analytics APIs. They do not start
 another collector or write to the manager.
 
@@ -65,10 +66,12 @@ constella tui --url https://gpu.example.com
 CONSTELLA_URL=http://10.0.0.10:8765 constella-tui
 ```
 
-Use `1`–`4` to switch between Overview, Cluster, Rankings, and History. `n` and
-`g` move to the next node or GPU, `[` and `]` change analytics range, `r`
-reconnects, and `?` opens keyboard help. Rankings and historical charts require
-SQLite (enabled by `constella service start` unless `--no-db` is set). See
+Use `1`–`5` to switch between Overview, Cluster, Rankings, History, and
+Performance. `n` and `g` move to the next node or GPU, `[` and `]` change the
+active analytics range, and `r` refreshes the current view. In Performance,
+`Space` pauses or resumes the two-second live refresh. Rankings and historical
+charts require SQLite; Performance requires a compatible `nvidia.gpm.v1`
+profile and the high-resolution performance cache. See
 [`packages/tui/README.md`](../packages/tui/README.md) for the complete TUI notes.
 
 ## `constella service start`

@@ -1,6 +1,6 @@
 # Packaging Constella for PyPI
 
-Constella 0.1.2 is published as four composable distributions. Each feature is
+Constella 0.1.3rc1 is published as four composable distributions. Each feature is
 owned by exactly one wheel, so installing variants together never overwrites a
 shared Python package.
 
@@ -8,7 +8,7 @@ shared Python package.
 | --- | :---: | :---: | :---: |
 | `constella-gpu` | Yes | Yes | Yes |
 | `constella-gpu-web` | Yes | Yes | No |
-| `constella-gpu-tui` | Yes | No | Yes |
+| `constella-gpu-tui` | No | No | Yes |
 | `constella-gpu-backend` | Yes | No | No |
 
 Package ownership:
@@ -16,8 +16,8 @@ Package ownership:
 - `constella-gpu-backend` owns the `constella` module and `constella` command.
 - `constella-gpu-web` owns only the `constella_web` static-asset package and
   depends on the backend.
-- `constella-gpu-tui` owns `constella_tui` and `constella-tui`, and depends on
-  the backend.
+- `constella-gpu-tui` owns `constella_tui` and `constella-tui`. It is a remote
+  client and deliberately does not depend on the backend.
 - `constella-gpu` is the full meta distribution and depends on Web and TUI.
 
 The backend discovers installed Web assets at runtime. If the Web distribution
@@ -48,7 +48,7 @@ uvx twine check dist/*
 Full installation:
 
 ```bash
-pip install constella-gpu
+pip install "constella-gpu==0.1.3rc1"
 constella service start
 constella tui
 ```
@@ -56,24 +56,30 @@ constella tui
 Web-only frontend installation:
 
 ```bash
-pip install constella-gpu-web
+pip install "constella-gpu-web==0.1.3rc1"
 constella service start
 ```
 
-TUI-focused installation:
+Standalone TUI client installation:
 
 ```bash
-pip install constella-gpu-tui
-constella service start
-constella-tui
+uv tool install "constella-gpu-tui==0.1.3rc1"
+constella-tui --url https://gpu.example.com
 ```
 
 Backend/API-only installation:
 
 ```bash
-pip install constella-gpu-backend
+uv tool install "constella-gpu-backend==0.1.3rc1"
 constella service start --no-local-agent
 ```
+
+`uv tool install` is intentionally used for the standalone TUI and backend
+distributions because each owns an executable. The Web distribution is a
+static-asset extension and the full distribution is a meta package, so they do
+not duplicate dependency-owned entry points; install those two into a Python
+environment with pip. This avoids two distributions claiming the same script
+file during uninstall.
 
 For the complete command reference, see [PyPI CLI Usage](PYPI_CLI.md).
 

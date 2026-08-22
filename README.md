@@ -144,6 +144,9 @@ The TUI connects to the same realtime cluster stream as the Web UI. Use
 `constella tui --url https://gpu.example.com` for a remote manager, or run the
 equivalent `constella-tui` entry point.
 
+The fifth TUI view presents compact high-resolution NVIDIA GPM performance
+curves and uses the same node, GPU, and time-range controls as the other views.
+
 If the service runs on a remote server, forward the port from your local machine:
 
 ```bash

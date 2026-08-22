@@ -9,7 +9,7 @@ accelerator activity in realtime, records workload history automatically, and
 makes completed training and inference jobs easy to review without requiring a
 Prometheus/Grafana stack.
 
-Version 0.1.2 supports:
+Version 0.1.3rc1 supports:
 
 - NVIDIA GPUs: NVML with an `nvidia-smi` fallback.
 - Ascend NPUs: DCMI with an `npu-smi` fallback.
@@ -19,7 +19,7 @@ Version 0.1.2 supports:
 Constella requires Python 3.10 or newer.
 
 ```bash
-pip install constella-gpu
+pip install "constella-gpu==0.1.3rc1"
 ```
 
 Four distributions provide explicit deployment sizes:
@@ -28,7 +28,7 @@ Four distributions provide explicit deployment sizes:
 | --- | :---: | :---: | :---: |
 | `constella-gpu` | Yes | Yes | Yes |
 | `constella-gpu-web` | Yes | Yes | No |
-| `constella-gpu-tui` | Yes | No | Yes |
+| `constella-gpu-tui` | No | No | Yes |
 | `constella-gpu-backend` | Yes | No | No |
 
 ## Quick start

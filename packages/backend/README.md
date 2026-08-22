@@ -5,7 +5,7 @@ the manager, local and remote accelerator agents, SQLite workload history,
 high-resolution job curves, and the HTTP/WebSocket API without installing a
 user interface.
 
-Constella natively supports heterogeneous accelerator clusters. Version 0.1.2
+Constella natively supports heterogeneous accelerator clusters. Version 0.1.3rc1
 supports NVIDIA GPUs through NVML with an `nvidia-smi` fallback, and Ascend NPUs
 through DCMI with an `npu-smi` fallback.
 

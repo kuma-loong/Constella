@@ -1,13 +1,13 @@
 [project]
 name = "constella-gpu-tui"
-version = "0.1.2"
-description = "Constella backend with a keyboard-first Textual terminal interface."
+version = "0.1.3rc1"
+description = "Standalone keyboard-first Textual client for a remote Constella service."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 keywords = ["gpu", "nvidia", "ascend", "monitoring", "textual", "tui"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
@@ -19,7 +19,6 @@ classifiers = [
     "Topic :: System :: Monitoring",
 ]
 dependencies = [
-    "constella-gpu-backend==0.1.2",
     "textual>=8.0.0,<9",
     "websockets>=13.0",
 ]

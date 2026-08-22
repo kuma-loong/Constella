@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import math
 import os
+import time
 from datetime import datetime
 from typing import Any
 from urllib.parse import quote
@@ -18,16 +19,28 @@ from textual.events import Resize
 from textual.screen import ModalScreen
 from textual.widgets import ContentSwitcher, DataTable, Footer, Label, ListItem, ListView, Static
 
+from . import __version__
 from .charts import aligned_heatmap_rows, braille_chart, heatmap_text, heatmap_timestamps
 from .client import ClusterAPIError, ClusterClient, ClusterConnectionError
 from .model import duration, gpu_rows, memory, node_label, percent, process_rows
+from .performance import (
+    PERFORMANCE_METRICS,
+    PERFORMANCE_PROFILE,
+    PERFORMANCE_RANGES,
+    format_stat,
+    latest_value,
+    metric_points,
+    metric_summary,
+    selected_performance_series,
+)
 
 
 VIEW_LABELS = {
     "overview": "OVERVIEW",
     "cluster": "CLUSTER",
-    "rankings": "RANKINGS",
+    "rankings": "RANK",
     "history": "HISTORY",
+    "performance": "PERF",
 }
 RANKING_RANGES = ("24h", "7d", "30d")
 HISTORY_RANGES = ("1h", "24h", "7d", "30d")
@@ -43,11 +56,12 @@ class HelpScreen(ModalScreen[None]):
         with Container(id="help-dialog"):
             yield Static("KEYBOARD", classes="section-title")
             yield Static(
-                "[b]1-4[/b]              switch views\n"
+                "[b]1-5[/b]              switch views\n"
                 "[b]Tab / Shift+Tab[/b]  move focus\n"
                 "[b]j / k or arrows[/b]  move through rows\n"
                 "[b]n / g[/b]            next node / GPU\n"
                 "[b][ / ][/b]            change analytics range\n"
+                "[b]Space[/b]            pause / resume performance\n"
                 "[b]r[/b]                refresh current view\n"
                 "[b]?[/b]                show this help\n"
                 "[b]q[/b]                quit Constella",
@@ -100,6 +114,8 @@ class ConstellaTui(App[None]):
         Binding("2", "show_cluster", show=False),
         Binding("3", "show_rankings", show=False),
         Binding("4", "show_history", show=False),
+        Binding("5", "show_performance", show=False),
+        Binding("space", "toggle_performance_live", show=False),
         Binding("left_square_bracket", "previous_range", show=False),
         Binding("right_square_bracket", "next_range", show=False),
         Binding("n", "next_node", show=False),
@@ -123,6 +139,10 @@ class ConstellaTui(App[None]):
         self.ranking_error: str | None = None
         self.history_payload: dict[str, Any] | None = None
         self.history_error: str | None = None
+        self.performance_range_index = 1
+        self.performance_payload: dict[str, Any] | None = None
+        self.performance_error: str | None = None
+        self.performance_live = True
         self._connect_generation = 0
         self._table_event_generations: dict[str, int] = {}
 
@@ -214,6 +234,27 @@ class ConstellaTui(App[None]):
                     classes="section-title",
                 )
                 yield Static(id="history-heatmap")
+            with Container(id="performance-view", classes="view"):
+                yield Static(id="performance-status", classes="view-status")
+                with Container(id="performance-grid"):
+                    for metric in PERFORMANCE_METRICS:
+                        with Vertical(
+                            id=f"performance-card-{metric.slug}",
+                            classes="performance-card",
+                        ):
+                            yield Static(
+                                f"{metric.group}  ·  {metric.label}",
+                                id=f"performance-title-{metric.slug}",
+                                classes="performance-title section-title",
+                            )
+                            yield Static(
+                                id=f"performance-chart-{metric.slug}",
+                                classes="performance-chart",
+                            )
+                            yield Static(
+                                id=f"performance-summary-{metric.slug}",
+                                classes="performance-summary",
+                            )
         yield Footer()
 
     def on_mount(self) -> None:
@@ -221,6 +262,7 @@ class ConstellaTui(App[None]):
         self._render_navigation()
         self._show_state("Connecting to the Constella manager...")
         self.connect_stream()
+        self.set_interval(2.0, self._refresh_performance_if_visible)
 
     def on_resize(self, event: Resize) -> None:
         if self.is_mounted:
@@ -344,6 +386,53 @@ class ConstellaTui(App[None]):
         self._render_history()
         self.call_after_refresh(self._render_history)
 
+    @work(exclusive=True, group="performance-api")
+    async def load_performance(self) -> None:
+        node = self._selected_node()
+        gpu = self._ensure_selected_gpu()
+        if node is None or gpu is None or not self._performance_supported(node):
+            self.performance_payload = None
+            self.performance_error = None
+            self._render_performance()
+            return
+        node_id = self._node_id(node)
+        gpu_uuid = str(gpu.get("uuid") or "")
+        if not gpu_uuid:
+            self.performance_payload = None
+            self.performance_error = "selected GPU does not report a UUID"
+            self._render_performance()
+            return
+        range_label, range_seconds = PERFORMANCE_RANGES[self.performance_range_index]
+        range_end = time.time()
+        self.performance_error = None
+        self.query_one("#performance-status", Static).update(
+            f"LOADING  node {escape(node_id)}  ·  GPU {int(gpu.get('index') or 0)}  ·  "
+            f"range {range_label}"
+        )
+        try:
+            payload = await self.client.get_json(
+                "/api/highres/performance",
+                params={
+                    "node_id": node_id,
+                    "gpu_uuid": gpu_uuid,
+                    "metrics": ",".join(metric.key for metric in PERFORMANCE_METRICS),
+                    "since": str(range_end - range_seconds),
+                    "until": str(range_end),
+                    "max_points": "480",
+                },
+            )
+        except ClusterAPIError as exc:
+            self.performance_error = str(exc)
+            self.performance_payload = None
+        else:
+            self.performance_payload = payload
+        self._render_performance()
+        self.call_after_refresh(self._render_performance)
+
+    def _refresh_performance_if_visible(self) -> None:
+        if self.active_view == "performance" and self.performance_live:
+            self.load_performance()
+
     def action_refresh(self) -> None:
         if self.active_view == "rankings":
             self.ranking_payload = None
@@ -351,6 +440,9 @@ class ConstellaTui(App[None]):
         elif self.active_view == "history":
             self.history_payload = None
             self.load_history(force=True)
+        elif self.active_view == "performance":
+            self.performance_payload = None
+            self.load_performance()
         else:
             self._connect_generation += 1
             self.connect_stream()
@@ -369,6 +461,18 @@ class ConstellaTui(App[None]):
 
     def action_show_history(self) -> None:
         self._switch_view("history")
+
+    def action_show_performance(self) -> None:
+        self._switch_view("performance")
+
+    def action_toggle_performance_live(self) -> None:
+        if self.active_view != "performance":
+            return
+        self.performance_live = not self.performance_live
+        if self.performance_live:
+            self.load_performance()
+        else:
+            self._render_performance()
 
     def action_previous_range(self) -> None:
         self._cycle_range(-1)
@@ -400,13 +504,22 @@ class ConstellaTui(App[None]):
             self._render_overview()
         elif self.active_view == "history":
             self._render_history()
+        elif self.active_view == "performance":
+            self.performance_payload = None
+            self.load_performance()
 
     def action_cursor_down(self) -> None:
+        if self.active_view == "performance":
+            self.query_one("#performance-grid", Container).scroll_down(animate=False)
+            return
         action = getattr(self.focused, "action_cursor_down", None)
         if action is not None:
             action()
 
     def action_cursor_up(self) -> None:
+        if self.active_view == "performance":
+            self.query_one("#performance-grid", Container).scroll_up(animate=False)
+            return
         action = getattr(self.focused, "action_cursor_up", None)
         if action is not None:
             action()
@@ -423,6 +536,8 @@ class ConstellaTui(App[None]):
             self.load_rankings()
         elif view == "history":
             self.load_history()
+        elif view == "performance":
+            self.load_performance()
         elif view == "overview":
             self._render_overview()
             self.call_after_refresh(self._render_selected_gpu_panel)
@@ -440,6 +555,12 @@ class ConstellaTui(App[None]):
             self.history_range = values[(current + direction) % len(values)]
             self.history_payload = None
             self.load_history(force=True)
+        elif self.active_view == "performance":
+            self.performance_range_index = (self.performance_range_index + direction) % len(
+                PERFORMANCE_RANGES
+            )
+            self.performance_payload = None
+            self.load_performance()
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         self._select_highlighted_node(event.item)
@@ -480,11 +601,14 @@ class ConstellaTui(App[None]):
         self.selected_node_id = node_id
         self.selected_gpu_key = None
         self.history_payload = None
+        self.performance_payload = None
         self._sync_node_list_cursor()
         if render_overview:
             self._render_overview()
         if self.active_view == "history":
             self.load_history(force=True)
+        elif self.active_view == "performance":
+            self.load_performance()
 
     def _set_connection(self, label: str, state_class: str) -> None:
         status = self.query_one("#connection-status", Static)
@@ -510,6 +634,7 @@ class ConstellaTui(App[None]):
             self.selected_node_id = ids[0] if ids else None
             self.selected_gpu_key = None
             self.history_payload = None
+            self.performance_payload = None
         self._render_node_list(nodes)
         self._render_context()
         if not nodes:
@@ -521,6 +646,9 @@ class ConstellaTui(App[None]):
             self._render_overview()
         elif self.active_view == "cluster":
             self._render_cluster()
+        elif self.active_view == "performance":
+            self._ensure_selected_gpu()
+            self._render_performance()
         self.call_after_refresh(self._render_visible_charts)
 
     def _render_node_list(self, nodes: list[dict[str, Any]]) -> None:
@@ -1026,11 +1154,117 @@ class ConstellaTui(App[None]):
             )
         )
 
+    def _render_performance(self) -> None:
+        status = self.query_one("#performance-status", Static)
+        node = self._selected_node()
+        gpu = self._ensure_selected_gpu()
+        if node is None:
+            status.update("WAITING FOR CLUSTER DATA")
+            self._clear_performance_charts("No node selected")
+            return
+        if not self._performance_supported(node):
+            profiles = node.get("performance_profiles")
+            profile_label = ", ".join(str(item) for item in profiles) if profiles else "base telemetry"
+            status.update(
+                f"UNSUPPORTED  node {escape(self._node_id(node))} reports {escape(profile_label)}"
+            )
+            self._clear_performance_charts("Detailed performance is unavailable")
+            return
+        if gpu is None:
+            status.update(f"NO GPU  node {escape(self._node_id(node))} has no accelerator data")
+            self._clear_performance_charts("No GPU selected")
+            return
+        if self.performance_error:
+            status.update(f"ERROR  {escape(self.performance_error)}  ·  press r to retry")
+            self._clear_performance_charts("Performance request failed")
+            return
+        payload = self.performance_payload
+        if payload is None:
+            status.update("LOADING PERFORMANCE METRICS")
+            self._clear_performance_charts("Waiting for samples")
+            return
+        if payload.get("enabled") is False:
+            status.update("PERFORMANCE CACHE DISABLED  enable high-resolution GPM collection")
+            self._clear_performance_charts("High-resolution cache disabled")
+            return
+        gpu_uuid = str(gpu.get("uuid") or "")
+        series = selected_performance_series(payload, gpu_uuid)
+        range_label, _ = PERFORMANCE_RANGES[self.performance_range_index]
+        live_label = "LIVE" if self.performance_live else "PAUSED"
+        live_action = "pause" if self.performance_live else "resume"
+        series_status = str(series.get("status") or "warming").upper() if series else "WARMING"
+        status_text = Text()
+        status_text.append(live_label, style="bold #00E5FF" if self.performance_live else "#FF6B00")
+        status_text.append(
+            f"  ·  {self._node_id(node)}  ·  GPU {int(gpu.get('index') or 0)}  ·  "
+            f"{range_label}  ·  {series_status}  ·  ",
+            style="#8A99AD",
+        )
+        status_text.append("N", style="bold #00E5FF")
+        status_text.append(" node  ·  ", style="#8A99AD")
+        status_text.append("G", style="bold #00E5FF")
+        status_text.append(" GPU  ·  ", style="#8A99AD")
+        status_text.append("[ / ]", style="bold #00E5FF")
+        status_text.append(" range  ·  ", style="#8A99AD")
+        status_text.append("Space", style="bold #00E5FF")
+        status_text.append(f" {live_action}", style="#8A99AD")
+        status.update(status_text)
+        if series is None:
+            self._clear_performance_charts("Warming up · no samples yet")
+            return
+        for metric in PERFORMANCE_METRICS:
+            chart = self.query_one(f"#performance-chart-{metric.slug}", Static)
+            title = self.query_one(f"#performance-title-{metric.slug}", Static)
+            summary_widget = self.query_one(f"#performance-summary-{metric.slug}", Static)
+            timestamps, values = metric_points(series, metric.key)
+            current = latest_value(values)
+            title.update(
+                f"{metric.group}  ·  {metric.label}  ·  "
+                f"CURRENT {format_stat(current)}"
+            )
+            if timestamps:
+                chart.update(
+                    Text(
+                        braille_chart(
+                            values,
+                            width=max(4, chart.size.width - 4),
+                            height=max(2, min(4, chart.size.height - 1)),
+                            timestamps=timestamps,
+                        ),
+                        style=metric.style,
+                    )
+                )
+            else:
+                chart.update(Text("No valid samples in this range", style="#59677A"))
+            summary = metric_summary(series, metric.key)
+            summary_text = Text()
+            summary_text.append("AVG ", style="#8A99AD")
+            summary_text.append(format_stat(summary.get("avg")), style=metric.style)
+            summary_text.append("  PEAK ", style="#8A99AD")
+            summary_text.append(format_stat(summary.get("max")), style="#E2E8F0")
+            summary_text.append("  P95 ", style="#8A99AD")
+            summary_text.append(format_stat(summary.get("p95")), style="#E2E8F0")
+            summary_text.append("  COVER ", style="#8A99AD")
+            summary_text.append(format_stat(summary.get("coverage")), style="#E2E8F0")
+            summary_widget.update(summary_text)
+
+    def _clear_performance_charts(self, message: str) -> None:
+        for metric in PERFORMANCE_METRICS:
+            self.query_one(f"#performance-title-{metric.slug}", Static).update(
+                f"{metric.group}  ·  {metric.label}"
+            )
+            self.query_one(f"#performance-chart-{metric.slug}", Static).update(
+                Text(message, style="#59677A")
+            )
+            self.query_one(f"#performance-summary-{metric.slug}", Static).update("")
+
     def _render_visible_charts(self) -> None:
         if self.active_view == "overview" and self.snapshot is not None:
             self._render_selected_gpu_panel()
         elif self.active_view == "history" and self.history_payload is not None:
             self._render_history()
+        elif self.active_view == "performance":
+            self._render_performance()
 
     def _history_series(self, series: list[dict[str, Any]]) -> dict[str, Any] | None:
         gpu = self._selected_gpu()
@@ -1063,7 +1297,7 @@ class ConstellaTui(App[None]):
         memory_used = memory(totals.get("memory_used_mb"))
         sequence = int(self.snapshot.get("seq") or 0)
         text = Text()
-        text.append(f"{self.active_view.upper()}  ", style="bold #00E5FF")
+        text.append(f"{self.active_view.upper()}  ·  ", style="bold #00E5FF")
         text.append(f"{online_nodes:>3}/{node_count:>3} nodes", style="#E2E8F0")
         text.append(f"  ·  {gpu_count:>3} GPU", style="#8A99AD")
         text.append(
@@ -1087,6 +1321,24 @@ class ConstellaTui(App[None]):
             if isinstance(gpu, dict) and self._gpu_key(gpu) == self.selected_gpu_key:
                 return gpu
         return None
+
+    def _ensure_selected_gpu(self) -> dict[str, Any] | None:
+        selected = self._selected_gpu()
+        if selected is not None:
+            return selected
+        node = self._selected_node()
+        if node is None:
+            return None
+        gpus = [gpu for gpu in node.get("gpus", []) if isinstance(gpu, dict)]
+        if not gpus:
+            return None
+        self.selected_gpu_key = self._gpu_key(gpus[0])
+        return gpus[0]
+
+    @staticmethod
+    def _performance_supported(node: dict[str, Any]) -> bool:
+        profiles = node.get("performance_profiles")
+        return isinstance(profiles, list) and PERFORMANCE_PROFILE in profiles
 
     def _snapshot_nodes(self) -> list[dict[str, Any]]:
         if self.snapshot is None:
@@ -1180,6 +1432,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="constella-tui",
         description="Keyboard-first terminal interface for a Constella manager.",
     )
+    parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument(
         "--url",
         default=os.environ.get("CONSTELLA_URL", "http://127.0.0.1:8765"),

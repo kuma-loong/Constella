@@ -74,7 +74,7 @@ wheels = [
 
 [[package]]
 name = "constella-gpu"
-version = "0.1.2"
+version = "0.1.3rc1"
 source = { editable = "." }
 dependencies = [
     { name = "constella-gpu-tui" },
@@ -103,7 +103,7 @@ dev = [
 
 [[package]]
 name = "constella-gpu-backend"
-version = "0.1.2"
+version = "0.1.3rc1"
 source = { editable = "packages/backend" }
 dependencies = [
     { name = "fastapi" },
@@ -122,24 +122,22 @@ requires-dist = [
 
 [[package]]
 name = "constella-gpu-tui"
-version = "0.1.2"
+version = "0.1.3rc1"
 source = { editable = "packages/tui" }
 dependencies = [
-    { name = "constella-gpu-backend" },
     { name = "textual" },
     { name = "websockets" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "constella-gpu-backend", editable = "packages/backend" },
     { name = "textual", specifier = ">=8.0.0,<9" },
     { name = "websockets", specifier = ">=13.0" },
 ]
 
 [[package]]
 name = "constella-gpu-web"
-version = "0.1.2"
+version = "0.1.3rc1"
 source = { editable = "packages/web" }
 dependencies = [
     { name = "constella-gpu-backend" },

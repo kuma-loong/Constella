@@ -3,10 +3,13 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 
+import pytest
+from textual.containers import Container
 from textual.widgets import ContentSwitcher, DataTable, ListView, Static
 
-from constella_tui.app import LIVE_CHART_STYLE, ConstellaTui
+from constella_tui.app import LIVE_CHART_STYLE, ConstellaTui, build_parser
 from constella_tui.client import ClusterConnectionError
+from constella_tui.performance import PERFORMANCE_METRICS
 
 
 SNAPSHOT = {
@@ -50,6 +53,13 @@ SNAPSHOT = {
         "active_processes": 1,
     },
 }
+
+
+def test_tui_parser_reports_package_version(capsys) -> None:
+    with pytest.raises(SystemExit, match="0"):
+        build_parser().parse_args(["--version"])
+
+    assert capsys.readouterr().out == "0.1.3rc1\n"
 
 
 class FakeClient:
@@ -147,6 +157,56 @@ class AnalyticsClient(FakeClient):
                 ],
             }
         raise AssertionError(path)
+
+
+class PerformanceClient(FakeClient):
+    def __init__(self, *, enabled: bool = True) -> None:
+        self.enabled = enabled
+        self.requests: list[tuple[str, dict[str, str]]] = []
+
+    async def get_json(self, path: str, *, params=None, timeout=10.0):
+        assert path == "/api/highres/performance"
+        assert isinstance(params, dict)
+        self.requests.append((path, params))
+        if not self.enabled:
+            return {
+                "enabled": False,
+                "profile": "nvidia.gpm.v1",
+                "series": [],
+            }
+        metrics = str(params["metrics"]).split(",")
+        gpu_uuid = str(params["gpu_uuid"])
+        gpu_index = int(gpu_uuid.rsplit("-", 1)[-1])
+        return {
+            "enabled": True,
+            "profile": "nvidia.gpm.v1",
+            "series": [
+                {
+                    "node_id": params["node_id"],
+                    "gpu_uuid": gpu_uuid,
+                    "gpu_index": gpu_index,
+                    "name": "NVIDIA Test",
+                    "status": "available",
+                    "metrics": {
+                        metric: {
+                            "points": [
+                                [1_700_000_000, 10.0],
+                                [1_700_000_001, None],
+                                [1_700_000_002, 70.0],
+                            ],
+                            "summary": {
+                                "avg": 40.0,
+                                "min": 10.0,
+                                "max": 70.0,
+                                "p95": 70.0,
+                                "coverage": 66.7,
+                            },
+                        }
+                        for metric in metrics
+                    },
+                }
+            ],
+        }
 
 
 async def exercise_app() -> None:
@@ -443,6 +503,105 @@ async def exercise_multi_view_navigation() -> None:
 
 def test_tui_supports_cluster_rankings_and_history_views() -> None:
     asyncio.run(exercise_multi_view_navigation())
+
+
+async def exercise_performance_view_and_controls() -> None:
+    snapshot = deepcopy(SNAPSHOT)
+    node = snapshot["nodes"][0]
+    node["performance_profiles"] = ["nvidia.gpm.v1"]
+    node["gpus"][0]["uuid"] = "GPU-0"
+    second_gpu = deepcopy(node["gpus"][0])
+    second_gpu.update(index=1, uuid="GPU-1")
+    node["gpus"].append(second_gpu)
+    client = PerformanceClient()
+    client.snapshots = lambda: _single_snapshot(snapshot)  # type: ignore[method-assign]
+    app = ConstellaTui("http://127.0.0.1:8765")
+    app.client = client  # type: ignore[assignment]
+
+    async with app.run_test(size=(90, 28)) as pilot:
+        await pilot.pause(0.2)
+        await pilot.press("5")
+        await pilot.pause(0.2)
+
+        assert app.query_one("#views", ContentSwitcher).current == "performance-view"
+        assert client.requests
+        _, first_params = client.requests[-1]
+        assert first_params["node_id"] == "gpu-a"
+        assert first_params["gpu_uuid"] == "GPU-0"
+        assert set(first_params["metrics"].split(",")) == {
+            metric.key for metric in PERFORMANCE_METRICS
+        }
+        assert 899 <= float(first_params["until"]) - float(first_params["since"]) <= 901
+        chart = str(app.query_one("#performance-chart-sm-active", Static).content)
+        assert any("\u2801" <= character <= "\u28ff" for character in chart)
+        summary = str(app.query_one("#performance-summary-sm-active", Static).content)
+        assert "AVG 40.0%" in summary
+        assert "COVER 66.7%" in summary
+        assert "LIVE" in str(app.query_one("#performance-status", Static).content)
+        grid = app.query_one("#performance-grid", Container)
+        assert grid.max_scroll_y > 0
+        await pilot.press("j")
+        await pilot.pause()
+        assert grid.scroll_y > 0
+
+        await pilot.press("right_square_bracket")
+        await pilot.pause(0.2)
+        _, range_params = client.requests[-1]
+        assert 3599 <= float(range_params["until"]) - float(range_params["since"]) <= 3601
+
+        await pilot.press("space")
+        await pilot.pause()
+        status = str(app.query_one("#performance-status", Static).content)
+        assert "PAUSED" in status
+        assert "resume" in status
+
+        await pilot.press("g")
+        await pilot.pause(0.2)
+        assert app.selected_gpu_key == "GPU-1"
+        assert client.requests[-1][1]["gpu_uuid"] == "GPU-1"
+
+
+def test_tui_performance_view_renders_metrics_and_preserves_controls() -> None:
+    asyncio.run(exercise_performance_view_and_controls())
+
+
+async def exercise_performance_capability_and_disabled_states() -> None:
+    unsupported_snapshot = deepcopy(SNAPSHOT)
+    unsupported_snapshot["nodes"][0]["gpus"][0]["uuid"] = "GPU-0"
+    unsupported_client = PerformanceClient()
+    unsupported_client.snapshots = lambda: _single_snapshot(  # type: ignore[method-assign]
+        unsupported_snapshot
+    )
+    unsupported_app = ConstellaTui("http://127.0.0.1:8765")
+    unsupported_app.client = unsupported_client  # type: ignore[assignment]
+    async with unsupported_app.run_test(size=(120, 36)) as pilot:
+        await pilot.pause(0.2)
+        await pilot.press("5")
+        await pilot.pause(0.1)
+        assert not unsupported_client.requests
+        assert "UNSUPPORTED" in str(
+            unsupported_app.query_one("#performance-status", Static).content
+        )
+
+    disabled_snapshot = deepcopy(unsupported_snapshot)
+    disabled_snapshot["nodes"][0]["performance_profiles"] = ["nvidia.gpm.v1"]
+    disabled_client = PerformanceClient(enabled=False)
+    disabled_client.snapshots = lambda: _single_snapshot(  # type: ignore[method-assign]
+        disabled_snapshot
+    )
+    disabled_app = ConstellaTui("http://127.0.0.1:8765")
+    disabled_app.client = disabled_client  # type: ignore[assignment]
+    async with disabled_app.run_test(size=(120, 36)) as pilot:
+        await pilot.pause(0.2)
+        await pilot.press("5")
+        await pilot.pause(0.2)
+        assert "CACHE DISABLED" in str(
+            disabled_app.query_one("#performance-status", Static).content
+        )
+
+
+def test_tui_performance_view_handles_capability_and_cache_states() -> None:
+    asyncio.run(exercise_performance_capability_and_disabled_states())
 
 
 async def exercise_compact_terminal_and_cycle_actions() -> None:

@@ -26,7 +26,7 @@ Screen {
 }
 
 #brand {
-    width: 22;
+    width: 18;
     height: 100%;
     padding: 1 0 0 2;
     color: $text;
@@ -42,7 +42,7 @@ Screen {
 }
 
 #connection-status {
-    width: 14;
+    width: 12;
     height: 100%;
     padding: 1 2 0 0;
     text-align: right;
@@ -224,6 +224,46 @@ Screen {
     overflow-y: auto;
 }
 
+#performance-view { layout: vertical; }
+#performance-grid {
+    width: 100%;
+    height: 1fr;
+    layout: grid;
+    grid-size: 3;
+    grid-columns: 1fr 1fr 1fr;
+    grid-rows: 9 9 9;
+    grid-gutter: 1 1;
+    padding: 1;
+    overflow-y: auto;
+}
+.performance-card {
+    width: 100%;
+    height: 9;
+    background: $background;
+    border: solid $line;
+}
+.performance-title {
+    width: 100%;
+    height: 2;
+    color: $accent;
+}
+.performance-chart {
+    width: 100%;
+    height: 1fr;
+    min-height: 2;
+    padding: 0 1;
+    background: $background;
+    overflow: hidden;
+}
+.performance-summary {
+    width: 100%;
+    height: 2;
+    padding: 0 1;
+    color: $muted;
+    background: #101621;
+    overflow: hidden;
+}
+
 DataTable {
     width: 100%;
     background: $background;
@@ -256,7 +296,7 @@ HelpScreen { align: center middle; background: #0B0E14 85%; }
 #help-dialog {
     width: 64;
     max-width: 90%;
-    height: 21;
+    height: 22;
     background: $surface;
     border: solid $line;
     padding: 1 2;

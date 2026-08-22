@@ -23,6 +23,13 @@ def test_braille_chart_handles_empty_data() -> None:
     assert len(braille_chart([], width=6, height=2).splitlines()) == 2
 
 
+def test_braille_chart_preserves_missing_performance_samples_as_gaps() -> None:
+    chart = braille_chart([10, None, 90], width=8, height=3, resample=False)
+
+    assert any("\u2801" <= character <= "\u28ff" for character in chart)
+    assert "\u2800" in chart
+
+
 def test_braille_chart_can_keep_live_samples_on_fixed_dot_columns() -> None:
     first = braille_chart([25], width=4, height=2, resample=False).splitlines()
     second = braille_chart([25, 75], width=4, height=2, resample=False).splitlines()
