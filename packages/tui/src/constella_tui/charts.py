@@ -85,6 +85,55 @@ def braille_chart(
     return "\n".join(labeled)
 
 
+def braille_multi_chart(
+    series: Sequence[tuple[Sequence[float | None], str]],
+    *,
+    width: int,
+    height: int,
+    maximum: float = 100.0,
+    timestamps: Sequence[float] | None = None,
+) -> Text:
+    """Overlay aligned Braille curves while preserving each GPU's color."""
+    chart_width = max(4, width)
+    chart_height = max(2, height)
+    rendered = [
+        (
+            braille_chart(
+                values,
+                width=chart_width,
+                height=chart_height,
+                maximum=maximum,
+            ).splitlines(),
+            style,
+        )
+        for values, style in series
+        if any(value is not None for value in values)
+    ]
+    if not rendered:
+        return Text("No history points", style="#59677A")
+
+    output = Text()
+    for row_index in range(chart_height):
+        if row_index:
+            output.append("\n")
+        first_line = rendered[0][0][row_index]
+        output.append(first_line[:-chart_width], style="#59677A")
+        for column in range(chart_width):
+            bits = 0
+            cell_style = "#59677A"
+            for lines, style in rendered:
+                character = lines[row_index][-chart_width + column]
+                character_bits = ord(character) - 0x2800
+                if character_bits:
+                    bits |= character_bits
+                    cell_style = style
+            output.append(chr(0x2800 + bits), style=cell_style)
+    if timestamps:
+        output.append("\n    ", style="#59677A")
+        output.append(time_axis(timestamps, width=chart_width), style="#59677A")
+    return output
+
+
 def heatmap_text(
     rows: Sequence[tuple[str, Sequence[float | None]]],
     *,

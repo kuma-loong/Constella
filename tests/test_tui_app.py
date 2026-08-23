@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import colorsys
 from copy import deepcopy
+from itertools import combinations
 
 import pytest
 from textual.containers import Container
 from textual.widgets import ContentSwitcher, DataTable, ListView, Static
 
-from constella_tui.app import LIVE_CHART_STYLE, ConstellaTui, build_parser
+from constella_tui.app import (
+    HISTORY_GPU_STYLES,
+    LIVE_CHART_STYLE,
+    ConstellaTui,
+    build_parser,
+)
 from constella_tui.client import ClusterConnectionError
 from constella_tui.performance import PERFORMANCE_METRICS
 
@@ -60,6 +67,23 @@ def test_tui_parser_reports_package_version(capsys) -> None:
         build_parser().parse_args(["--version"])
 
     assert capsys.readouterr().out == "0.1.3rc1\n"
+
+
+def test_history_uses_eight_visually_distinct_gpu_colors() -> None:
+    assert len(HISTORY_GPU_STYLES) == 8
+    assert len(set(HISTORY_GPU_STYLES)) == 8
+    hues = []
+    for color in HISTORY_GPU_STYLES:
+        red, green, blue = (
+            int(color[offset : offset + 2], 16) / 255 for offset in (1, 3, 5)
+        )
+        hue, saturation, value = colorsys.rgb_to_hsv(red, green, blue)
+        assert saturation >= 0.65
+        assert value >= 0.9
+        hues.append(hue * 360)
+    for first, second in combinations(hues, 2):
+        distance = abs(first - second)
+        assert min(distance, 360 - distance) >= 35
 
 
 class FakeClient:
@@ -135,7 +159,23 @@ class AnalyticsClient(FakeClient):
                                 "avg_memory_used_mb": 2048,
                             },
                         ],
-                    }
+                    },
+                    {
+                        "gpu_uuid": "GPU-1",
+                        "gpu_index": 1,
+                        "points": [
+                            {
+                                "bucket_start": 1_700_000_000,
+                                "avg_gpu_utilization": 80,
+                                "avg_memory_used_mb": 4096,
+                            },
+                            {
+                                "bucket_start": 1_700_003_600,
+                                "avg_gpu_utilization": 30,
+                                "avg_memory_used_mb": 3072,
+                            },
+                        ],
+                    },
                 ],
                 "heatmap": [
                     {
@@ -153,7 +193,23 @@ class AnalyticsClient(FakeClient):
                                 "sample_count": 2,
                             },
                         ],
-                    }
+                    },
+                    {
+                        "gpu_uuid": "GPU-1",
+                        "gpu_index": 1,
+                        "buckets": [
+                            {
+                                "bucket_start": 1_700_000_000,
+                                "avg_gpu_utilization": 80,
+                                "sample_count": 2,
+                            },
+                            {
+                                "bucket_start": 1_700_003_600,
+                                "avg_gpu_utilization": 30,
+                                "sample_count": 2,
+                            },
+                        ],
+                    },
                 ],
             }
         raise AssertionError(path)
@@ -475,6 +531,9 @@ def test_cluster_selection_is_stable_for_keyboard_mouse_and_refresh() -> None:
 async def exercise_multi_view_navigation() -> None:
     snapshot = deepcopy(SNAPSHOT)
     snapshot["nodes"][0]["gpus"][0]["uuid"] = "GPU-0"
+    second_gpu = deepcopy(snapshot["nodes"][0]["gpus"][0])
+    second_gpu.update(index=1, uuid="GPU-1")
+    snapshot["nodes"][0]["gpus"].append(second_gpu)
     app = ConstellaTui("http://127.0.0.1:8765")
     client = AnalyticsClient()
     client.snapshots = lambda: _single_snapshot(snapshot)  # type: ignore[method-assign]
@@ -495,10 +554,23 @@ async def exercise_multi_view_navigation() -> None:
         await pilot.press("4")
         await pilot.pause(0.2)
         assert "GPU 0" in str(app.query_one("#history-heatmap", Static).content)
+        assert "GPU 1" in str(app.query_one("#history-heatmap", Static).content)
+        gpu_title = app.query_one("#history-gpu-title", Static).content
+        assert "ALL GPU UTILIZATION" in str(gpu_title)
+        assert "▸0" in gpu_title.plain
+        gpu_chart = app.query_one("#history-gpu-curve", Static).content
+        chart_styles = [str(span.style) for span in gpu_chart.spans]
+        assert "bold #4DEBFF" in chart_styles
+        assert "#FFB84D" in chart_styles
         history_status = str(app.query_one("#history-status", Static).content)
         assert "N[/] next node" in history_status
-        assert "G[/] next GPU" in history_status
+        assert "2 GPU series" in history_status
+        assert "G[/] highlight GPU" in history_status
         assert "time range" in history_status
+
+        await pilot.press("g")
+        await pilot.pause()
+        assert "▸1" in app.query_one("#history-gpu-title", Static).content.plain
 
 
 def test_tui_supports_cluster_rankings_and_history_views() -> None:
@@ -534,31 +606,65 @@ async def exercise_performance_view_and_controls() -> None:
         assert 899 <= float(first_params["until"]) - float(first_params["since"]) <= 901
         chart = str(app.query_one("#performance-chart-sm-active", Static).content)
         assert any("\u2801" <= character <= "\u28ff" for character in chart)
+        assert app.query_one("#performance-chart-sm-active", Static).size.height >= 5
         summary = str(app.query_one("#performance-summary-sm-active", Static).content)
         assert "AVG 40.0%" in summary
         assert "COVER 66.7%" in summary
-        assert "LIVE" in str(app.query_one("#performance-status", Static).content)
-        grid = app.query_one("#performance-grid", Container)
-        assert grid.max_scroll_y > 0
-        await pilot.press("j")
+        status = str(app.query_one("#performance-status", Static).content)
+        assert "P1/2" in status
+        assert "COMPUTE + MEMORY" in status
+        assert "gpu-a" in status
+        assert "GPU 0" in status
+        assert "15m" in status
+        assert "LIVE" not in status
+        pages = app.query_one("#performance-pages", ContentSwitcher)
+        assert pages.current == "performance-page-1"
+        first_page = app.query_one("#performance-page-1", Container)
+        second_page = app.query_one("#performance-page-2", Container)
+        assert len(first_page.query(".performance-card")) == 4
+        assert len(second_page.query(".performance-card")) == 3
+
+        first_page_cards = list(first_page.query(".performance-card"))
+        first_regions = [card.region for card in first_page_cards]
+        assert first_regions[0].y == first_regions[1].y
+        assert first_regions[0].x < first_regions[1].x
+        assert first_regions[2].y == first_regions[3].y > first_regions[0].y
+        assert first_regions[2].x < first_regions[3].x
+        assert all(region.height > 0 for region in first_regions)
+
+        await pilot.press("l")
         await pilot.pause()
-        assert grid.scroll_y > 0
+        assert pages.current == "performance-page-2"
+        assert "P2/2" in str(app.query_one("#performance-status", Static).content)
+        assert "NON-TENSOR PIPELINES" in str(
+            app.query_one("#performance-status", Static).content
+        )
+        await pilot.press("h")
+        await pilot.pause()
+        assert pages.current == "performance-page-1"
+        status = str(app.query_one("#performance-status", Static).content)
 
         await pilot.press("right_square_bracket")
         await pilot.pause(0.2)
         _, range_params = client.requests[-1]
         assert 3599 <= float(range_params["until"]) - float(range_params["since"]) <= 3601
+        status = str(app.query_one("#performance-status", Static).content)
+        assert "1h" in status
+
+        await pilot.press("r")
+        await pilot.pause(0.2)
+        assert str(app.query_one("#performance-status", Static).content) == status
 
         await pilot.press("space")
         await pilot.pause()
-        status = str(app.query_one("#performance-status", Static).content)
-        assert "PAUSED" in status
-        assert "resume" in status
+        assert str(app.query_one("#performance-status", Static).content) == status
+        assert "PAUSED" in str(app.query_one("#performance-notice", Static).content)
 
         await pilot.press("g")
         await pilot.pause(0.2)
         assert app.selected_gpu_key == "GPU-1"
         assert client.requests[-1][1]["gpu_uuid"] == "GPU-1"
+        assert "GPU 1" in str(app.query_one("#performance-status", Static).content)
 
 
 def test_tui_performance_view_renders_metrics_and_preserves_controls() -> None:
@@ -580,7 +686,7 @@ async def exercise_performance_capability_and_disabled_states() -> None:
         await pilot.pause(0.1)
         assert not unsupported_client.requests
         assert "UNSUPPORTED" in str(
-            unsupported_app.query_one("#performance-status", Static).content
+            unsupported_app.query_one("#performance-notice", Static).content
         )
 
     disabled_snapshot = deepcopy(unsupported_snapshot)
@@ -596,7 +702,7 @@ async def exercise_performance_capability_and_disabled_states() -> None:
         await pilot.press("5")
         await pilot.pause(0.2)
         assert "CACHE DISABLED" in str(
-            disabled_app.query_one("#performance-status", Static).content
+            disabled_app.query_one("#performance-notice", Static).content
         )
 
 

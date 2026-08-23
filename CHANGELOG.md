@@ -26,6 +26,9 @@ First release candidate for 0.1.3.
   `constella-gpu-tui` for the standalone terminal client.
 - Removed the backend dependency from `constella-gpu-tui`; it now installs only
   the client-side Textual and WebSocket runtime.
+- Changed TUI History to overlay every GPU on the selected node on shared
+  utilization and memory charts, with eight hue-separated colors and GPU
+  highlighting.
 - Hardened high-resolution downsampling, GPM sampling isolation, chart refresh
   costs, and remote-agent runtime packaging.
 

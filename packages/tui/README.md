@@ -13,7 +13,8 @@ supports NVIDIA GPUs and Ascend NPUs.
 - **Overview** — compact node/GPU navigation, selected-GPU processes, telemetry, and a live Braille dot curve.
 - **Cluster** — complete node inventory and the selected node's hardware details.
 - **Rankings** — user GPU-hours, jobs, and anomaly rankings from persisted analytics.
-- **History** — utilization and memory dot curves plus a GPU-by-time utilization heatmap.
+- **History** — all GPUs on the selected node overlaid in shared utilization and
+  memory dot charts, plus a GPU-by-time utilization heatmap.
 - **Performance** — compact high-resolution dot charts for SM activity, occupancy,
   Tensor Cores, DRAM bandwidth, and non-Tensor FP16/FP32/FP64 pipelines.
 
@@ -45,6 +46,7 @@ constella-tui --url https://gpu.example.com
 | Arrow keys, `j`, `k` | Move through nodes and table rows |
 | `n`, `g` | Select the next node or GPU |
 | `[`, `]` | Select the previous or next analytics time range |
+| `h`, `l` | Select the previous or next Performance metric page |
 | `Space` | Pause or resume Performance live refresh |
 | `r` | Reconnect immediately |
 | `?` | Open keyboard help |
@@ -52,10 +54,15 @@ constella-tui --url https://gpu.example.com
 
 The selected node and GPU survive realtime refreshes and remain shared across views. The client reconnects automatically after a dropped connection. No agent token is needed because these read-only endpoints follow the same access boundary as the Web UI.
 
+History assigns the first eight GPUs stable, high-contrast colors spaced across
+the full hue range. Press `g` to bring the next GPU to the foreground without
+hiding the other GPU curves.
+
 Performance requires the manager's `nvidia.gpm.v1` profile and high-resolution
 performance cache. Unsupported accelerators continue to work in the other TUI
-views and show an explicit unavailable state in Performance. In compact
-terminals, `j` and `k` scroll through the Performance chart grid.
+views and show an explicit unavailable state in Performance. The first metric
+page contains four Compute and Memory charts; the second contains three
+non-Tensor pipeline charts.
 
 The TUI package deliberately does not install the backend, FastAPI, Uvicorn, or
 the server-side `constella` command. Use `constella-gpu` when both server and

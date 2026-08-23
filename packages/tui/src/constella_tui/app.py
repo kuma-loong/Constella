@@ -20,11 +20,18 @@ from textual.screen import ModalScreen
 from textual.widgets import ContentSwitcher, DataTable, Footer, Label, ListItem, ListView, Static
 
 from . import __version__
-from .charts import aligned_heatmap_rows, braille_chart, heatmap_text, heatmap_timestamps
+from .charts import (
+    aligned_heatmap_rows,
+    braille_chart,
+    braille_multi_chart,
+    heatmap_text,
+    heatmap_timestamps,
+)
 from .client import ClusterAPIError, ClusterClient, ClusterConnectionError
 from .model import duration, gpu_rows, memory, node_label, percent, process_rows
 from .performance import (
     PERFORMANCE_METRICS,
+    PERFORMANCE_PAGES,
     PERFORMANCE_PROFILE,
     PERFORMANCE_RANGES,
     format_stat,
@@ -47,6 +54,16 @@ HISTORY_RANGES = ("1h", "24h", "7d", "30d")
 LIVE_CHART_POINTS = 120
 LIVE_CHART_COLUMNS = LIVE_CHART_POINTS // 2
 LIVE_CHART_STYLE = "#00E5FF"
+HISTORY_GPU_STYLES = (
+    "#4DEBFF",
+    "#FFB84D",
+    "#A64DFF",
+    "#4DFF8B",
+    "#FF4DCF",
+    "#B8FF4D",
+    "#4D6BFF",
+    "#FF4D4D",
+)
 
 
 class HelpScreen(ModalScreen[None]):
@@ -61,6 +78,7 @@ class HelpScreen(ModalScreen[None]):
                 "[b]j / k or arrows[/b]  move through rows\n"
                 "[b]n / g[/b]            next node / GPU\n"
                 "[b][ / ][/b]            change analytics range\n"
+                "[b]h / l[/b]            change Performance metric page\n"
                 "[b]Space[/b]            pause / resume performance\n"
                 "[b]r[/b]                refresh current view\n"
                 "[b]?[/b]                show this help\n"
@@ -116,6 +134,8 @@ class ConstellaTui(App[None]):
         Binding("4", "show_history", show=False),
         Binding("5", "show_performance", show=False),
         Binding("space", "toggle_performance_live", show=False),
+        Binding("h", "previous_performance_page", show=False),
+        Binding("l", "next_performance_page", show=False),
         Binding("left_square_bracket", "previous_range", show=False),
         Binding("right_square_bracket", "next_range", show=False),
         Binding("n", "next_node", show=False),
@@ -140,6 +160,8 @@ class ConstellaTui(App[None]):
         self.history_payload: dict[str, Any] | None = None
         self.history_error: str | None = None
         self.performance_range_index = 1
+        self.performance_page_index = 0
+        self._performance_header_state: tuple[object, ...] | None = None
         self.performance_payload: dict[str, Any] | None = None
         self.performance_error: str | None = None
         self.performance_live = True
@@ -235,26 +257,34 @@ class ConstellaTui(App[None]):
                 )
                 yield Static(id="history-heatmap")
             with Container(id="performance-view", classes="view"):
-                yield Static(id="performance-status", classes="view-status")
-                with Container(id="performance-grid"):
-                    for metric in PERFORMANCE_METRICS:
-                        with Vertical(
-                            id=f"performance-card-{metric.slug}",
-                            classes="performance-card",
+                yield Static(self._performance_header(), id="performance-status", classes="view-status")
+                yield Static(id="performance-notice")
+                with ContentSwitcher(initial="performance-page-1", id="performance-pages"):
+                    for page_index, (_page_label, metrics) in enumerate(
+                        PERFORMANCE_PAGES, start=1
+                    ):
+                        with Container(
+                            id=f"performance-page-{page_index}",
+                            classes="performance-grid",
                         ):
-                            yield Static(
-                                f"{metric.group}  ·  {metric.label}",
-                                id=f"performance-title-{metric.slug}",
-                                classes="performance-title section-title",
-                            )
-                            yield Static(
-                                id=f"performance-chart-{metric.slug}",
-                                classes="performance-chart",
-                            )
-                            yield Static(
-                                id=f"performance-summary-{metric.slug}",
-                                classes="performance-summary",
-                            )
+                            for metric in metrics:
+                                with Vertical(
+                                    id=f"performance-card-{metric.slug}",
+                                    classes="performance-card",
+                                ):
+                                    yield Static(
+                                        f"{metric.group}  ·  {metric.label}",
+                                        id=f"performance-title-{metric.slug}",
+                                        classes="performance-title section-title",
+                                    )
+                                    yield Static(
+                                        id=f"performance-chart-{metric.slug}",
+                                        classes="performance-chart",
+                                    )
+                                    yield Static(
+                                        id=f"performance-summary-{metric.slug}",
+                                        classes="performance-summary",
+                                    )
         yield Footer()
 
     def on_mount(self) -> None:
@@ -402,13 +432,10 @@ class ConstellaTui(App[None]):
             self.performance_error = "selected GPU does not report a UUID"
             self._render_performance()
             return
-        range_label, range_seconds = PERFORMANCE_RANGES[self.performance_range_index]
+        _range_label, range_seconds = PERFORMANCE_RANGES[self.performance_range_index]
         range_end = time.time()
         self.performance_error = None
-        self.query_one("#performance-status", Static).update(
-            f"LOADING  node {escape(node_id)}  ·  GPU {int(gpu.get('index') or 0)}  ·  "
-            f"range {range_label}"
-        )
+        self._set_performance_notice("")
         try:
             payload = await self.client.get_json(
                 "/api/highres/performance",
@@ -442,6 +469,7 @@ class ConstellaTui(App[None]):
             self.load_history(force=True)
         elif self.active_view == "performance":
             self.performance_payload = None
+            self._render_performance_header()
             self.load_performance()
         else:
             self._connect_generation += 1
@@ -473,6 +501,12 @@ class ConstellaTui(App[None]):
             self.load_performance()
         else:
             self._render_performance()
+
+    def action_previous_performance_page(self) -> None:
+        self._change_performance_page(-1)
+
+    def action_next_performance_page(self) -> None:
+        self._change_performance_page(1)
 
     def action_previous_range(self) -> None:
         self._cycle_range(-1)
@@ -506,20 +540,15 @@ class ConstellaTui(App[None]):
             self._render_history()
         elif self.active_view == "performance":
             self.performance_payload = None
+            self._render_performance_header()
             self.load_performance()
 
     def action_cursor_down(self) -> None:
-        if self.active_view == "performance":
-            self.query_one("#performance-grid", Container).scroll_down(animate=False)
-            return
         action = getattr(self.focused, "action_cursor_down", None)
         if action is not None:
             action()
 
     def action_cursor_up(self) -> None:
-        if self.active_view == "performance":
-            self.query_one("#performance-grid", Container).scroll_up(animate=False)
-            return
         action = getattr(self.focused, "action_cursor_up", None)
         if action is not None:
             action()
@@ -537,6 +566,8 @@ class ConstellaTui(App[None]):
         elif view == "history":
             self.load_history()
         elif view == "performance":
+            self.set_focus(None)
+            self._render_performance_header()
             self.load_performance()
         elif view == "overview":
             self._render_overview()
@@ -560,7 +591,20 @@ class ConstellaTui(App[None]):
                 PERFORMANCE_RANGES
             )
             self.performance_payload = None
+            self._render_performance_header()
             self.load_performance()
+
+    def _change_performance_page(self, direction: int) -> None:
+        if self.active_view != "performance":
+            return
+        self.performance_page_index = (self.performance_page_index + direction) % len(
+            PERFORMANCE_PAGES
+        )
+        self.query_one("#performance-pages", ContentSwitcher).current = (
+            f"performance-page-{self.performance_page_index + 1}"
+        )
+        self._render_performance_header()
+        self.call_after_refresh(self._render_performance)
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         self._select_highlighted_node(event.item)
@@ -608,6 +652,8 @@ class ConstellaTui(App[None]):
         if self.active_view == "history":
             self.load_history(force=True)
         elif self.active_view == "performance":
+            self._ensure_selected_gpu()
+            self._render_performance_header()
             self.load_performance()
 
     def _set_connection(self, label: str, state_class: str) -> None:
@@ -1099,51 +1145,54 @@ class ConstellaTui(App[None]):
             heatmap.update("")
             return
         series = self._dict_items(payload.get("series"))
-        selected = self._history_series(series)
+        series.sort(key=self._history_series_sort_key)
         status.update(
             f"NODE {self.selected_node_id or 'unknown'}  ·  RANGE {self.history_range}  ·  "
             f"{len(series)} GPU series  ·  [bold #00E5FF]N[/] next node  ·  "
-            "[bold #00E5FF]G[/] next GPU  ·  [bold #00E5FF][ / ][/] time range"
+            "[bold #00E5FF]G[/] highlight GPU  ·  [bold #00E5FF][ / ][/] time range"
         )
-        if selected is None:
-            gpu_curve.update("No history points for the selected GPU")
+        self.query_one("#history-gpu-title", Static).update(
+            self._history_title("ALL GPU UTILIZATION", series)
+        )
+        self.query_one("#history-memory-title", Static).update(
+            self._history_title("ALL GPU MEMORY GiB", series)
+        )
+        if not series:
+            gpu_curve.update("No GPU history points for this node")
             memory_curve.update("")
         else:
-            points = self._dict_items(selected.get("points"))
-            gpu_values = [float(point.get("avg_gpu_utilization") or 0) for point in points]
-            memory_values = [float(point.get("avg_memory_used_mb") or 0) / 1024 for point in points]
-            timestamps = [
-                float(point["bucket_start"])
-                for point in points
-                if point.get("bucket_start") is not None
-            ]
-            memory_max = max(memory_values, default=1.0)
+            timestamps, gpu_series = self._history_curves(
+                series, "avg_gpu_utilization"
+            )
+            _memory_timestamps, memory_series = self._history_curves(
+                series, "avg_memory_used_mb", scale=1 / 1024
+            )
+            memory_max = max(
+                (
+                    value
+                    for values, _style in memory_series
+                    for value in values
+                    if value is not None
+                ),
+                default=1.0,
+            )
             gpu_curve.update(
-                Text(
-                    braille_chart(
-                        gpu_values,
-                        width=max(12, gpu_curve.size.width - 7),
-                        height=max(3, gpu_curve.size.height - 1),
-                        timestamps=timestamps,
-                    ),
-                    style="#00E5FF",
+                braille_multi_chart(
+                    gpu_series,
+                    width=max(12, gpu_curve.size.width - 7),
+                    height=max(3, gpu_curve.size.height - 1),
+                    timestamps=timestamps,
                 )
             )
             memory_curve.update(
-                Text(
-                    braille_chart(
-                        memory_values,
-                        width=max(12, memory_curve.size.width - 7),
-                        height=max(3, memory_curve.size.height - 1),
-                        maximum=max(1.0, memory_max),
-                        timestamps=timestamps,
-                    ),
-                    style="#A855F7",
+                braille_multi_chart(
+                    memory_series,
+                    width=max(12, memory_curve.size.width - 7),
+                    height=max(3, memory_curve.size.height - 1),
+                    maximum=max(1.0, memory_max),
+                    timestamps=timestamps,
                 )
             )
-            label = f"GPU {selected.get('gpu_index') if selected.get('gpu_index') is not None else '?'}"
-            self.query_one("#history-gpu-title", Static).update(f"{label} UTILIZATION")
-            self.query_one("#history-memory-title", Static).update(f"{label} MEMORY GiB")
         heatmap_items = self._dict_items(payload.get("heatmap"))
         heat_rows = aligned_heatmap_rows(heatmap_items)
         heatmap.update(
@@ -1155,63 +1204,51 @@ class ConstellaTui(App[None]):
         )
 
     def _render_performance(self) -> None:
-        status = self.query_one("#performance-status", Static)
         node = self._selected_node()
         gpu = self._ensure_selected_gpu()
+        self._render_performance_header()
         if node is None:
-            status.update("WAITING FOR CLUSTER DATA")
+            self._set_performance_notice("WAITING FOR CLUSTER DATA")
             self._clear_performance_charts("No node selected")
             return
         if not self._performance_supported(node):
             profiles = node.get("performance_profiles")
             profile_label = ", ".join(str(item) for item in profiles) if profiles else "base telemetry"
-            status.update(
+            self._set_performance_notice(
                 f"UNSUPPORTED  node {escape(self._node_id(node))} reports {escape(profile_label)}"
             )
             self._clear_performance_charts("Detailed performance is unavailable")
             return
         if gpu is None:
-            status.update(f"NO GPU  node {escape(self._node_id(node))} has no accelerator data")
+            self._set_performance_notice(
+                f"NO GPU  node {escape(self._node_id(node))} has no accelerator data"
+            )
             self._clear_performance_charts("No GPU selected")
             return
         if self.performance_error:
-            status.update(f"ERROR  {escape(self.performance_error)}  ·  press r to retry")
+            self._set_performance_notice(
+                f"ERROR  {escape(self.performance_error)}  ·  press r to retry"
+            )
             self._clear_performance_charts("Performance request failed")
             return
         payload = self.performance_payload
         if payload is None:
-            status.update("LOADING PERFORMANCE METRICS")
+            self._set_performance_notice("")
             self._clear_performance_charts("Waiting for samples")
             return
         if payload.get("enabled") is False:
-            status.update("PERFORMANCE CACHE DISABLED  enable high-resolution GPM collection")
+            self._set_performance_notice(
+                "PERFORMANCE CACHE DISABLED  enable high-resolution GPM collection"
+            )
             self._clear_performance_charts("High-resolution cache disabled")
             return
         gpu_uuid = str(gpu.get("uuid") or "")
         series = selected_performance_series(payload, gpu_uuid)
-        range_label, _ = PERFORMANCE_RANGES[self.performance_range_index]
-        live_label = "LIVE" if self.performance_live else "PAUSED"
-        live_action = "pause" if self.performance_live else "resume"
-        series_status = str(series.get("status") or "warming").upper() if series else "WARMING"
-        status_text = Text()
-        status_text.append(live_label, style="bold #00E5FF" if self.performance_live else "#FF6B00")
-        status_text.append(
-            f"  ·  {self._node_id(node)}  ·  GPU {int(gpu.get('index') or 0)}  ·  "
-            f"{range_label}  ·  {series_status}  ·  ",
-            style="#8A99AD",
-        )
-        status_text.append("N", style="bold #00E5FF")
-        status_text.append(" node  ·  ", style="#8A99AD")
-        status_text.append("G", style="bold #00E5FF")
-        status_text.append(" GPU  ·  ", style="#8A99AD")
-        status_text.append("[ / ]", style="bold #00E5FF")
-        status_text.append(" range  ·  ", style="#8A99AD")
-        status_text.append("Space", style="bold #00E5FF")
-        status_text.append(f" {live_action}", style="#8A99AD")
-        status.update(status_text)
         if series is None:
+            self._set_performance_notice("WARMING UP  no performance samples yet")
             self._clear_performance_charts("Warming up · no samples yet")
             return
+        self._set_performance_notice("" if self.performance_live else "LIVE REFRESH PAUSED")
         for metric in PERFORMANCE_METRICS:
             chart = self.query_one(f"#performance-chart-{metric.slug}", Static)
             title = self.query_one(f"#performance-title-{metric.slug}", Static)
@@ -1228,7 +1265,7 @@ class ConstellaTui(App[None]):
                         braille_chart(
                             values,
                             width=max(4, chart.size.width - 4),
-                            height=max(2, min(4, chart.size.height - 1)),
+                            height=max(2, chart.size.height - 1),
                             timestamps=timestamps,
                         ),
                         style=metric.style,
@@ -1248,6 +1285,50 @@ class ConstellaTui(App[None]):
             summary_text.append(format_stat(summary.get("coverage")), style="#E2E8F0")
             summary_widget.update(summary_text)
 
+    def _performance_header(self) -> Text:
+        page_label, _metrics = PERFORMANCE_PAGES[self.performance_page_index]
+        node = self._selected_node()
+        gpu = self._selected_gpu()
+        node_label = self._node_id(node) if node is not None else "—"
+        gpu_index = int(gpu.get("index") or 0) if gpu is not None else "—"
+        range_label, _range_seconds = PERFORMANCE_RANGES[self.performance_range_index]
+        text = Text()
+        text.append(
+            f"P{self.performance_page_index + 1}/{len(PERFORMANCE_PAGES)}  ·  {page_label}  ·  ",
+            style="#8A99AD",
+        )
+        text.append(str(node_label), style="bold #E2E8F0")
+        text.append("  ·  GPU ", style="#8A99AD")
+        text.append(str(gpu_index), style="bold #00E5FF")
+        text.append(f"  ·  {range_label}  ·  ", style="#8A99AD")
+        text.append("H/L", style="bold #00E5FF")
+        text.append("  ·  ", style="#8A99AD")
+        text.append("N/G", style="bold #00E5FF")
+        text.append("  ·  ", style="#8A99AD")
+        text.append("[/]", style="bold #00E5FF")
+        text.append("  ·  ", style="#8A99AD")
+        text.append("Space", style="bold #00E5FF")
+        return text
+
+    def _render_performance_header(self) -> None:
+        node = self._selected_node()
+        gpu = self._selected_gpu()
+        state = (
+            self.performance_page_index,
+            self._node_id(node) if node is not None else None,
+            self._gpu_key(gpu) if gpu is not None else None,
+            self.performance_range_index,
+        )
+        if state == self._performance_header_state:
+            return
+        self._performance_header_state = state
+        self.query_one("#performance-status", Static).update(self._performance_header())
+
+    def _set_performance_notice(self, message: str) -> None:
+        notice = self.query_one("#performance-notice", Static)
+        notice.update(message)
+        notice.display = bool(message)
+
     def _clear_performance_charts(self, message: str) -> None:
         for metric in PERFORMANCE_METRICS:
             self.query_one(f"#performance-title-{metric.slug}", Static).update(
@@ -1266,13 +1347,68 @@ class ConstellaTui(App[None]):
         elif self.active_view == "performance":
             self._render_performance()
 
-    def _history_series(self, series: list[dict[str, Any]]) -> dict[str, Any] | None:
-        gpu = self._selected_gpu()
-        selected_uuid = str(gpu.get("uuid")) if gpu else None
-        for item in series:
-            if selected_uuid and str(item.get("gpu_uuid")) == selected_uuid:
-                return item
-        return series[0] if series else None
+    def _history_curves(
+        self,
+        series: list[dict[str, Any]],
+        value_key: str,
+        *,
+        scale: float = 1.0,
+    ) -> tuple[list[float], list[tuple[list[float | None], str]]]:
+        timestamps = sorted(
+            {
+                float(point["bucket_start"])
+                for item in series
+                for point in self._dict_items(item.get("points"))
+                if point.get("bucket_start") is not None
+            }
+        )
+        selected = self._selected_gpu()
+        selected_uuid = str(selected.get("uuid")) if selected else None
+        entries: list[tuple[bool, list[float | None], str]] = []
+        for index, item in enumerate(series):
+            values_by_time = {
+                float(point["bucket_start"]): (
+                    float(point[value_key]) * scale
+                    if point.get(value_key) is not None
+                    else None
+                )
+                for point in self._dict_items(item.get("points"))
+                if point.get("bucket_start") is not None
+            }
+            is_selected = bool(
+                selected_uuid and str(item.get("gpu_uuid")) == selected_uuid
+            )
+            color = HISTORY_GPU_STYLES[index % len(HISTORY_GPU_STYLES)]
+            style = f"bold {color}" if is_selected else color
+            entries.append(
+                (is_selected, [values_by_time.get(timestamp) for timestamp in timestamps], style)
+            )
+        entries.sort(key=lambda entry: entry[0])
+        return timestamps, [(values, style) for _selected, values, style in entries]
+
+    def _history_title(self, label: str, series: list[dict[str, Any]]) -> Text:
+        selected = self._selected_gpu()
+        selected_uuid = str(selected.get("uuid")) if selected else None
+        title = Text(f"{label}  ·  ")
+        for index, item in enumerate(series):
+            if index:
+                title.append(" ", style="#8A99AD")
+            gpu_index = item.get("gpu_index")
+            gpu_label = str(gpu_index) if gpu_index is not None else "?"
+            is_selected = bool(
+                selected_uuid and str(item.get("gpu_uuid")) == selected_uuid
+            )
+            color = HISTORY_GPU_STYLES[index % len(HISTORY_GPU_STYLES)]
+            title.append(f"▸{gpu_label}" if is_selected else gpu_label, style=f"bold {color}")
+        return title
+
+    @staticmethod
+    def _history_series_sort_key(item: dict[str, Any]) -> tuple[int, str]:
+        try:
+            gpu_index = int(item.get("gpu_index"))
+        except (TypeError, ValueError):
+            gpu_index = 2**31 - 1
+        return gpu_index, str(item.get("gpu_uuid") or "")
 
     def _render_navigation(self) -> None:
         parts: list[str] = []

@@ -40,6 +40,11 @@ PERFORMANCE_METRICS = (
     ),
 )
 
+PERFORMANCE_PAGES = (
+    ("COMPUTE + MEMORY", PERFORMANCE_METRICS[:4]),
+    ("NON-TENSOR PIPELINES", PERFORMANCE_METRICS[4:]),
+)
+
 
 def selected_performance_series(
     payload: dict[str, Any], gpu_uuid: str

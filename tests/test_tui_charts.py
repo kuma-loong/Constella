@@ -3,6 +3,7 @@ from __future__ import annotations
 from constella_tui.charts import (
     aligned_heatmap_rows,
     braille_chart,
+    braille_multi_chart,
     heatmap_text,
     heatmap_timestamps,
     time_axis,
@@ -59,6 +60,24 @@ def test_braille_chart_adds_aligned_time_axis() -> None:
     assert len(chart.splitlines()) == 4
     assert chart.splitlines()[-1].startswith("    ")
     assert len(chart.splitlines()[-1]) == 24
+
+
+def test_braille_multi_chart_overlays_colored_gpu_series() -> None:
+    chart = braille_multi_chart(
+        [
+            ([10, 30, 60], "#00E5FF"),
+            ([90, 70, 40], "bold #A855F7"),
+        ],
+        width=16,
+        height=4,
+        timestamps=[1_700_000_000, 1_700_003_600, 1_700_007_200],
+    )
+
+    assert len(chart.plain.splitlines()) == 5
+    assert any("\u2801" <= character <= "\u28ff" for character in chart.plain)
+    styles = [str(span.style) for span in chart.spans]
+    assert "#00E5FF" in styles
+    assert "bold #A855F7" in styles
 
 
 def test_heatmap_uses_semantic_color_bands() -> None:
