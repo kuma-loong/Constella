@@ -5,8 +5,6 @@ import socket
 import subprocess
 import time
 from io import StringIO
-from typing import Any
-
 from .procfs import (
     process_cmdline,
     process_exe,
@@ -194,7 +192,3 @@ def error_snapshot(error: str, source: str = "nvidia-smi") -> Snapshot:
         elapsed_ms=0.0,
         error=error,
     )
-
-
-def gpu_to_plain_dict(gpu: GpuInfo) -> dict[str, Any]:
-    return gpu.to_dict()

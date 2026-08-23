@@ -417,9 +417,6 @@ class SQLiteStore:
             [_rollup_row_from_sql(row, bucket_seconds=bucket_seconds) for row in rows]
         )
 
-    def rollup_gpu_metrics(self, *, bucket_seconds: int) -> int:
-        return self.rollup_legacy_gpu_metric_samples(bucket_seconds=bucket_seconds)
-
     def rollup_gpu_metric_rollups(
         self,
         *,

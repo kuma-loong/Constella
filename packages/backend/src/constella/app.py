@@ -29,11 +29,8 @@ from .highres import (
     performance_curves,
     query_jobs,
 )
-from .paths import default_project_root, resolve_frontend_dist
+from .paths import resolve_frontend_dist
 from .schema import local_node_id
-
-PROJECT_ROOT = default_project_root()
-FRONTEND_DIST = resolve_frontend_dist()
 
 
 class SettingsUpdate(BaseModel):
@@ -222,13 +219,6 @@ def create_app(
             "database": database,
         }
 
-    @app.get("/api/snapshot")
-    async def snapshot() -> dict[str, object]:
-        raise HTTPException(
-            status_code=410,
-            detail="GET /api/snapshot is retired; use GET /api/cluster/snapshot",
-        )
-
     @app.get("/api/cluster/snapshot")
     async def cluster_snapshot() -> dict[str, object]:
         return cluster_state.snapshot().to_dict()
@@ -407,11 +397,6 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         broadcast_config()
         return payload
-
-    @app.websocket("/ws/gpu")
-    async def gpu_ws(websocket: WebSocket) -> None:
-        await websocket.accept()
-        await websocket.close(code=1008, reason="WS /ws/gpu is retired; use /ws/cluster")
 
     @app.websocket("/ws/cluster")
     async def cluster_ws(websocket: WebSocket) -> None:

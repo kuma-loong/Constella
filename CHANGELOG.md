@@ -3,6 +3,18 @@
 All notable changes to Constella are documented in this file. Python
 distribution versions follow PEP 440; Git tags use a hyphenated equivalent.
 
+## Unreleased
+
+### Fixed
+
+- Stabilized TUI Performance curves with fixed time bins so live samples scroll
+  left instead of reflowing the full chart on every refresh.
+
+### Removed
+
+- Removed retired single-node API shims and unreferenced backend compatibility
+  helpers superseded by the cluster API and current collector paths.
+
 ## [0.1.3rc1] - 2026-08-23
 
 First release candidate for 0.1.3.

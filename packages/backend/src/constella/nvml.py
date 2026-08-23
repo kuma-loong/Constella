@@ -279,17 +279,6 @@ def _proc_comm(pid: int) -> str | None:
         return None
 
 
-def _proc_cmdline(pid: int) -> str | None:
-    try:
-        with open(f"/proc/{pid}/cmdline", "rb") as f:
-            raw = f.read()
-    except OSError:
-        return None
-    if not raw:
-        return None
-    return raw.replace(b"\x00", b" ").decode("utf-8", errors="replace").strip() or None
-
-
 def _process_detail_mode() -> str:
     value = os.environ.get("CONSTELLA_PROCESS_DETAIL_MODE", "all").strip().lower()
     if value not in {"all", "names", "aggregate"}:
@@ -784,35 +773,5 @@ def sample(own_user: str | None = None) -> Snapshot:
     sampler = NVMLSampler(own_user=own_user)
     try:
         return sampler.sample()
-    finally:
-        sampler.close()
-
-
-def sample_with_fallback(own_user: str | None = None) -> Snapshot:
-    try:
-        sampler = NVMLSampler(own_user=own_user)
-    except Exception as exc:
-        try:
-            snapshot = nvidia_smi.sample()
-            snapshot.source = "nvidia-smi"
-            return snapshot
-        except Exception as fallback_exc:
-            return nvidia_smi.error_snapshot(
-                f"NVML failed: {exc}; nvidia-smi failed: {fallback_exc}",
-                source="none",
-            )
-
-    try:
-        return sampler.sample()
-    except Exception as exc:
-        try:
-            snapshot = nvidia_smi.sample()
-            snapshot.source = "nvidia-smi"
-            return snapshot
-        except Exception as fallback_exc:
-            return nvidia_smi.error_snapshot(
-                f"NVML failed: {exc}; nvidia-smi failed: {fallback_exc}",
-                source="none",
-            )
     finally:
         sampler.close()

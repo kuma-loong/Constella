@@ -3,8 +3,6 @@ from __future__ import annotations
 import time
 
 from fastapi.testclient import TestClient
-from starlette.websockets import WebSocketDisconnect
-
 from constella.app import create_app
 from constella.cluster import ClusterState
 
@@ -140,23 +138,3 @@ def test_cluster_websocket_coalesces_updates_to_refresh_interval() -> None:
     assert elapsed >= 0.4
     assert coalesced["nodes"][0]["seq"] == 2
     assert coalesced["nodes"][0]["gpus"][0]["memory_used_mb"] == 22
-
-
-def test_deprecated_single_node_http_api_returns_gone() -> None:
-    client = TestClient(create_app(cluster_state=ClusterState(local_node_id="manager")))
-
-    response = client.get("/api/snapshot")
-
-    assert response.status_code == 410
-    assert "/api/cluster/snapshot" in response.json()["detail"]
-
-
-def test_deprecated_single_node_websocket_closes() -> None:
-    client = TestClient(create_app(cluster_state=ClusterState(local_node_id="manager")))
-
-    with client.websocket_connect("/ws/gpu") as websocket:
-        try:
-            websocket.receive_json()
-            raise AssertionError("deprecated websocket should close immediately")
-        except WebSocketDisconnect as exc:
-            assert exc.code == 1008

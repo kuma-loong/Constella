@@ -30,12 +30,14 @@ from .charts import (
 from .client import ClusterAPIError, ClusterClient, ClusterConnectionError
 from .model import duration, gpu_rows, memory, node_label, percent, process_rows
 from .performance import (
+    PERFORMANCE_CHART_POINTS,
     PERFORMANCE_METRICS,
     PERFORMANCE_PAGES,
     PERFORMANCE_PROFILE,
     PERFORMANCE_RANGES,
     format_stat,
     latest_value,
+    merge_rolling_points,
     metric_points,
     metric_summary,
     selected_performance_series,
@@ -162,6 +164,12 @@ class ConstellaTui(App[None]):
         self.performance_range_index = 1
         self.performance_page_index = 0
         self._performance_header_state: tuple[object, ...] | None = None
+        self._performance_chart_contexts: dict[
+            str, tuple[str, str, int, int]
+        ] = {}
+        self._performance_chart_points: dict[
+            str, list[tuple[float, float | None]]
+        ] = {}
         self.performance_payload: dict[str, Any] | None = None
         self.performance_error: str | None = None
         self.performance_live = True
@@ -445,7 +453,7 @@ class ConstellaTui(App[None]):
                     "metrics": ",".join(metric.key for metric in PERFORMANCE_METRICS),
                     "since": str(range_end - range_seconds),
                     "until": str(range_end),
-                    "max_points": "480",
+                    "max_points": str(PERFORMANCE_CHART_POINTS),
                 },
             )
         except ClusterAPIError as exc:
@@ -1249,24 +1257,48 @@ class ConstellaTui(App[None]):
             self._clear_performance_charts("Warming up · no samples yet")
             return
         self._set_performance_notice("" if self.performance_live else "LIVE REFRESH PAUSED")
+        _range_label, range_seconds = PERFORMANCE_RANGES[self.performance_range_index]
+        node_id = self._node_id(node)
         for metric in PERFORMANCE_METRICS:
             chart = self.query_one(f"#performance-chart-{metric.slug}", Static)
             title = self.query_one(f"#performance-title-{metric.slug}", Static)
             summary_widget = self.query_one(f"#performance-summary-{metric.slug}", Static)
-            timestamps, values = metric_points(series, metric.key)
-            current = latest_value(values)
+            raw_timestamps, raw_values = metric_points(series, metric.key)
+            current = latest_value(raw_values)
+            chart_width = max(4, chart.size.width - 4)
+            pixel_columns = chart_width * 2
+            context = (
+                node_id,
+                gpu_uuid,
+                self.performance_range_index,
+                pixel_columns,
+            )
+            if self._performance_chart_contexts.get(metric.key) != context:
+                self._performance_chart_contexts[metric.key] = context
+                self._performance_chart_points[metric.key] = []
+            rolling_points = merge_rolling_points(
+                self._performance_chart_points.get(metric.key, []),
+                raw_timestamps,
+                raw_values,
+                bin_seconds=range_seconds / pixel_columns,
+                columns=pixel_columns,
+            )
+            self._performance_chart_points[metric.key] = rolling_points
+            timestamps = [timestamp for timestamp, _value in rolling_points]
+            values = [value for _timestamp, value in rolling_points]
             title.update(
                 f"{metric.group}  ·  {metric.label}  ·  "
                 f"CURRENT {format_stat(current)}"
             )
-            if timestamps:
+            if raw_timestamps:
                 chart.update(
                     Text(
                         braille_chart(
                             values,
-                            width=max(4, chart.size.width - 4),
+                            width=chart_width,
                             height=max(2, chart.size.height - 1),
                             timestamps=timestamps,
+                            resample=False,
                         ),
                         style=metric.style,
                     )

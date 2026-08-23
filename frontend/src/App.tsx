@@ -30,7 +30,7 @@ import { createAnalyticsController, type Route } from "./analytics";
 import { clusterRefreshInterval, findNode, sameInterval } from "./cluster-utils";
 import { Fabric, GpuGrid, Header, ProcessSection, Summary } from "./components";
 import { PerformancePage } from "./performance";
-import type { ClusterSnapshot, LiveState, NodeSnapshot, Settings, ThemeMode } from "./types";
+import type { ClusterSnapshot, LiveState, Settings, ThemeMode } from "./types";
 
 const iconSet = {
   Activity,
