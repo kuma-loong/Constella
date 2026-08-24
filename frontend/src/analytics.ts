@@ -235,7 +235,7 @@ const HEATMAP_HOURS = 12;
 const HEATMAP_RANGE = "24h";
 const HOUR_SECONDS = 60 * 60;
 const NODE_METRICS: { key: NodeMetric; label: string; max?: number }[] = [
-  { key: "avg_gpu_utilization", label: "GPU", max: 100 },
+  { key: "avg_gpu_utilization", label: "Utilization", max: 100 },
   { key: "avg_memory_used_mb", label: "Memory" },
   { key: "avg_power_watts", label: "Power" },
   { key: "avg_temperature_c", label: "Temp", max: 100 },
