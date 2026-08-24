@@ -243,6 +243,7 @@ The manager does not sample GPUs directly. Local and remote nodes both report cu
 - [Design](docs/DESIGN.md): architecture, data path, low-overhead strategy, and data contracts.
 - [Operations](docs/OPERATIONS.md): startup, access, cluster agent management, status, and verification commands.
 - [SQLite History](docs/HISTORY.md): persistence, rollups, maintenance, and job curves.
+- [NVIDIA GPM Performance](docs/NVIDIA_GPM.md): requirements, metric interpretation, retention, and troubleshooting.
 - [Cloudflare Tunnel](docs/CLOUD_TUNNEL.md): domain access without opening an inbound server port.
 - [Node manifest example](docs/nodes.example.yaml): `nodes.yaml` template for remote agents.
 - [PyPI CLI](docs/PYPI_CLI.md): installed service, probe, agent, and cluster commands.

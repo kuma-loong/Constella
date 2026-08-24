@@ -1,5 +1,7 @@
 # NVIDIA GPM 性能监控
 
+<p align="center"><a href="NVIDIA_GPM.md">English</a> | 简体中文</p>
+
 Constella 0.1.3 在支持的 NVIDIA GPU 上增加了基于 NVML GPM 的性能监控。它提供
 Web 性能工作区、TUI 性能视图、高分辨率内存曲线以及可选的 SQLite 长期汇总；采集路径
 与基础 NVML 监控隔离，因此 GPM 不可用或采集失败不会影响常规 GPU 状态和进程监控。
@@ -45,6 +47,63 @@ Hopper 及更新架构可使用 NVML GPM。Constella 请求以下设备级区间
 | `nvidia.gpm.fp64_non_tensor_active` | `NVML_GPM_METRIC_FP64_UTIL` | 非 Tensor FP64 活跃度 |
 | `nvidia.gpm.fp32_non_tensor_active` | `NVML_GPM_METRIC_FP32_UTIL` | 非 Tensor FP32 活跃度 |
 | `nvidia.gpm.fp16_non_tensor_active` | `NVML_GPM_METRIC_FP16_UTIL` | 非 Tensor FP16 活跃度 |
+
+这些百分比是整个 GPU 在采样区间内的平均值，不是瞬时值，也不能直接归因到某个进程、
+CUDA kernel 或代码行。相同的平均值可能来自少量 SM 持续繁忙，也可能来自全部 SM 短时
+繁忙。指标适合发现设备利用不足、阶段变化和多卡不均衡；定位具体 kernel 时仍应使用
+Nsight Systems 或 Nsight Compute。不同 GPU 型号的理论吞吐和带宽不同，因此相同百分比
+也不代表相同的实际 FLOPS 或带宽。
+
+### SM Activity（SM 活跃度）
+
+表示采样期间 GPU 的流式多处理器（SM）有多活跃。数值越高，说明越多 SM 在更长时间内
+有 warp 处于活动状态；但“活动”不等于正在有效执行计算，等待显存访问的 warp 也可能被
+计为活动。因此，较高的 SM Activity 是充分利用 GPU 的必要条件之一，却不能单独证明计算
+单元已经饱和。应结合 Tensor、FP16/32/64 和 DRAM 指标判断工作负载实际在执行什么。
+
+### SM Occupancy（SM 占用率）
+
+表示 SM 上实际驻留的 warp 数量相对于硬件理论最大驻留 warp 数量的比例，反映 GPU 同时
+保持多少并行工作。Occupancy 会受到线程块大小、每线程寄存器数量、共享内存使用量以及
+GPU 架构等因素影响。更高的 Occupancy 有助于隐藏访存延迟，但并不总是意味着性能更好；
+计算受限的 kernel 可能在较低 Occupancy 下已经达到最佳吞吐。因此它更适合解释并行度，
+而不是直接作为性能评分。
+
+### Tensor Activity（Tensor Core 活跃度）
+
+表示采样期间 GPU 的 SM 执行任意 Tensor 运算的时间比例，用于判断 Tensor Core 是否被
+实际使用。较高的数值通常意味着深度学习矩阵计算正在持续使用 Tensor Core；较低的数值
+并不一定表示 GPU 利用不足，因为数据准备、通信、普通 CUDA Core 运算或不适合 Tensor
+Core 的算子都可能占据主要时间。如果预期工作负载应大量使用 Tensor Core，但该指标长期
+接近零，通常需要进一步检查数据类型、矩阵形状和框架配置。
+
+### DRAM Bandwidth Utilization（显存带宽利用率）
+
+表示 GPU 实际使用的显存带宽相对于理论最大 DRAM 带宽的比例。它衡量的是显存数据传输
+通道有多忙，不是显存容量占用了多少。持续较高的 DRAM 带宽利用率，同时 SM 或计算流水线
+活跃度相对有限，通常说明工作负载可能受到显存带宽限制；但仍需结合应用吞吐和专业分析
+工具确认。
+
+### FP16 Non-Tensor Activity（FP16 非 Tensor 运算活跃度）
+
+表示 SM 执行非 Tensor Core 的半精度浮点运算所占的时间比例。这个指标不包含 HMMA 等
+Tensor Core 运算，因此在混合精度训练中出现“FP16 较低、Tensor 较高”通常是正常现象。
+较高的 FP16 数值说明工作负载主要通过普通 CUDA 计算流水线执行半精度运算。它与 Tensor
+Activity 配合使用，可以区分普通 FP16 运算和 Tensor Core 加速的矩阵运算。
+
+### FP32 Non-Tensor Activity（FP32 非 Tensor 运算活跃度）
+
+表示 SM 执行非 Tensor Core 单精度浮点运算所占的时间比例。较高的数值说明工作负载大量
+使用普通 CUDA Core 的 FP32 计算，常见于传统 CUDA kernel、未启用 Tensor Core 的模型
+或部分前后处理算子。较低的 FP32 数值不代表 GPU 没有工作，因为任务也可能主要由 Tensor、
+FP16、FP64、整数计算或显存访问构成。
+
+### FP64 Non-Tensor Activity（FP64 非 Tensor 运算活跃度）
+
+表示 SM 执行非 Tensor Core 双精度浮点运算所占的时间比例。FP64 主要用于科学计算、数值
+模拟和对精度要求较高的 HPC 工作负载，在常规 AI 训练和推理中通常较低。较高的 FP64
+活跃度说明任务正在持续使用双精度计算资源；不同 GPU 型号的 FP64 峰值能力差异很大，
+因此不能仅凭百分比直接比较不同型号 GPU 的实际计算性能。
 
 NVML GPM 没有独立的 FP8 利用率指标。FP8 Tensor Core 工作会进入通用 Tensor 活跃度，
 但仅凭 GPM 不能判断它究竟是 FP8、BF16、FP16 还是其他 Tensor 数据类型。需要精确区分时，
@@ -123,4 +182,5 @@ curl -s http://127.0.0.1:8765/api/highres/status
 - [NVML GPM call sequence](https://docs.nvidia.com/deploy/nvml-api/group__nvmlGpmFunctions.html)
 - [NVML utilization struct semantics](https://docs.nvidia.com/deploy/nvml-api/structnvmlUtilization__t.html)
 - [DCGM low-overhead profiling](https://docs.nvidia.com/datacenter/dcgm/latest/learn/modules/profiling.html)
+- [NVIDIA Fleet Intelligence metric rationale](https://docs.nvidia.com/fleet-intel/data-collection-rationale/)
 - [Nsight Compute profiling overhead](https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html)

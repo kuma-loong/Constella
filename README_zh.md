@@ -239,6 +239,7 @@ manager 不直接采样 GPU；本机节点和远端节点都通过同一条 agen
 - [设计说明](docs/DESIGN.md)：架构、数据路径、低开销策略和数据契约。
 - [运维手册](docs/OPERATIONS.md)：启动、访问、集群 agent 管理、状态和验证命令。
 - [SQLite 历史库](docs/HISTORY.md)：持久化、rollup、维护和作业曲线。
+- [NVIDIA GPM 性能监控](docs/NVML_GPM_METRICS_zh.md)：支持条件、指标解读、数据保留和故障排查。
 - [Cloudflare Tunnel](docs/CLOUD_TUNNEL.md)：无入站端口的域名访问方案。
 - [节点清单示例](docs/nodes.example.yaml)：远端 agent 的 `nodes.yaml` 模板。
 - [PyPI CLI](docs/PYPI_CLI.md)：安装包的 service、probe、agent 和 cluster 命令。
