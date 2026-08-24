@@ -2,6 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks"
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import { fmtPct } from "./format";
+import { GuideDrawer } from "./guides/GuideDrawer";
+import type { GuideLocale } from "./guides/types";
+import {
+  PERFORMANCE_GROUPS,
+  PERFORMANCE_METRIC_IDS,
+  type MetricDefinition,
+  type PerformanceMetricId,
+} from "./performance-metrics";
 import type { ClusterSnapshot, NodeSnapshot } from "./types";
 
 const PROFILE = "nvidia.gpm.v1";
@@ -16,39 +24,9 @@ const COLORS = [
   "--chart-8",
 ];
 const COLLAPSE_KEY = "constella.performance.collapsed";
+const GUIDE_LOCALE_KEY = "constella.guide.locale";
 const CHART_HEIGHT = 300;
 const POINTS_PER_SERIES = 1000;
-
-type MetricDefinition = { id: string; label: string; description: string };
-type MetricGroup = { id: string; label: string; metrics: MetricDefinition[] };
-
-const GROUPS: MetricGroup[] = [
-  {
-    id: "compute",
-    label: "Compute",
-    metrics: [
-      { id: "nvidia.gpm.sm_active", label: "SM Active", description: "Busy SM share" },
-      { id: "nvidia.gpm.sm_occupancy", label: "SM Occupancy", description: "Active warps vs theoretical maximum" },
-      { id: "nvidia.gpm.tensor_active", label: "Tensor Active", description: "All Tensor Core instruction families" },
-    ],
-  },
-  {
-    id: "memory",
-    label: "Memory",
-    metrics: [
-      { id: "nvidia.gpm.dram_bw_active", label: "DRAM Bandwidth", description: "Used bandwidth vs theoretical maximum" },
-    ],
-  },
-  {
-    id: "pipelines",
-    label: "Non-Tensor Pipelines",
-    metrics: [
-      { id: "nvidia.gpm.fp16_non_tensor_active", label: "FP16", description: "Non-Tensor FP16 activity" },
-      { id: "nvidia.gpm.fp32_non_tensor_active", label: "FP32", description: "Non-Tensor FP32 activity" },
-      { id: "nvidia.gpm.fp64_non_tensor_active", label: "FP64", description: "Non-Tensor FP64 activity" },
-    ],
-  },
-];
 type MetricSummary = {
   avg: number | null;
   min: number | null;
@@ -99,14 +77,18 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
   const [selection, setSelection] = useState<Selection | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [guideOpen, setGuideOpen] = useState(initial.get("guide") === "performance");
+  const [guideMetricId, setGuideMetricId] = useState<PerformanceMetricId | null>(() => parseMetricId(initial.get("metric")));
+  const [guideLocale, setGuideLocale] = useState<GuideLocale>(() => readGuideLocale(initial));
   const requestRef = useRef(0);
+  const guideTriggerRef = useRef<HTMLElement | null>(null);
 
   const nodes = snapshot?.nodes || [];
   const selectedNode = nodes.find((node) => node.node_id === nodeId) || null;
   const selectedNodeId = selectedNode?.node_id || "";
   const selectedNodeCapable = Boolean(selectedNode?.performance_profiles?.includes(PROFILE));
   const requestedMetrics = useMemo(
-    () => GROUPS.flatMap((group) =>
+    () => PERFORMANCE_GROUPS.flatMap((group) =>
       collapsed.has(`group:${group.id}`)
         ? []
         : group.metrics.filter((metric) => !collapsed.has(`chart:${metric.id}`)).map((metric) => metric.id),
@@ -149,13 +131,73 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
       `constella.performance.gpus.${selectedNode.node_id}`,
       JSON.stringify(Array.from(gpuUuids)),
     );
-    const params = new URLSearchParams();
+    const params = new URLSearchParams(window.location.search);
     params.set("node", selectedNode.node_id);
     if (gpuUuids.size === 1) {
       params.set("gpu", Array.from(gpuUuids)[0]);
+    } else {
+      params.delete("gpu");
     }
-    window.history.replaceState(null, "", `/performance?${params.toString()}`);
+    window.history.replaceState(window.history.state, "", `/performance?${params.toString()}`);
   }, [gpuUuids, selectedNode?.node_id]);
+
+  useEffect(() => {
+    const syncFromLocation = () => {
+      const params = new URLSearchParams(window.location.search);
+      const nextOpen = params.get("guide") === "performance";
+      setGuideOpen(nextOpen);
+      setGuideMetricId(nextOpen ? parseMetricId(params.get("metric")) : null);
+      const nextLocale = parseGuideLocale(params.get("lang"));
+      if (nextLocale) {
+        setGuideLocale(nextLocale);
+        window.localStorage.setItem(GUIDE_LOCALE_KEY, nextLocale);
+      }
+    };
+    window.addEventListener("popstate", syncFromLocation);
+    return () => window.removeEventListener("popstate", syncFromLocation);
+  }, []);
+
+  useEffect(() => {
+    if (!guideOpen || !visible) {
+      return;
+    }
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLButtonElement>("[data-guide-close]")?.focus();
+    });
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeGuide();
+        return;
+      }
+      if (event.key !== "Tab") {
+        return;
+      }
+      const drawer = document.querySelector<HTMLElement>(".guide-drawer");
+      const focusable = drawer
+        ? Array.from(drawer.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'))
+        : [];
+      if (!focusable.length) {
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [guideOpen, visible]);
 
   const fetchPerformance = useCallback(async (signal?: AbortSignal) => {
     if (!visible || !selectedNodeId || !selectedNodeCapable || !gpuUuids.size || !metricQuery) {
@@ -251,7 +293,7 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
   function setAllCollapsed(value: boolean) {
     const next = new Set<string>();
     if (value) {
-      for (const group of GROUPS) {
+      for (const group of PERFORMANCE_GROUPS) {
         next.add(`group:${group.id}`);
       }
     }
@@ -266,6 +308,35 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
     void fetchPerformance();
   }
 
+  function openGuide(metricId: PerformanceMetricId | null, trigger: HTMLElement) {
+    guideTriggerRef.current = trigger;
+    setGuideMetricId(metricId);
+    setGuideOpen(true);
+    updateGuideLocation({ open: true, metricId, locale: guideLocale, push: !guideOpen });
+  }
+
+  function selectGuideMetric(metricId: PerformanceMetricId) {
+    setGuideMetricId(metricId);
+    updateGuideLocation({ open: true, metricId, locale: guideLocale, push: false });
+  }
+
+  function changeGuideLocale(locale: GuideLocale) {
+    setGuideLocale(locale);
+    window.localStorage.setItem(GUIDE_LOCALE_KEY, locale);
+    updateGuideLocation({ open: true, metricId: guideMetricId, locale, push: false });
+  }
+
+  function closeGuide() {
+    setGuideOpen(false);
+    setGuideMetricId(null);
+    if (window.history.state?.constellaGuide) {
+      window.history.back();
+    } else {
+      updateGuideLocation({ open: false, metricId: null, locale: guideLocale, push: false });
+    }
+    window.requestAnimationFrame(() => guideTriggerRef.current?.focus());
+  }
+
   return (
     <section class="performance-page" hidden={!visible}>
       <div class="performance-head">
@@ -275,6 +346,11 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
           <p>Compare synchronized compute, memory and non-Tensor pipelines. Drag any chart to analyze one interval.</p>
         </div>
         <div class="performance-actions">
+          <button
+            type="button"
+            class="guide-entry"
+            onClick={(event) => openGuide(null, event.currentTarget)}
+          >Guide</button>
           <button type="button" class="section-toggle" onClick={() => setAllCollapsed(false)}>Expand all</button>
           <button type="button" class="section-toggle" onClick={() => setAllCollapsed(true)}>Collapse all</button>
         </div>
@@ -350,7 +426,7 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
         <div class="empty-panel">High-resolution performance caching is disabled for this service.</div>
       ) : (
         <div class={`performance-groups ${loading && !payload ? "is-loading" : ""}`}>
-          {GROUPS.map((group) => {
+          {PERFORMANCE_GROUPS.map((group) => {
             const groupId = `group:${group.id}`;
             const groupCollapsed = collapsed.has(groupId);
             return (
@@ -373,6 +449,7 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
                           selection={selection}
                           onSelection={selectRange}
                           onToggle={() => toggleCollapsed(chartId)}
+                          onGuide={(trigger) => openGuide(metric.id, trigger)}
                         />
                       );
                     })}
@@ -383,6 +460,15 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
           })}
         </div>
       )}
+      {guideOpen ? (
+        <GuideDrawer
+          locale={guideLocale}
+          activeMetricId={guideMetricId}
+          onLocaleChange={changeGuideLocale}
+          onMetricSelect={selectGuideMetric}
+          onClose={closeGuide}
+        />
+      ) : null}
     </section>
   );
 }
@@ -395,6 +481,7 @@ function PerformanceChart({
   selection,
   onSelection,
   onToggle,
+  onGuide,
 }: {
   definition: MetricDefinition;
   series: PerformanceSeries[];
@@ -403,6 +490,7 @@ function PerformanceChart({
   selection: Selection | null;
   onSelection: (selection: Selection) => void;
   onToggle: () => void;
+  onGuide: (trigger: HTMLButtonElement) => void;
 }) {
   const targetRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -523,10 +611,19 @@ function PerformanceChart({
 
   return (
     <article class={`performance-chart ${collapsed ? "is-collapsed" : ""}`}>
-      <button type="button" class="performance-chart-head" onClick={onToggle}>
-        <span><strong>{definition.label}</strong><small>{definition.description}</small></span>
-        <em>{collapsed ? "Expand" : "Collapse"}</em>
-      </button>
+      <div class="performance-chart-head">
+        <button type="button" class="performance-chart-toggle" onClick={onToggle}>
+          <span><strong>{definition.label}</strong><small>{definition.description}</small></span>
+          <em>{collapsed ? "Expand" : "Collapse"}</em>
+        </button>
+        <button
+          type="button"
+          class="metric-guide-entry"
+          aria-label={`Open guide for ${definition.label}`}
+          title={`Open guide for ${definition.label}`}
+          onClick={(event) => onGuide(event.currentTarget)}
+        ><span aria-hidden="true">i</span></button>
+      </div>
       {!collapsed ? (
         <>
           {aligned.timestamps.length ? (
@@ -718,4 +815,69 @@ function profileLabel(node: NodeSnapshot) {
     return "NVIDIA GPM";
   }
   return profiles.length ? `unsupported: ${profiles.join(", ")}` : "base telemetry";
+}
+
+function parseMetricId(value: string | null): PerformanceMetricId | null {
+  return value && PERFORMANCE_METRIC_IDS.includes(value as PerformanceMetricId)
+    ? value as PerformanceMetricId
+    : null;
+}
+
+function parseGuideLocale(value: string | null): GuideLocale | null {
+  if (value === "zh-CN" || value === "en") {
+    return value;
+  }
+  return null;
+}
+
+function readGuideLocale(params: URLSearchParams): GuideLocale {
+  const queryLocale = parseGuideLocale(params.get("lang"));
+  if (queryLocale) {
+    return queryLocale;
+  }
+  const savedLocale = parseGuideLocale(window.localStorage.getItem(GUIDE_LOCALE_KEY));
+  if (savedLocale) {
+    return savedLocale;
+  }
+  return window.navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
+}
+
+function updateGuideLocation({
+  open,
+  metricId,
+  locale,
+  push,
+}: {
+  open: boolean;
+  metricId: PerformanceMetricId | null;
+  locale: GuideLocale;
+  push: boolean;
+}) {
+  const params = new URLSearchParams(window.location.search);
+  if (open) {
+    params.set("guide", "performance");
+    params.set("lang", locale);
+    if (metricId) {
+      params.set("metric", metricId);
+    } else {
+      params.delete("metric");
+    }
+  } else {
+    params.delete("guide");
+    params.delete("metric");
+    params.delete("lang");
+  }
+  const state = { ...(window.history.state || {}) } as Record<string, unknown>;
+  if (open) {
+    state.constellaGuide = true;
+  } else {
+    delete state.constellaGuide;
+  }
+  const query = params.toString();
+  const url = `${window.location.pathname}${query ? `?${query}` : ""}`;
+  if (push) {
+    window.history.pushState(state, "", url);
+  } else {
+    window.history.replaceState(state, "", url);
+  }
 }
