@@ -62,7 +62,9 @@ Performance requires the manager's `nvidia.gpm.v1` profile and high-resolution
 performance cache. Unsupported accelerators continue to work in the other TUI
 views and show an explicit unavailable state in Performance. The first metric
 page contains four Compute and Memory charts; the second contains three
-non-Tensor pipeline charts.
+non-Tensor pipeline charts. See the
+[NVIDIA GPM guide](../../docs/NVIDIA_GPM.md) for requirements, metric semantics,
+storage controls, and troubleshooting.
 
 The TUI package deliberately does not install the backend, FastAPI, Uvicorn, or
 the server-side `constella` command. Use `constella-gpu` when both server and

@@ -168,6 +168,8 @@ CONSTELLA_NVIDIA_GPM_ROLLUP=off DB_PATH=run/constella.db ./scripts/service/start
 
 三个开关均只影响 NVIDIA GPM 能力，不影响基础 NVML、`nvidia-smi` 回退或
 Ascend DCMI/`npu-smi` 路径。
+指标含义、支持条件、缓存/rollup 数据路径和故障状态见
+[NVIDIA GPM 性能监控](NVML_GPM_METRICS_zh.md)。
 
 如需使用独立高精度 sidecar，在启动服务时启用：
 
