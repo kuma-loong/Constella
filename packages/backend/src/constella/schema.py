@@ -65,6 +65,7 @@ class AcceleratorPerformance:
     sampled_at: float
     interval_ms: float | None = None
     metrics: dict[str, float] = field(default_factory=dict)
+    supported_metrics: list[str] = field(default_factory=list)
     error: str | None = None
 
     def __post_init__(self) -> None:

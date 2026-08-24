@@ -220,30 +220,7 @@ export function Summary({
         percent={totals.avg_gpu_utilization}
         tone="cyan"
       />
-      <MetricCard
-        iconName="database"
-        label="Memory Used"
-        value={`${fmtGiB(totals.memory_used_mb)} / ${fmtGiB(totals.memory_total_mb)}`}
-        meta={fmtPct(totals.avg_memory_utilization)}
-        percent={totals.avg_memory_utilization}
-        tone="violet"
-      />
-      <MetricCard
-        iconName="zap"
-        label="Power"
-        value={`${totals.power_watts.toFixed(0)} W / ${totals.power_limit_watts.toFixed(0)} W`}
-        meta={totals.power_limit_watts ? fmtPct((totals.power_watts / totals.power_limit_watts) * 100) : "n/a"}
-        percent={totals.power_limit_watts ? (totals.power_watts / totals.power_limit_watts) * 100 : 0}
-        tone="amber"
-      />
-      <MetricCard
-        iconName="users"
-        label="Tasks"
-        value={`${totals.active_processes}`}
-        meta={`max ${totals.max_temperature_c}°C`}
-        percent={Math.min(100, (totals.active_processes / Math.max(1, totals.gpu_count * 4)) * 100)}
-        tone="red"
-      />
+      <ResourceMetricCards totals={totals} />
     </>
   );
 }
@@ -280,6 +257,17 @@ export function NodeSummary({ nodeId, node }: { nodeId: string; node: NodeSnapsh
         percent={totals.avg_gpu_utilization}
         tone="cyan"
       />
+      <ResourceMetricCards totals={totals} />
+    </>
+  );
+}
+
+function ResourceMetricCards({ totals }: { totals: NodeSnapshot["totals"] }) {
+  const powerPercent = totals.power_limit_watts
+    ? (totals.power_watts / totals.power_limit_watts) * 100
+    : 0;
+  return (
+    <>
       <MetricCard
         iconName="database"
         label="Memory Used"
@@ -292,8 +280,8 @@ export function NodeSummary({ nodeId, node }: { nodeId: string; node: NodeSnapsh
         iconName="zap"
         label="Power"
         value={`${totals.power_watts.toFixed(0)} W / ${totals.power_limit_watts.toFixed(0)} W`}
-        meta={totals.power_limit_watts ? fmtPct((totals.power_watts / totals.power_limit_watts) * 100) : "n/a"}
-        percent={totals.power_limit_watts ? (totals.power_watts / totals.power_limit_watts) * 100 : 0}
+        meta={totals.power_limit_watts ? fmtPct(powerPercent) : "n/a"}
+        percent={powerPercent}
         tone="amber"
       />
       <MetricCard
@@ -301,7 +289,10 @@ export function NodeSummary({ nodeId, node }: { nodeId: string; node: NodeSnapsh
         label="Tasks"
         value={`${totals.active_processes}`}
         meta={`max ${totals.max_temperature_c}°C`}
-        percent={Math.min(100, (totals.active_processes / Math.max(1, totals.gpu_count * 4)) * 100)}
+        percent={Math.min(
+          100,
+          (totals.active_processes / Math.max(1, totals.gpu_count * 4)) * 100,
+        )}
         tone="red"
       />
     </>
@@ -490,7 +481,7 @@ export function GpuCard({
       </div>
 
       <div class="spark-wrap">
-        <Sparkline values={history.gpu || []} color="var(--accent)" max={100} />
+        <Sparkline values={history.gpu || []} color="var(--telemetry)" max={100} />
       </div>
 
       <div class="bar-stack">

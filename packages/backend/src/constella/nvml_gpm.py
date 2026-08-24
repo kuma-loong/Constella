@@ -9,6 +9,7 @@ from .performance import NVIDIA_GPM_METRICS, NVIDIA_GPM_PROFILE, nvidia_gpm_enab
 from .schema import AcceleratorPerformance
 
 NVML_SUCCESS = 0
+NVML_ERROR_NOT_SUPPORTED = 3
 NVML_GPM_METRIC_MAX = 333
 NVML_GPM_METRICS_GET_VERSION = 1
 NVML_GPM_SUPPORT_VERSION = 1
@@ -21,6 +22,10 @@ GPM_METRIC_IDS = {
     "nvidia.gpm.fp64_non_tensor_active": 11,
     "nvidia.gpm.fp32_non_tensor_active": 12,
     "nvidia.gpm.fp16_non_tensor_active": 13,
+    "nvidia.gpm.pcie_tx_per_second": 20,
+    "nvidia.gpm.pcie_rx_per_second": 21,
+    "nvidia.gpm.nvlink_rx_per_second": 60,
+    "nvidia.gpm.nvlink_tx_per_second": 61,
 }
 
 
@@ -64,6 +69,7 @@ class _DeviceState:
     current: int = 0
     previous_at: float | None = None
     supported: bool | None = None
+    supported_metrics: tuple[str, ...] | None = None
     errors: int = 0
     retry_at: float = 0.0
 
@@ -103,7 +109,12 @@ class NvidiaGpmProvider:
 
         state = self._states.setdefault(index, _DeviceState())
         if state.retry_at > now:
-            return self._result("error", sampled_at=sampled_at, error="GPM retry pending")
+            return self._result(
+                "error",
+                sampled_at=sampled_at,
+                supported_metrics=list(state.supported_metrics or ()),
+                error="GPM retry pending",
+            )
 
         try:
             if state.supported is None:
@@ -132,8 +143,15 @@ class NvidiaGpmProvider:
                     "warming",
                     sampled_at=sampled_at,
                     interval_ms=round(interval_ms, 1),
+                    supported_metrics=list(state.supported_metrics or ()),
                 )
-            metrics = self._metrics(previous, target)
+            metrics, supported_metrics = self._metrics(
+                previous,
+                target,
+                state.supported_metrics or NVIDIA_GPM_METRICS,
+            )
+            if state.supported_metrics is None:
+                state.supported_metrics = supported_metrics
             state.previous_at = now
             state.current = 1 - state.current
             state.errors = 0
@@ -144,6 +162,7 @@ class NvidiaGpmProvider:
                 sampled_at=sampled_at,
                 interval_ms=round(interval_ms, 1),
                 metrics=metrics,
+                supported_metrics=list(state.supported_metrics),
             )
         except Exception as exc:
             state.previous_at = None
@@ -151,7 +170,12 @@ class NvidiaGpmProvider:
             if state.errors >= 3:
                 state.retry_at = now + self._retry_seconds
                 state.errors = 0
-            return self._result("error", sampled_at=sampled_at, error=str(exc))
+            return self._result(
+                "error",
+                sampled_at=sampled_at,
+                supported_metrics=list(state.supported_metrics or ()),
+                error=str(exc),
+            )
 
     def _setup_functions(self) -> bool:
         names = (
@@ -214,23 +238,30 @@ class NvidiaGpmProvider:
         self,
         first: ctypes.c_void_p,
         second: ctypes.c_void_p,
-    ) -> dict[str, float]:
+        requested_metrics: tuple[str, ...],
+    ) -> tuple[dict[str, float], tuple[str, ...]]:
         request = NvmlGpmMetricsGet(
             version=NVML_GPM_METRICS_GET_VERSION,
-            numMetrics=len(NVIDIA_GPM_METRICS),
+            numMetrics=len(requested_metrics),
             sample1=first,
             sample2=second,
         )
-        for index, metric in enumerate(NVIDIA_GPM_METRICS):
+        for index, metric in enumerate(requested_metrics):
             request.metrics[index].metricId = GPM_METRIC_IDS[metric]
         rc = self._lib.nvmlGpmMetricsGet(ctypes.byref(request))
         if rc != NVML_SUCCESS:
             raise RuntimeError(f"nvmlGpmMetricsGet failed with code {rc}")
-        return {
+        values = {
             metric: round(float(request.metrics[index].value), 3)
-            for index, metric in enumerate(NVIDIA_GPM_METRICS)
+            for index, metric in enumerate(requested_metrics)
             if request.metrics[index].nvmlReturn == NVML_SUCCESS
         }
+        supported = tuple(
+            metric
+            for index, metric in enumerate(requested_metrics)
+            if request.metrics[index].nvmlReturn != NVML_ERROR_NOT_SUPPORTED
+        )
+        return values, supported
 
     @staticmethod
     def _result(
@@ -239,6 +270,7 @@ class NvidiaGpmProvider:
         sampled_at: float,
         interval_ms: float | None = None,
         metrics: dict[str, float] | None = None,
+        supported_metrics: list[str] | None = None,
         error: str | None = None,
     ) -> AcceleratorPerformance:
         return AcceleratorPerformance(
@@ -247,5 +279,6 @@ class NvidiaGpmProvider:
             sampled_at=sampled_at,
             interval_ms=interval_ms,
             metrics=metrics or {},
+            supported_metrics=supported_metrics or [],
             error=error,
         )

@@ -40,6 +40,7 @@ export type AcceleratorPerformance = {
   sampled_at: number;
   interval_ms?: number | null;
   metrics: Record<string, number>;
+  supported_metrics?: string[];
   error?: string | null;
 };
 

@@ -1,0 +1,330 @@
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@media (max-width: 1240px) {
+  .topbar {
+    grid-template-columns: minmax(280px, 1fr) auto;
+  }
+
+  .top-nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .status-cluster {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
+@media (max-width: 1100px) {
+  .summary-grid {
+    grid-template-columns: repeat(3, minmax(170px, 1fr));
+  }
+
+  .fabric-copy {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+
+  .fabric-stats {
+    justify-content: flex-start;
+  }
+
+  .fabric-node-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .fabric-node-card.is-node-span-3,
+  .fabric-node-card.is-node-span-4 {
+    grid-column: span 4;
+  }
+
+  .span-4,
+  .span-6,
+  .span-8,
+  .span-12 {
+    grid-column: span 12;
+  }
+
+  .performance-toolbar {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+}
+
+@media (max-width: 760px) {
+  .shell {
+    --panel-gap: 20px;
+    --grid-gap: 14px;
+    padding-top: 20px;
+    padding-bottom: 44px;
+  }
+
+  .topbar {
+    display: flex;
+    align-items: stretch;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .brand p {
+    max-width: 100%;
+  }
+
+  .top-nav,
+  .status-cluster,
+  .refresh-control {
+    width: calc(100vw - 32px) !important;
+    max-width: calc(100vw - 32px);
+  }
+
+  .status-cluster {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    justify-content: stretch;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .refresh-control {
+    grid-column: 1 / -1;
+  }
+
+  .refresh-control {
+    width: 100%;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .live-pill {
+    grid-column: 1 / -1;
+    justify-content: center;
+    min-width: 0;
+  }
+
+  .theme-button {
+    grid-column: 1;
+    width: 100%;
+  }
+
+  #pauseButton {
+    grid-column: 2;
+  }
+
+  #refreshButton {
+    grid-column: 3;
+  }
+
+  .icon-button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .refresh-option {
+    min-width: 0;
+  }
+
+  .summary-grid,
+  .gpu-grid,
+  .fabric-node-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .fabric-node-card.is-node-span-2,
+  .fabric-node-card.is-node-span-3,
+  .fabric-node-card.is-node-span-4 {
+    grid-column: span 1;
+  }
+
+  .fabric-node-card.is-node-span-2 .fabric-node-gpus,
+  .fabric-node-card.is-node-span-3 .fabric-node-gpus,
+  .fabric-node-card.is-node-span-4 .fabric-node-gpus {
+    grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  }
+
+  .mini-stats,
+  .performance-stats,
+  .offhour-grid,
+  .job-detail-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .analytics-head {
+    flex-direction: column;
+  }
+
+  .performance-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .performance-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .performance-actions,
+  .performance-actions button,
+  .performance-ranges,
+  .performance-ranges button,
+  .live-control {
+    width: 100%;
+  }
+
+  .performance-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .performance-actions .guide-entry {
+    grid-column: 1 / -1;
+  }
+
+  .guide-drawer {
+    width: 100%;
+    max-width: none;
+    border-left: 0;
+  }
+
+  .guide-drawer-head {
+    padding: 14px 12px 13px 16px;
+  }
+
+  .guide-drawer-head h2 {
+    font-size: 19px;
+  }
+
+  .guide-head-actions {
+    gap: 5px;
+  }
+
+  .guide-language button {
+    min-width: 34px;
+    padding: 0 6px;
+  }
+
+  .guide-lede,
+  .guide-principles,
+  .guide-index,
+  .guide-article {
+    margin-right: 18px;
+    margin-left: 18px;
+  }
+
+  .guide-lede {
+    padding-top: 24px;
+  }
+
+  .guide-lede p {
+    font-size: 16px;
+  }
+
+  .guide-reading-note,
+  .guide-significance,
+  .guide-patterns > div {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+
+  .guide-index strong {
+    width: 100%;
+  }
+
+  .performance-ranges {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .analytics-actions,
+  .segmented {
+    width: 100%;
+  }
+
+  .analytics-actions {
+    justify-content: stretch;
+  }
+
+  .job-search-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .job-search,
+  .job-toolbar-buttons {
+    width: 100%;
+  }
+
+  .job-toolbar-buttons {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+  }
+
+  .job-metric-select {
+    min-width: 0;
+  }
+
+  .segmented {
+    grid-auto-columns: 1fr;
+  }
+
+  .card-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .line-chart {
+    min-height: 240px;
+  }
+
+  .chart-modal {
+    width: calc(100vw - 24px);
+    max-height: 92dvh;
+    padding: 12px;
+  }
+
+  .line-chart-expanded {
+    min-height: 58dvh;
+  }
+
+  .heatmap {
+    grid-template-columns: auto minmax(0, 1fr);
+    min-width: 0;
+    width: 100%;
+  }
+
+  .heatmap-card {
+    width: 100%;
+  }
+
+  .heat-row,
+  .heat-axis {
+    grid-template-columns: repeat(12, minmax(22px, 1fr));
+    gap: 3px;
+  }
+
+  .heat-cell {
+    height: 22px;
+  }
+
+  .heat-legend {
+    width: min(224px, 100%);
+  }
+
+  .heat-cell::after {
+    left: auto;
+    right: 0;
+    transform: translateY(4px);
+  }
+
+  .heat-cell:hover::after,
+  .heat-cell:focus-visible::after {
+    transform: translateY(0);
+  }
+}

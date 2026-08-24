@@ -67,6 +67,8 @@ NVML GPM 作为增强能力，不替代普通 NVML。首批采集：
 - Tensor Active，NVML 仅提供所有 Tensor Core 指令的合计活跃度，不能可靠区分 FP16、BF16、FP8
 - DRAM Bandwidth
 - FP16、FP32、FP64 non-Tensor Active
+- PCIe TX、RX 带宽（MiB/s）
+- NVLink 总 TX、RX 带宽（MiB/s，仅设备指标明确支持时采集）
 
 所有性能字段均允许为空。缺失、未支持和采样失败不能按 0 处理，也不能用普通 GPU utilization 冒充 SM Active。
 
@@ -101,6 +103,7 @@ SM Active 仅作为性能区指标，用于解释 GPU 活跃时计算资源的�
 - Compute：SM Active、SM Occupancy、Tensor Active
 - Memory：DRAM Bandwidth
 - Non-Tensor Pipelines：FP16、FP32、FP64
+- Interconnect：PCIe TX/RX，以及能力探测通过后的 NVLink TX/RX
 
 页面顶部提供：
 
@@ -117,9 +120,9 @@ SM Active 仅作为性能区指标，用于解释 GPU 活跃时计算资源的�
 绘图层使用样条曲线连接降采样点，不对数值做本地平滑。悬停精确值、区间统计
 和后端数据继续使用原始样本，并且不会跨越缺失区间。
 
-Highres 环形缓冲为每张 GPU 增加 7 个 `float32` 指标数组、一个 `float64`
-时间戳数组和有效位掩码，即每个预分配槽位 37 bytes。按 8 GPU、1 秒采样、
-保留 2 小时估算约 2.03 MiB；按最小 0.5 秒采样间隔预分配约 4.06 MiB。
+Highres 环形缓冲为每张 GPU 增加 11 个 `float32` 指标数组、一个 `float64`
+时间戳数组和 16 位有效位掩码，即每个预分配槽位 54 bytes。按 8 GPU、1 秒采样、
+保留 2 小时估算约 2.97 MiB；按最小 0.5 秒采样间隔预分配约 5.93 MiB。
 状态接口同时报告有效点估算和实际预分配容量。
 
 接口按 Node、GPU、指标和时间范围批量查询，并支持 `max_points` 与 `summary_only`。
@@ -138,7 +141,7 @@ Highres 环形缓冲为每张 GPU 增加 7 个 `float32` 指标数组、一个 `
 
 每行保存 `expected_count` 以计算覆盖率。上卷平均值使用 `valid_count` 加权，未支持字段保持 NULL。
 
-沿用 20 秒保留 7 天、2 分钟保留 60 天、1 小时保留 365 天的策略，每张 GPU 最多约 82,200 行，8 GPU 节点约 657,600 行。包含 7 个指标、统计字段和索引后，预计每个 8 GPU 节点增加约 100 至 180 MiB，最终以影子写入实测为准。计算开销较小，主要成本是长期存储和大范围查询响应体。
+沿用 20 秒保留 7 天、2 分钟保留 60 天、1 小时保留 365 天的策略，每张 GPU 最多约 82,200 行，8 GPU 节点约 657,600 行。宽表包含 11 个指标的统计列；新增列对旧库采用幂等加列迁移。最终容量仍以目标环境影子写入实测为准，查询只选择用户请求的指标列。
 
 本机使用最终宽表结构完成 657,600 行容量基准：数据库文件 147.15 MiB，约
 234.6 bytes/row；单卡 7 天 20 秒粒度范围查询约 91 ms。该结果落在预估区间内，

@@ -224,6 +224,14 @@ class SQLiteStore:
         self._ensure_column("gpus", "device_type", "TEXT NOT NULL DEFAULT 'nvidia'")
         self._ensure_column("gpus", "card_id", "TEXT")
         self._ensure_column("gpus", "die_id", "INTEGER")
+        for stem in NVIDIA_GPM_ROLLUP_METRICS.values():
+            self._ensure_column("nvidia_gpm_rollups", f"avg_{stem}", "REAL")
+            self._ensure_column("nvidia_gpm_rollups", f"max_{stem}", "REAL")
+            self._ensure_column(
+                "nvidia_gpm_rollups",
+                f"{stem}_count",
+                "INTEGER NOT NULL DEFAULT 0",
+            )
         con.commit()
 
     def _ensure_column(self, table: str, column: str, definition: str) -> None:

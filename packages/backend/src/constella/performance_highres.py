@@ -7,6 +7,8 @@ from typing import Any
 
 from .performance import NVIDIA_GPM_METRICS, NVIDIA_GPM_PROFILE
 
+VALID_MASK_BYTES = array("H").itemsize
+
 
 @dataclass(slots=True)
 class NvidiaGpmSampleRing:
@@ -22,7 +24,7 @@ class NvidiaGpmSampleRing:
         self.values = {
             metric: array("f", [0.0]) * self.capacity for metric in NVIDIA_GPM_METRICS
         }
-        self.valid_masks = array("B", [0]) * self.capacity
+        self.valid_masks = array("H", [0]) * self.capacity
 
     def append(self, *, sampled_at: float, performance: dict[str, Any]) -> None:
         index = self.write_index
@@ -177,7 +179,7 @@ class NvidiaGpmHighresCache:
 
     def status(self) -> dict[str, Any]:
         valid_points = sum(ring.count for ring in self.rings.values())
-        bytes_per_point = 8 + len(NVIDIA_GPM_METRICS) * 4 + 1
+        bytes_per_point = 8 + len(NVIDIA_GPM_METRICS) * 4 + VALID_MASK_BYTES
         return {
             "enabled": self.enabled,
             "profile": NVIDIA_GPM_PROFILE,

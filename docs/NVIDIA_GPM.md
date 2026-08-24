@@ -61,6 +61,10 @@ following device-level interval averages:
 | `nvidia.gpm.fp64_non_tensor_active` | `NVML_GPM_METRIC_FP64_UTIL` | Non-Tensor FP64 activity |
 | `nvidia.gpm.fp32_non_tensor_active` | `NVML_GPM_METRIC_FP32_UTIL` | Non-Tensor FP32 activity |
 | `nvidia.gpm.fp16_non_tensor_active` | `NVML_GPM_METRIC_FP16_UTIL` | Non-Tensor FP16 activity |
+| `nvidia.gpm.pcie_tx_per_second` | `NVML_GPM_METRIC_PCIE_TX_PER_SEC` | PCIe traffic sent from the GPU in MiB/s |
+| `nvidia.gpm.pcie_rx_per_second` | `NVML_GPM_METRIC_PCIE_RX_PER_SEC` | PCIe traffic received by the GPU in MiB/s |
+| `nvidia.gpm.nvlink_tx_per_second` | `NVML_GPM_METRIC_NVLINK_TOTAL_TX_PER_SEC` | Aggregate NVLink transmit bandwidth in MiB/s |
+| `nvidia.gpm.nvlink_rx_per_second` | `NVML_GPM_METRIC_NVLINK_TOTAL_RX_PER_SEC` | Aggregate NVLink receive bandwidth in MiB/s |
 
 These percentages are interval averages for the whole GPU. They are not
 instantaneous values and cannot be attributed directly to a process, CUDA
@@ -141,6 +145,16 @@ indicates sustained use of double-precision compute resources. Peak FP64
 capability varies greatly across GPU models, so do not use the percentage alone
 to compare their actual compute performance.
 
+### PCIe and NVLink bandwidth
+
+PCIe and NVLink counters report directional traffic in MiB/s rather than a
+percentage. PCIe TX/RX describes traffic leaving and entering the GPU over
+PCIe. NVLink TX/RX is aggregated across all links reported by NVML. Constella
+probes all four counters with the first valid GPM sample pair, then removes any
+counter that returns `NVML_ERROR_NOT_SUPPORTED` from that device's subsequent
+requests. A supported counter with value zero remains visible because an idle
+link is different from an unsupported link.
+
 NVML GPM does not expose a dedicated FP8 utilization metric. FP8 Tensor Core
 work contributes to generic Tensor Activity, but GPM alone cannot identify
 whether that activity used FP8, BF16, FP16, or another Tensor data type. Use a
@@ -183,7 +197,7 @@ The data follows three independently controlled paths:
 
 The high-resolution cache retains two hours by default and preallocates a fixed
 capacity for the minimum 500 ms sample interval. Performance arrays for eight
-GPUs reserve approximately 4.06 MiB. Raw high-frequency performance samples are
+GPUs reserve approximately 5.93 MiB. Raw high-frequency performance samples are
 not written to SQLite. GPM rollups use a separate table but the same retention
 tiers as base GPU rollups.
 
@@ -220,19 +234,21 @@ cannot be produced.
 
 ## Local validation
 
-The implementation was validated on eight NVIDIA H100 80GB HBM3 GPUs with
-driver 580.65.06. Device support probing and all seven metrics succeeded. Across
+The original seven compute and memory metrics were validated on eight NVIDIA
+H100 80GB HBM3 GPUs with driver 580.65.06. The interconnect counters use the
+same GPM request and per-metric support result, but still require validation
+under each target topology and driver. Across
 12 read-only collection rounds on eight GPUs, a full GPM round averaged about
 11 ms; each GPU's `SampleGet` averaged about 1.06 ms and `MetricsGet` about
 0.30 ms. These measurements indicate scale only. Re-run
 `scripts/dev/bench_probe.sh` under the target driver and workload.
 
-A shadow database generated with the production schema for eight GPUs and the
+A shadow database generated with the seven-metric schema for eight GPUs and the
 full retention window contained 657,600 rows and occupied 147.15 MiB, or about
 234.6 bytes per row. A seven-day, 20-second-granularity range query for one GPU
 covered 30,240 rows and took about 91 ms. This local SQLite benchmark supports
-capacity planning but does not replace shadow-write observation in the target
-deployment.
+capacity planning but predates the four interconnect columns and does not
+replace shadow-write observation in the target deployment.
 
 ## References
 

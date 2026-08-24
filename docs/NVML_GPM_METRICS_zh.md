@@ -136,7 +136,7 @@ rollup；基础 GPU rollup、实时监控和 Ascend NPU 路径不受影响。
 | SQLite rollup | 启用数据库时开启 | 20 秒、2 分钟、1 小时汇总 | `CONSTELLA_NVIDIA_GPM_ROLLUP=off` 关闭 |
 
 高分辨率缓存默认保留 2 小时，并按 0.5 秒最小采样间隔预分配固定容量。8 张 GPU 的性能
-数组约预分配 4.06 MiB。原始高频性能点不会写入 SQLite；GPM rollup 与基础 GPU rollup
+数组约预分配 5.93 MiB。原始高频性能点不会写入 SQLite；GPM rollup 与基础 GPU rollup
 使用独立表和相同保留层级。
 
 三个开关只影响 NVIDIA GPM。关闭其中任意一条路径都不会关闭基础 NVML、
@@ -166,7 +166,7 @@ curl -s http://127.0.0.1:8765/api/highres/status
 
 ## 本机验证
 
-在 8 张 NVIDIA H100 80GB HBM3、580.65.06 驱动上验证：设备支持探测和 7 个指标均成功。
+在 8 张 NVIDIA H100 80GB HBM3、580.65.06 驱动上验证过原有 7 个计算与显存指标。PCIe 与 NVLink 带宽指标采用逐项能力探测；返回 `NVML_ERROR_NOT_SUPPORTED` 的指标不会进入该设备后续采集清单。
 12 轮、每轮 8 卡的只读采样中，GPM 整轮平均约 11 ms；单卡 `SampleGet` 平均约 1.06 ms，
 单卡 `MetricsGet` 平均约 0.30 ms。该结果只用于量级判断，实际开销仍应在目标驱动和负载上
 通过 `scripts/dev/bench_probe.sh` 复测。

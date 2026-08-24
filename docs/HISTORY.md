@@ -127,7 +127,7 @@ summary statistics without transferring every raw point.
 
 `/api/highres/status` reports both `performance.approx_bytes` for populated slots and
 `performance.allocated_bytes` for the fixed preallocation. At the default two-hour
-retention and 0.5 second minimum interval, 8 NVIDIA GPUs preallocate about 4.06 MiB
+retention and 0.5 second minimum interval, 8 NVIDIA GPUs preallocate about 5.93 MiB
 for the performance arrays.
 
 Curve source selection:

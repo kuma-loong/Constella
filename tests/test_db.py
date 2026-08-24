@@ -43,6 +43,38 @@ def test_store_migrates_existing_gpu_inventory_columns(tmp_path) -> None:
         store.close()
 
 
+def test_store_migrates_interconnect_columns_into_existing_gpm_table(tmp_path) -> None:
+    path = tmp_path / "legacy-gpm.db"
+    connection = sqlite3.connect(path)
+    connection.execute(
+        """
+        CREATE TABLE nvidia_gpm_rollups (
+          bucket_start REAL NOT NULL, bucket_seconds INTEGER NOT NULL,
+          node_id TEXT NOT NULL, gpu_uuid TEXT NOT NULL, expected_count INTEGER NOT NULL,
+          avg_sm_active REAL, max_sm_active REAL, sm_active_count INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY(bucket_start, bucket_seconds, node_id, gpu_uuid)
+        )
+        """
+    )
+    connection.close()
+
+    store = SQLiteStore(path)
+    store.open()
+    try:
+        columns = {
+            row[1]
+            for row in store.connection.execute("PRAGMA table_info(nvidia_gpm_rollups)")
+        }
+        assert {
+            "avg_pcie_tx_per_second",
+            "pcie_rx_per_second_count",
+            "avg_nvlink_tx_per_second",
+            "nvlink_rx_per_second_count",
+        } <= columns
+    finally:
+        store.close()
+
+
 def make_node_snapshot(sampled_at: float, *, gpu_util: int = 50) -> NodeSnapshot:
     process = GpuProcess(
         pid=1234,
@@ -427,6 +459,42 @@ def test_sqlite_store_gpm_rollup_weights_each_metric_by_valid_count(tmp_path) ->
             "valid_count": 4,
             "coverage": 100.0,
         }
+    finally:
+        store.close()
+
+
+def test_sqlite_store_round_trips_interconnect_rollups(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "constella.db")
+    store.open()
+    try:
+        bucket = NvidiaGpmRollupBucket(0.0, "node-a", "GPU-0")
+        bucket.add(
+            AcceleratorPerformance(
+                profile="nvidia.gpm.v1",
+                status="available",
+                sampled_at=0.0,
+                metrics={
+                    "nvidia.gpm.pcie_tx_per_second": 512.0,
+                    "nvidia.gpm.pcie_rx_per_second": 1024.0,
+                    "nvidia.gpm.nvlink_tx_per_second": 2048.0,
+                    "nvidia.gpm.nvlink_rx_per_second": 4096.0,
+                },
+            )
+        )
+        store.upsert_nvidia_gpm_rollups([bucket.to_row(ROLLUP_20S)])
+
+        point = store.query_nvidia_gpm_history(
+            node_id="node-a",
+            gpu_uuid="GPU-0",
+            bucket_seconds=ROLLUP_20S,
+            metrics=[
+                "nvidia.gpm.pcie_tx_per_second",
+                "nvidia.gpm.nvlink_rx_per_second",
+            ],
+        )[0]
+
+        assert point["metrics"]["nvidia.gpm.pcie_tx_per_second"]["avg"] == 512.0
+        assert point["metrics"]["nvidia.gpm.nvlink_rx_per_second"]["avg"] == 4096.0
     finally:
         store.close()
 

@@ -14,6 +14,10 @@ NVIDIA_GPM_ROLLUP_METRICS = {
     "nvidia.gpm.fp16_non_tensor_active": "fp16_non_tensor_active",
     "nvidia.gpm.fp32_non_tensor_active": "fp32_non_tensor_active",
     "nvidia.gpm.fp64_non_tensor_active": "fp64_non_tensor_active",
+    "nvidia.gpm.pcie_tx_per_second": "pcie_tx_per_second",
+    "nvidia.gpm.pcie_rx_per_second": "pcie_rx_per_second",
+    "nvidia.gpm.nvlink_tx_per_second": "nvlink_tx_per_second",
+    "nvidia.gpm.nvlink_rx_per_second": "nvlink_rx_per_second",
 }
 
 

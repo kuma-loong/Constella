@@ -3,6 +3,7 @@ import {
   escapeHtml,
   fmtDuration,
   fmtGiB,
+  fmtMiBPerSecond,
   fmtNumber,
   fmtPct,
   DISPLAY_TIME_ZONE,
@@ -217,7 +218,11 @@ type PerformanceMetric =
   | "nvidia.gpm.dram_bw_active"
   | "nvidia.gpm.fp16_non_tensor_active"
   | "nvidia.gpm.fp32_non_tensor_active"
-  | "nvidia.gpm.fp64_non_tensor_active";
+  | "nvidia.gpm.fp64_non_tensor_active"
+  | "nvidia.gpm.pcie_tx_per_second"
+  | "nvidia.gpm.pcie_rx_per_second"
+  | "nvidia.gpm.nvlink_tx_per_second"
+  | "nvidia.gpm.nvlink_rx_per_second";
 
 type ChartMetric = NodeMetric | PerformanceMetric;
 
@@ -240,7 +245,7 @@ const NODE_METRICS: { key: NodeMetric; label: string; max?: number }[] = [
   { key: "avg_power_watts", label: "Power" },
   { key: "avg_temperature_c", label: "Temp", max: 100 },
 ];
-const PERFORMANCE_METRICS: { key: PerformanceMetric; label: string; max: number }[] = [
+const PERFORMANCE_METRICS: { key: PerformanceMetric; label: string; max?: number }[] = [
   { key: "nvidia.gpm.sm_active", label: "SM", max: 100 },
   { key: "nvidia.gpm.sm_occupancy", label: "Occupancy", max: 100 },
   { key: "nvidia.gpm.tensor_active", label: "Tensor", max: 100 },
@@ -248,6 +253,10 @@ const PERFORMANCE_METRICS: { key: PerformanceMetric; label: string; max: number 
   { key: "nvidia.gpm.fp16_non_tensor_active", label: "FP16", max: 100 },
   { key: "nvidia.gpm.fp32_non_tensor_active", label: "FP32", max: 100 },
   { key: "nvidia.gpm.fp64_non_tensor_active", label: "FP64", max: 100 },
+  { key: "nvidia.gpm.pcie_tx_per_second", label: "PCIe TX" },
+  { key: "nvidia.gpm.pcie_rx_per_second", label: "PCIe RX" },
+  { key: "nvidia.gpm.nvlink_tx_per_second", label: "NVLink TX" },
+  { key: "nvidia.gpm.nvlink_rx_per_second", label: "NVLink RX" },
 ];
 const JOB_METRICS = [...NODE_METRICS, ...PERFORMANCE_METRICS];
 const CHART_COLORS = [
@@ -1594,27 +1603,30 @@ function metricLabel(metric: ChartMetric) {
 }
 
 function alignedChartData(series: AnalyticsSeries[], metric: ChartMetric) {
-  const starts = Array.from(
-    new Set(series.flatMap((item) => item.points.map((point) => point.bucket_start))),
-  ).sort((a, b) => a - b);
-  const data: uPlot.AlignedData = [
-    starts,
-    ...series.map((item) => {
-      const values = new Map(item.points.map((point) => [point.bucket_start, metricValue(point, metric)]));
-      return starts.map((start) => values.get(start) ?? null);
-    }),
-  ];
-  return { starts, data };
+  return alignBucketSeries<AnalyticsSeries, AnalyticsPoint>(
+    series,
+    (point) => metricValue(point, metric),
+  );
 }
 
 function alignedJobChartData(series: JobCurveSeries[], metric: ChartMetric) {
+  return alignBucketSeries<JobCurveSeries, JobPoint>(
+    series,
+    (point) => jobMetricValue(point, metric),
+  );
+}
+
+function alignBucketSeries<T extends { points: P[] }, P extends { bucket_start: number }>(
+  series: T[],
+  valueAt: (point: P) => number | null,
+) {
   const starts = Array.from(
     new Set(series.flatMap((item) => item.points.map((point) => point.bucket_start))),
   ).sort((a, b) => a - b);
   const data: uPlot.AlignedData = [
     starts,
     ...series.map((item) => {
-      const values = new Map(item.points.map((point) => [point.bucket_start, jobMetricValue(point, metric)]));
+      const values = new Map(item.points.map((point) => [point.bucket_start, valueAt(point)]));
       return starts.map((start) => values.get(start) ?? null);
     }),
   ];
@@ -1746,6 +1758,9 @@ function formatMetricTick(value: number, metric: ChartMetric) {
   if (metric === "avg_memory_used_mb") {
     return fmtGiB(value);
   }
+  if (isBandwidthMetric(metric)) {
+    return fmtMiBPerSecond(value);
+  }
   if (metric === "avg_gpu_utilization" || isPerformanceMetric(metric)) {
     return fmtPct(value);
   }
@@ -1753,6 +1768,10 @@ function formatMetricTick(value: number, metric: ChartMetric) {
     return `${value.toFixed(0)} W`;
   }
   return `${value.toFixed(0)}°C`;
+}
+
+function isBandwidthMetric(metric: ChartMetric): metric is PerformanceMetric {
+  return isPerformanceMetric(metric) && metric.endsWith("_per_second");
 }
 
 function heatAxis(starts: number[]) {

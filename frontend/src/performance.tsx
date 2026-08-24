@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
-import { fmtPct } from "./format";
+import { fmtMiBPerSecond, fmtPct } from "./format";
 import { GuideDrawer } from "./guides/GuideDrawer";
 import type { GuideLocale } from "./guides/types";
 import {
   PERFORMANCE_GROUPS,
   PERFORMANCE_METRIC_IDS,
+  DEFAULT_PERFORMANCE_METRIC_IDS,
   type MetricDefinition,
   type PerformanceMetricId,
 } from "./performance-metrics";
@@ -87,13 +88,28 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
   const selectedNode = nodes.find((node) => node.node_id === nodeId) || null;
   const selectedNodeId = selectedNode?.node_id || "";
   const selectedNodeCapable = Boolean(selectedNode?.performance_profiles?.includes(PROFILE));
+  const visibleGroups = useMemo(() => {
+    const discovered = new Set<string>();
+    for (const gpu of selectedNode?.gpus || []) {
+      if (gpuUuids.size && !gpuUuids.has(gpu.uuid)) {
+        continue;
+      }
+      for (const metric of gpu.performance?.supported_metrics || Object.keys(gpu.performance?.metrics || {})) {
+        discovered.add(metric);
+      }
+    }
+    const supported = discovered.size ? discovered : new Set<string>(DEFAULT_PERFORMANCE_METRIC_IDS);
+    return PERFORMANCE_GROUPS
+      .map((group) => ({ ...group, metrics: group.metrics.filter((metric) => supported.has(metric.id)) }))
+      .filter((group) => group.metrics.length);
+  }, [gpuUuids, selectedNode]);
   const requestedMetrics = useMemo(
-    () => PERFORMANCE_GROUPS.flatMap((group) =>
+    () => visibleGroups.flatMap((group) =>
       collapsed.has(`group:${group.id}`)
         ? []
         : group.metrics.filter((metric) => !collapsed.has(`chart:${metric.id}`)).map((metric) => metric.id),
     ),
-    [collapsed],
+    [collapsed, visibleGroups],
   );
   const metricQuery = requestedMetrics.join(",");
   const liveRefreshMs = rangeSeconds <= 15 * 60 ? 2000 : rangeSeconds <= 60 * 60 ? 5000 : 10000;
@@ -216,15 +232,9 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
     });
     setLoading(true);
     try {
-      const response = await fetch(`/api/highres/performance?${params.toString()}`, {
-        cache: "no-store",
-        signal,
-      });
-      if (!response.ok) {
-        throw new Error(`performance request failed: ${response.status}`);
-      }
+      const nextPayload = await requestPerformance(params, signal);
       if (request === requestRef.current) {
-        setPayload((await response.json()) as PerformancePayload);
+        setPayload(nextPayload);
         setError(null);
       }
     } catch (requestError) {
@@ -266,11 +276,7 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
       until: String(selection.to),
       summary_only: "true",
     });
-    void fetch(`/api/highres/performance?${params.toString()}`, {
-      cache: "no-store",
-      signal: controller.signal,
-    })
-      .then((response) => response.json() as Promise<PerformancePayload>)
+    void requestPerformance(params, controller.signal)
       .then(setSelectionPayload)
       .catch(() => undefined);
     return () => controller.abort();
@@ -293,7 +299,7 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
   function setAllCollapsed(value: boolean) {
     const next = new Set<string>();
     if (value) {
-      for (const group of PERFORMANCE_GROUPS) {
+      for (const group of visibleGroups) {
         next.add(`group:${group.id}`);
       }
     }
@@ -426,7 +432,7 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
         <div class="empty-panel">High-resolution performance caching is disabled for this service.</div>
       ) : (
         <div class={`performance-groups ${loading && !payload ? "is-loading" : ""}`}>
-          {PERFORMANCE_GROUPS.map((group) => {
+          {visibleGroups.map((group) => {
             const groupId = `group:${group.id}`;
             const groupCollapsed = collapsed.has(groupId);
             return (
@@ -515,7 +521,7 @@ function PerformanceChart({
         width: Math.max(320, target.clientWidth),
         height: CHART_HEIGHT,
         padding: [8, 8, 0, 0],
-        scales: { x: { time: true }, y: { range: [0, 100] } },
+        scales: { x: { time: true }, y: definition.unit === "percent" ? { range: [0, 100] } : {} },
         axes: [
           {
             stroke: css.getPropertyValue("--chart-axis").trim(),
@@ -526,8 +532,8 @@ function PerformanceChart({
           {
             stroke: css.getPropertyValue("--chart-axis").trim(),
             grid: { stroke: css.getPropertyValue("--chart-grid").trim() },
-            splits: [0, 20, 40, 60, 80, 100],
-            values: (_plot, values) => values.map((value) => `${value}%`),
+            splits: definition.unit === "percent" ? [0, 20, 40, 60, 80, 100] : undefined,
+            values: (_plot, values) => values.map((value) => formatMetricValue(Number(value), definition)),
           },
         ],
         cursor: {
@@ -544,7 +550,7 @@ function PerformanceChart({
               hoveredRef.current,
               alignedRef.current,
               seriesRef.current,
-              definition.id,
+              definition,
             ),
           ],
           setSelect: [
@@ -568,7 +574,7 @@ function PerformanceChart({
             spanGaps: false,
             paths: uPlot.paths.spline?.(),
             points: { show: false },
-            value: (_plot: uPlot, value: number | null | undefined) => value == null ? "n/a" : fmtPct(value),
+            value: (_plot: uPlot, value: number | null | undefined) => formatMetricValue(value, definition),
           })),
         ],
       },
@@ -651,7 +657,7 @@ function PerformanceChart({
                 <span key={item.gpu_uuid}>
                   <b style={{ background: `var(${COLORS[index % COLORS.length]})` }} />
                   <strong>GPU{item.gpu_index}</strong>
-                  <small>Avg {formatStat(summary?.avg)} · Peak {formatStat(summary?.max)} · P95 {formatStat(summary?.p95)} · Coverage {summary?.coverage ?? 0}%</small>
+                  <small>Avg {formatMetricValue(summary?.avg, definition)} / Peak {formatMetricValue(summary?.max, definition)} / P95 {formatMetricValue(summary?.p95, definition)} / Coverage {summary?.coverage ?? 0}%</small>
                 </span>
               );
             })}
@@ -707,7 +713,7 @@ function updatePerformanceTooltip(
   hovered: boolean,
   aligned: ReturnType<typeof alignSeries>,
   series: PerformanceSeries[],
-  metric: string,
+  definition: MetricDefinition,
 ) {
   if (!tooltip || !hovered) {
     return;
@@ -728,8 +734,8 @@ function updatePerformanceTooltip(
     const label = document.createElement("b");
     label.textContent = `GPU${item.gpu_index}`;
     const value = document.createElement("em");
-    const point = nearestPointValue(item.metrics[metric]?.points || [], aligned.timestamps[index]);
-    value.textContent = point == null ? "n/a" : fmtPct(Number(point));
+    const point = nearestPointValue(item.metrics[definition.id]?.points || [], aligned.timestamps[index]);
+    value.textContent = formatMetricValue(point, definition);
     row.append(dot, label, value);
     return row;
   });
@@ -786,18 +792,16 @@ function readGpuSelection(nodeId: string): string[] {
 }
 
 function formatClock(timestamp: number) {
-  return new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).format(timestamp * 1000);
+  return formatPerformanceTime(timestamp, false);
 }
 
 function formatTooltipTime(timestamp: number) {
+  return formatPerformanceTime(timestamp, true);
+}
+
+function formatPerformanceTime(timestamp: number, includeDate: boolean) {
   return new Intl.DateTimeFormat("en-GB", {
-    month: "short",
-    day: "2-digit",
+    ...(includeDate ? { month: "short", day: "2-digit" } as const : {}),
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -805,8 +809,22 @@ function formatTooltipTime(timestamp: number) {
   }).format(timestamp * 1000);
 }
 
-function formatStat(value: number | null | undefined) {
-  return value == null ? "n/a" : fmtPct(value);
+function formatMetricValue(value: number | null | undefined, definition: MetricDefinition) {
+  if (value == null) {
+    return "n/a";
+  }
+  return definition.unit === "mib_per_second" ? fmtMiBPerSecond(value) : fmtPct(value);
+}
+
+async function requestPerformance(params: URLSearchParams, signal?: AbortSignal) {
+  const response = await fetch(`/api/highres/performance?${params.toString()}`, {
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(`performance request failed: ${response.status}`);
+  }
+  return response.json() as Promise<PerformancePayload>;
 }
 
 function profileLabel(node: NodeSnapshot) {

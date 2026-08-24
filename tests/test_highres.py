@@ -197,8 +197,8 @@ def test_performance_status_reports_preallocated_memory() -> None:
 
     assert status["capacity_per_gpu"] == 10
     assert status["valid_point_count"] == 1
-    assert status["approx_bytes"] == 37
-    assert status["allocated_bytes"] == 370
+    assert status["approx_bytes"] == 54
+    assert status["allocated_bytes"] == 540
 
 
 def test_performance_downsampling_keeps_tail_peaks_and_gaps() -> None:

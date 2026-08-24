@@ -22,7 +22,7 @@ class FakeFunction:
 
 
 class FakeGpmLibrary:
-    def __init__(self, *, supported: bool = True):
+    def __init__(self, *, supported: bool = True, unsupported_metric_ids: set[int] | None = None):
         self.next_sample = 100
         self.freed: list[int] = []
         self.sample_get_calls = 0
@@ -33,6 +33,8 @@ class FakeGpmLibrary:
         self.nvmlGpmSampleAlloc = FakeFunction(self._alloc)
         self.nvmlGpmSampleFree = FakeFunction(self._free)
         self.nvmlGpmSampleGet = FakeFunction(self._sample)
+        self.unsupported_metric_ids = unsupported_metric_ids or set()
+        self.requested_metric_ids: list[list[int]] = []
         self.nvmlGpmMetricsGet = FakeFunction(self._metrics)
 
     @staticmethod
@@ -53,11 +55,15 @@ class FakeGpmLibrary:
         self.sample_get_calls += 1
         return self.sample_rc
 
-    @staticmethod
-    def _metrics(ptr: Any) -> int:
+    def _metrics(self, ptr: Any) -> int:
         request = ctypes.cast(ptr, ctypes.POINTER(NvmlGpmMetricsGet)).contents
+        self.requested_metric_ids.append(
+            [int(request.metrics[index].metricId) for index in range(request.numMetrics)]
+        )
         for index in range(request.numMetrics):
-            request.metrics[index].nvmlReturn = 0
+            request.metrics[index].nvmlReturn = (
+                3 if request.metrics[index].metricId in self.unsupported_metric_ids else 0
+            )
             request.metrics[index].value = 10.0 + index
         return 0
 
@@ -76,6 +82,7 @@ def test_gpm_provider_uses_adjacent_samples_and_frees_buffers() -> None:
     assert available.interval_ms == 1000.0
     assert set(available.metrics) == set(NVIDIA_GPM_METRICS)
     assert available.metrics["nvidia.gpm.sm_active"] == 10.0
+    assert available.supported_metrics == list(NVIDIA_GPM_METRICS)
     assert lib.sample_get_calls == 2
     assert lib.freed == [100, 101]
 
@@ -89,6 +96,24 @@ def test_gpm_provider_reports_unsupported_without_allocating() -> None:
     assert result.status == "unsupported"
     assert lib.sample_get_calls == 0
     assert lib.freed == []
+
+
+def test_gpm_provider_probes_and_stops_requesting_unsupported_nvlink_metrics() -> None:
+    lib = FakeGpmLibrary(unsupported_metric_ids={60, 61})
+    provider = NvidiaGpmProvider(lib)
+
+    provider.sample(0, ctypes.c_void_p(1), sampled_at=10.0, monotonic_at=1.0)
+    first = provider.sample(0, ctypes.c_void_p(1), sampled_at=11.0, monotonic_at=2.0)
+    second = provider.sample(0, ctypes.c_void_p(1), sampled_at=12.0, monotonic_at=3.0)
+
+    assert "nvidia.gpm.nvlink_rx_per_second" not in first.supported_metrics
+    assert "nvidia.gpm.nvlink_tx_per_second" not in first.supported_metrics
+    assert "nvidia.gpm.pcie_rx_per_second" in first.supported_metrics
+    assert 60 in lib.requested_metric_ids[0]
+    assert 61 in lib.requested_metric_ids[0]
+    assert 60 not in lib.requested_metric_ids[1]
+    assert 61 not in lib.requested_metric_ids[1]
+    assert second.status == "available"
 
 
 def test_gpm_provider_waits_for_minimum_sample_interval() -> None:

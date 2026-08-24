@@ -21,6 +21,16 @@ export function fmtNumber(value: number) {
   return value.toLocaleString(undefined, { maximumFractionDigits: value >= 10 ? 1 : 2 });
 }
 
+export function fmtMiBPerSecond(value: number) {
+  if (!Number.isFinite(value)) {
+    return "n/a";
+  }
+  if (Math.abs(value) >= 1024) {
+    return `${(value / 1024).toFixed(value >= 10240 ? 1 : 2)} GiB/s`;
+  }
+  return `${value.toFixed(value >= 100 ? 0 : value >= 10 ? 1 : 2)} MiB/s`;
+}
+
 export function formatBucket(seconds: number) {
   if (seconds < 60) {
     return `${seconds}s`;

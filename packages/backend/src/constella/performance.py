@@ -12,6 +12,10 @@ NVIDIA_GPM_METRICS = (
     "nvidia.gpm.fp16_non_tensor_active",
     "nvidia.gpm.fp32_non_tensor_active",
     "nvidia.gpm.fp64_non_tensor_active",
+    "nvidia.gpm.pcie_tx_per_second",
+    "nvidia.gpm.pcie_rx_per_second",
+    "nvidia.gpm.nvlink_tx_per_second",
+    "nvidia.gpm.nvlink_rx_per_second",
 )
 
 PERFORMANCE_STATUSES = frozenset({"warming", "available", "unsupported", "error"})
