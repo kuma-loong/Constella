@@ -83,7 +83,7 @@ export const PERFORMANCE_GUIDE: Record<GuideLocale, PerformanceGuideCopy> = {
     jumpTo: "快速定位",
     groups: { compute: "计算", memory: "显存", pipelines: "非 Tensor 流水线" },
     definitionLabel: "指标定义",
-    significanceLabel: "对任务的意义",
+    significanceLabel: "意义",
     readWith: "建议同时查看",
     patternsTitle: "组合指标参考",
     patterns: [
