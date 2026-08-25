@@ -530,6 +530,8 @@ function PerformanceChart({
             values: (_plot, values) => values.map((value) => formatClock(Number(value))),
           },
           {
+            size: performanceYAxisSize(definition),
+            gap: 8,
             stroke: css.getPropertyValue("--chart-axis").trim(),
             grid: { stroke: css.getPropertyValue("--chart-grid").trim() },
             splits: definition.unit === "percent" ? [0, 20, 40, 60, 80, 100] : undefined,
@@ -814,6 +816,10 @@ function formatMetricValue(value: number | null | undefined, definition: MetricD
     return "n/a";
   }
   return definition.unit === "mib_per_second" ? fmtMiBPerSecond(value) : fmtPct(value);
+}
+
+function performanceYAxisSize(definition: MetricDefinition) {
+  return definition.unit === "mib_per_second" ? 92 : 58;
 }
 
 async function requestPerformance(params: URLSearchParams, signal?: AbortSignal) {
