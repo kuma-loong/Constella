@@ -17,9 +17,10 @@ class PerformanceMetric:
     label: str
     group: str
     style: str
+    unit: str = "percent"
 
 
-PERFORMANCE_METRICS = (
+UTILIZATION_METRICS = (
     PerformanceMetric("nvidia.gpm.sm_active", "sm-active", "SM ACTIVE", "COMPUTE", "#00E5FF"),
     PerformanceMetric(
         "nvidia.gpm.sm_occupancy", "sm-occupancy", "SM OCCUPANCY", "COMPUTE", "#38BDF8"
@@ -30,6 +31,44 @@ PERFORMANCE_METRICS = (
     PerformanceMetric(
         "nvidia.gpm.dram_bw_active", "dram-bandwidth", "DRAM BANDWIDTH", "MEMORY", "#FF6B00"
     ),
+)
+
+INTERCONNECT_METRICS = (
+    PerformanceMetric(
+        "nvidia.gpm.pcie_tx_per_second",
+        "pcie-tx",
+        "PCIE TX",
+        "INTERCONNECT",
+        "#4F7DFF",
+        "mib_per_second",
+    ),
+    PerformanceMetric(
+        "nvidia.gpm.pcie_rx_per_second",
+        "pcie-rx",
+        "PCIE RX",
+        "INTERCONNECT",
+        "#22B8CF",
+        "mib_per_second",
+    ),
+    PerformanceMetric(
+        "nvidia.gpm.nvlink_tx_per_second",
+        "nvlink-tx",
+        "NVLINK TX",
+        "INTERCONNECT",
+        "#A855F7",
+        "mib_per_second",
+    ),
+    PerformanceMetric(
+        "nvidia.gpm.nvlink_rx_per_second",
+        "nvlink-rx",
+        "NVLINK RX",
+        "INTERCONNECT",
+        "#F472B6",
+        "mib_per_second",
+    ),
+)
+
+PIPELINE_METRICS = (
     PerformanceMetric(
         "nvidia.gpm.fp16_non_tensor_active", "fp16", "FP16 NON-TENSOR", "PIPELINE", "#22D3EE"
     ),
@@ -41,9 +80,12 @@ PERFORMANCE_METRICS = (
     ),
 )
 
+PERFORMANCE_METRICS = UTILIZATION_METRICS + INTERCONNECT_METRICS + PIPELINE_METRICS
+
 PERFORMANCE_PAGES = (
-    ("COMPUTE + MEMORY", PERFORMANCE_METRICS[:4]),
-    ("NON-TENSOR PIPELINES", PERFORMANCE_METRICS[4:]),
+    ("COMPUTE + MEMORY", UTILIZATION_METRICS),
+    ("INTERCONNECT", INTERCONNECT_METRICS),
+    ("NON-TENSOR PIPELINES", PIPELINE_METRICS),
 )
 
 
@@ -135,12 +177,49 @@ def merge_rolling_points(
     return merged[-columns:]
 
 
-def format_stat(value: object) -> str:
+def format_stat(value: object, unit: str = "percent") -> str:
     try:
         number = float(value)
     except (TypeError, ValueError):
         return "n/a"
-    return f"{number:.1f}%" if math.isfinite(number) else "n/a"
+    if not math.isfinite(number):
+        return "n/a"
+    if unit == "mib_per_second":
+        if abs(number) >= 1024:
+            value_gib = number / 1024
+            precision = 1 if abs(value_gib) >= 10 else 2
+            return f"{value_gib:.{precision}f} GiB/s"
+        precision = 0 if abs(number) >= 100 else 1 if abs(number) >= 10 else 2
+        return f"{number:.{precision}f} MiB/s"
+    return f"{number:.1f}%"
+
+
+def chart_maximum(values: list[float | None], unit: str = "percent") -> float:
+    if unit == "percent":
+        return 100.0
+    peak = max((value for value in values if value is not None and value > 0), default=0.0)
+    if peak <= 0:
+        return 1.0
+    target = peak * 1.08
+    magnitude = 10 ** math.floor(math.log10(target))
+    normalized = target / magnitude
+    step = next(candidate for candidate in (1.0, 2.0, 5.0, 10.0) if normalized <= candidate)
+    return step * magnitude
+
+
+def supported_metric_keys(gpu: dict[str, Any] | None) -> set[str]:
+    if gpu is None or not isinstance(gpu.get("performance"), dict):
+        return set()
+    metrics = gpu["performance"].get("supported_metrics")
+    if not isinstance(metrics, list):
+        return set()
+    return {metric.strip() for metric in metrics if isinstance(metric, str) and metric.strip()}
+
+
+def metrics_for_gpu(gpu: dict[str, Any] | None) -> tuple[PerformanceMetric, ...]:
+    supported = supported_metric_keys(gpu)
+    interconnect = tuple(metric for metric in INTERCONNECT_METRICS if metric.key in supported)
+    return UTILIZATION_METRICS + interconnect + PIPELINE_METRICS
 
 
 def _dict_items(value: object) -> list[dict[str, Any]]:

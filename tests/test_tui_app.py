@@ -6,7 +6,7 @@ from copy import deepcopy
 from itertools import combinations
 
 import pytest
-from textual.containers import Container
+from textual.containers import Container, Vertical
 from textual.widgets import ContentSwitcher, DataTable, ListView, Static
 
 from constella_tui.app import (
@@ -582,6 +582,11 @@ async def exercise_performance_view_and_controls() -> None:
     node = snapshot["nodes"][0]
     node["performance_profiles"] = ["nvidia.gpm.v1"]
     node["gpus"][0]["uuid"] = "GPU-0"
+    node["gpus"][0]["performance"] = {
+        "profile": "nvidia.gpm.v1",
+        "status": "available",
+        "supported_metrics": [metric.key for metric in PERFORMANCE_METRICS],
+    }
     second_gpu = deepcopy(node["gpus"][0])
     second_gpu.update(index=1, uuid="GPU-1")
     node["gpus"].append(second_gpu)
@@ -611,7 +616,7 @@ async def exercise_performance_view_and_controls() -> None:
         assert "AVG 40.0%" in summary
         assert "COVER 66.7%" in summary
         status = str(app.query_one("#performance-status", Static).content)
-        assert "P1/2" in status
+        assert "P1/3" in status
         assert "COMPUTE + MEMORY" in status
         assert "gpu-a" in status
         assert "GPU 0" in status
@@ -621,8 +626,10 @@ async def exercise_performance_view_and_controls() -> None:
         assert pages.current == "performance-page-1"
         first_page = app.query_one("#performance-page-1", Container)
         second_page = app.query_one("#performance-page-2", Container)
+        third_page = app.query_one("#performance-page-3", Container)
         assert len(first_page.query(".performance-card")) == 4
-        assert len(second_page.query(".performance-card")) == 3
+        assert len(second_page.query(".performance-card")) == 4
+        assert len(third_page.query(".performance-card")) == 3
 
         first_page_cards = list(first_page.query(".performance-card"))
         first_regions = [card.region for card in first_page_cards]
@@ -635,10 +642,18 @@ async def exercise_performance_view_and_controls() -> None:
         await pilot.press("l")
         await pilot.pause()
         assert pages.current == "performance-page-2"
-        assert "P2/2" in str(app.query_one("#performance-status", Static).content)
-        assert "NON-TENSOR PIPELINES" in str(
-            app.query_one("#performance-status", Static).content
-        )
+        assert "P2/3" in str(app.query_one("#performance-status", Static).content)
+        assert "INTERCONNECT" in str(app.query_one("#performance-status", Static).content)
+        bandwidth_summary = str(app.query_one("#performance-summary-pcie-tx", Static).content)
+        assert "AVG 40.0 MiB/s" in bandwidth_summary
+        await pilot.press("l")
+        await pilot.pause()
+        assert pages.current == "performance-page-3"
+        assert "P3/3" in str(app.query_one("#performance-status", Static).content)
+        assert "NON-TENSOR PIPELINES" in str(app.query_one("#performance-status", Static).content)
+        await pilot.press("h")
+        await pilot.pause()
+        assert pages.current == "performance-page-2"
         await pilot.press("h")
         await pilot.pause()
         assert pages.current == "performance-page-1"
@@ -704,6 +719,31 @@ async def exercise_performance_capability_and_disabled_states() -> None:
         assert "CACHE DISABLED" in str(
             disabled_app.query_one("#performance-notice", Static).content
         )
+
+    pcie_snapshot = deepcopy(unsupported_snapshot)
+    pcie_node = pcie_snapshot["nodes"][0]
+    pcie_node["performance_profiles"] = ["nvidia.gpm.v1"]
+    pcie_node["gpus"][0]["performance"] = {
+        "profile": "nvidia.gpm.v1",
+        "status": "available",
+        "supported_metrics": [
+            "nvidia.gpm.pcie_tx_per_second",
+            "nvidia.gpm.pcie_rx_per_second",
+        ],
+    }
+    pcie_client = PerformanceClient()
+    pcie_client.snapshots = lambda: _single_snapshot(pcie_snapshot)  # type: ignore[method-assign]
+    pcie_app = ConstellaTui("http://127.0.0.1:8765")
+    pcie_app.client = pcie_client  # type: ignore[assignment]
+    async with pcie_app.run_test(size=(120, 36)) as pilot:
+        await pilot.pause(0.2)
+        await pilot.press("5")
+        await pilot.pause(0.2)
+        requested = set(pcie_client.requests[-1][1]["metrics"].split(","))
+        assert "nvidia.gpm.pcie_tx_per_second" in requested
+        assert "nvidia.gpm.nvlink_tx_per_second" not in requested
+        assert pcie_app.query_one("#performance-card-pcie-tx", Vertical).display
+        assert not pcie_app.query_one("#performance-card-nvlink-tx", Vertical).display
 
 
 def test_tui_performance_view_handles_capability_and_cache_states() -> None:

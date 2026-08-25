@@ -278,6 +278,13 @@ Screen {
     background: #101621;
     overflow: hidden;
 }
+.performance-empty {
+    display: none;
+    width: 100%;
+    height: 100%;
+    content-align: center middle;
+    color: $muted;
+}
 
 DataTable {
     width: 100%;

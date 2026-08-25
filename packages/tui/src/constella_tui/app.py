@@ -35,11 +35,13 @@ from .performance import (
     PERFORMANCE_PAGES,
     PERFORMANCE_PROFILE,
     PERFORMANCE_RANGES,
+    chart_maximum,
     format_stat,
     latest_value,
     merge_rolling_points,
     metric_points,
     metric_summary,
+    metrics_for_gpu,
     selected_performance_series,
 )
 
@@ -293,6 +295,11 @@ class ConstellaTui(App[None]):
                                         id=f"performance-summary-{metric.slug}",
                                         classes="performance-summary",
                                     )
+                            yield Static(
+                                "No supported metrics for this GPU",
+                                id=f"performance-empty-{page_index}",
+                                classes="performance-empty",
+                            )
         yield Footer()
 
     def on_mount(self) -> None:
@@ -441,6 +448,7 @@ class ConstellaTui(App[None]):
             self._render_performance()
             return
         _range_label, range_seconds = PERFORMANCE_RANGES[self.performance_range_index]
+        metrics = metrics_for_gpu(gpu)
         range_end = time.time()
         self.performance_error = None
         self._set_performance_notice("")
@@ -450,7 +458,7 @@ class ConstellaTui(App[None]):
                 params={
                     "node_id": node_id,
                     "gpu_uuid": gpu_uuid,
-                    "metrics": ",".join(metric.key for metric in PERFORMANCE_METRICS),
+                    "metrics": ",".join(metric.key for metric in metrics),
                     "since": str(range_end - range_seconds),
                     "until": str(range_end),
                     "max_points": str(PERFORMANCE_CHART_POINTS),
@@ -1214,6 +1222,7 @@ class ConstellaTui(App[None]):
     def _render_performance(self) -> None:
         node = self._selected_node()
         gpu = self._ensure_selected_gpu()
+        self._sync_performance_metric_visibility(gpu)
         self._render_performance_header()
         if node is None:
             self._set_performance_notice("WAITING FOR CLUSTER DATA")
@@ -1259,13 +1268,15 @@ class ConstellaTui(App[None]):
         self._set_performance_notice("" if self.performance_live else "LIVE REFRESH PAUSED")
         _range_label, range_seconds = PERFORMANCE_RANGES[self.performance_range_index]
         node_id = self._node_id(node)
-        for metric in PERFORMANCE_METRICS:
+        for metric in metrics_for_gpu(gpu):
             chart = self.query_one(f"#performance-chart-{metric.slug}", Static)
             title = self.query_one(f"#performance-title-{metric.slug}", Static)
             summary_widget = self.query_one(f"#performance-summary-{metric.slug}", Static)
             raw_timestamps, raw_values = metric_points(series, metric.key)
             current = latest_value(raw_values)
-            chart_width = max(4, chart.size.width - 4)
+            maximum = chart_maximum(raw_values, metric.unit)
+            axis_width = max(4, len(f"{maximum:.0f}") + 1)
+            chart_width = max(4, chart.size.width - axis_width)
             pixel_columns = chart_width * 2
             context = (
                 node_id,
@@ -1287,8 +1298,7 @@ class ConstellaTui(App[None]):
             timestamps = [timestamp for timestamp, _value in rolling_points]
             values = [value for _timestamp, value in rolling_points]
             title.update(
-                f"{metric.group}  ·  {metric.label}  ·  "
-                f"CURRENT {format_stat(current)}"
+                f"{metric.group}  ·  {metric.label}  ·  CURRENT {format_stat(current, metric.unit)}"
             )
             if raw_timestamps:
                 chart.update(
@@ -1297,6 +1307,7 @@ class ConstellaTui(App[None]):
                             values,
                             width=chart_width,
                             height=max(2, chart.size.height - 1),
+                            maximum=maximum,
                             timestamps=timestamps,
                             resample=False,
                         ),
@@ -1308,11 +1319,11 @@ class ConstellaTui(App[None]):
             summary = metric_summary(series, metric.key)
             summary_text = Text()
             summary_text.append("AVG ", style="#8A99AD")
-            summary_text.append(format_stat(summary.get("avg")), style=metric.style)
+            summary_text.append(format_stat(summary.get("avg"), metric.unit), style=metric.style)
             summary_text.append("  PEAK ", style="#8A99AD")
-            summary_text.append(format_stat(summary.get("max")), style="#E2E8F0")
+            summary_text.append(format_stat(summary.get("max"), metric.unit), style="#E2E8F0")
             summary_text.append("  P95 ", style="#8A99AD")
-            summary_text.append(format_stat(summary.get("p95")), style="#E2E8F0")
+            summary_text.append(format_stat(summary.get("p95"), metric.unit), style="#E2E8F0")
             summary_text.append("  COVER ", style="#8A99AD")
             summary_text.append(format_stat(summary.get("coverage")), style="#E2E8F0")
             summary_widget.update(summary_text)
@@ -1371,6 +1382,16 @@ class ConstellaTui(App[None]):
             )
             self.query_one(f"#performance-summary-{metric.slug}", Static).update("")
 
+    def _sync_performance_metric_visibility(self, gpu: dict[str, Any] | None) -> None:
+        visible_keys = {metric.key for metric in metrics_for_gpu(gpu)}
+        for page_index, (_label, metrics) in enumerate(PERFORMANCE_PAGES, start=1):
+            visible_count = 0
+            for metric in metrics:
+                card = self.query_one(f"#performance-card-{metric.slug}", Vertical)
+                card.display = metric.key in visible_keys
+                visible_count += int(card.display)
+            self.query_one(f"#performance-empty-{page_index}", Static).display = not visible_count
+
     def _render_visible_charts(self) -> None:
         if self.active_view == "overview" and self.snapshot is not None:
             self._render_selected_gpu_panel()
@@ -1400,9 +1421,9 @@ class ConstellaTui(App[None]):
         for index, item in enumerate(series):
             values_by_time = {
                 float(point["bucket_start"]): (
-                    float(point[value_key]) * scale
-                    if point.get(value_key) is not None
-                    else None
+                float(point[value_key]) * scale
+                if point.get(value_key) is not None
+                else None
                 )
                 for point in self._dict_items(item.get("points"))
                 if point.get("bucket_start") is not None

@@ -61,8 +61,9 @@ hiding the other GPU curves.
 Performance requires the manager's `nvidia.gpm.v1` profile and high-resolution
 performance cache. Unsupported accelerators continue to work in the other TUI
 views and show an explicit unavailable state in Performance. The first metric
-page contains four Compute and Memory charts; the second contains three
-non-Tensor pipeline charts. See the
+page contains four Compute and Memory charts; the second contains PCIe TX/RX
+and, when supported by the selected GPU, NVLink TX/RX bandwidth charts; the
+third contains three non-Tensor pipeline charts. See the
 [NVIDIA GPM guide](../../docs/NVIDIA_GPM.md) for requirements, metric semantics,
 storage controls, and troubleshooting.
 
