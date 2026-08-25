@@ -47,15 +47,6 @@ export const PERFORMANCE_GROUPS: MetricGroup[] = [
     ],
   },
   {
-    id: "pipelines",
-    label: "Non-Tensor Pipelines",
-    metrics: [
-      { id: "nvidia.gpm.fp16_non_tensor_active", label: "FP16", description: "Non-Tensor FP16 activity", unit: "percent" },
-      { id: "nvidia.gpm.fp32_non_tensor_active", label: "FP32", description: "Non-Tensor FP32 activity", unit: "percent" },
-      { id: "nvidia.gpm.fp64_non_tensor_active", label: "FP64", description: "Non-Tensor FP64 activity", unit: "percent" },
-    ],
-  },
-  {
     id: "interconnect",
     label: "Interconnect",
     metrics: [
@@ -63,6 +54,15 @@ export const PERFORMANCE_GROUPS: MetricGroup[] = [
       { id: "nvidia.gpm.pcie_rx_per_second", label: "PCIe RX", description: "Traffic received by the GPU", unit: "mib_per_second" },
       { id: "nvidia.gpm.nvlink_tx_per_second", label: "NVLink TX", description: "Aggregate traffic sent across supported links", unit: "mib_per_second" },
       { id: "nvidia.gpm.nvlink_rx_per_second", label: "NVLink RX", description: "Aggregate traffic received across supported links", unit: "mib_per_second" },
+    ],
+  },
+  {
+    id: "pipelines",
+    label: "Non-Tensor Pipelines",
+    metrics: [
+      { id: "nvidia.gpm.fp16_non_tensor_active", label: "FP16", description: "Non-Tensor FP16 activity", unit: "percent" },
+      { id: "nvidia.gpm.fp32_non_tensor_active", label: "FP32", description: "Non-Tensor FP32 activity", unit: "percent" },
+      { id: "nvidia.gpm.fp64_non_tensor_active", label: "FP64", description: "Non-Tensor FP64 activity", unit: "percent" },
     ],
   },
 ];
