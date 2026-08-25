@@ -1742,6 +1742,9 @@ function chartYAxisSize(metric: ChartMetric) {
   if (metric === "avg_memory_used_mb") {
     return 82;
   }
+  if (isBandwidthMetric(metric)) {
+    return 92;
+  }
   if (metric === "avg_power_watts") {
     return 66;
   }
