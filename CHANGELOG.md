@@ -3,7 +3,17 @@
 All notable changes to Constella are documented in this file. Python
 distribution versions follow PEP 440; Git tags use a hyphenated equivalent.
 
-## Unreleased
+## [0.1.3] - 2026-08-25
+
+Final release of 0.1.3, incorporating the release candidate and the following
+refinements.
+
+### Added
+
+- Added PCIe and capability-gated NVLink throughput to the Web and TUI
+  Performance views.
+- Added a bilingual in-product guide for performance metrics and their
+  interpretation.
 
 ### Fixed
 
@@ -14,6 +24,11 @@ distribution versions follow PEP 440; Git tags use a hyphenated equivalent.
 
 ### Changed
 
+- Refined the Web Performance workspace, Jobs surfaces, responsive layout, and
+  chart presentation across desktop and mobile viewports.
+- Reordered performance groups as Compute, Memory, Interconnect, and Non-Tensor
+  Pipelines, with complete throughput labels and consistent MiB/s or GiB/s
+  units.
 - Send NVIDIA GPM `supported_metrics` on the first sample and capability changes
   instead of repeating the unchanged list in every agent snapshot.
 - Cache slow-changing NVML device metadata for 60 seconds and prefer the v2
@@ -60,4 +75,5 @@ First release candidate for 0.1.3.
   compatible NVML hardware, driver, and metric profiles.
 - The TUI continues to use the existing manager HTTP and `/ws/cluster` APIs.
 
+[0.1.3]: https://github.com/kuma-loong/Constella/releases/tag/v0.1.3
 [0.1.3rc1]: https://github.com/kuma-loong/Constella/releases/tag/v0.1.3-rc.1

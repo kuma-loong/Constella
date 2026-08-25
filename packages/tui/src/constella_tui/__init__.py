@@ -1,6 +1,6 @@
 """Terminal user interface for Constella."""
 
-__version__ = "0.1.3rc1"
+__version__ = "0.1.3"
 
 from .app import ConstellaTui
 

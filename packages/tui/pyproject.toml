@@ -1,6 +1,6 @@
 [project]
 name = "constella-gpu-tui"
-version = "0.1.3rc1"
+version = "0.1.3"
 description = "Standalone keyboard-first Textual client for a remote Constella service."
 readme = "README.md"
 requires-python = ">=3.10"

@@ -1,6 +1,6 @@
 # Packaging Constella for PyPI
 
-Constella 0.1.3rc1 is published as four composable distributions. Each feature is
+Constella 0.1.3 is published as four composable distributions. Each feature is
 owned by exactly one wheel, so installing variants together never overwrites a
 shared Python package.
 
@@ -48,7 +48,7 @@ uvx twine check dist/*
 Full installation:
 
 ```bash
-pip install "constella-gpu==0.1.3rc1"
+pip install "constella-gpu==0.1.3"
 constella service start
 constella tui
 ```
@@ -56,21 +56,21 @@ constella tui
 Web-only frontend installation:
 
 ```bash
-pip install "constella-gpu-web==0.1.3rc1"
+pip install "constella-gpu-web==0.1.3"
 constella service start
 ```
 
 Standalone TUI client installation:
 
 ```bash
-uv tool install "constella-gpu-tui==0.1.3rc1"
+uv tool install "constella-gpu-tui==0.1.3"
 constella-tui --url https://gpu.example.com
 ```
 
 Backend/API-only installation:
 
 ```bash
-uv tool install "constella-gpu-backend==0.1.3rc1"
+uv tool install "constella-gpu-backend==0.1.3"
 constella service start --no-local-agent
 ```
 

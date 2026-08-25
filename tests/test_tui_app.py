@@ -66,7 +66,7 @@ def test_tui_parser_reports_package_version(capsys) -> None:
     with pytest.raises(SystemExit, match="0"):
         build_parser().parse_args(["--version"])
 
-    assert capsys.readouterr().out == "0.1.3rc1\n"
+    assert capsys.readouterr().out == "0.1.3\n"
 
 
 def test_history_uses_eight_visually_distinct_gpu_colors() -> None:

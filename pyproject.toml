@@ -1,6 +1,6 @@
 [project]
 name = "constella-gpu"
-version = "0.1.3rc1"
+version = "0.1.3"
 description = "Full Constella distribution with backend, Web UI, and terminal UI."
 readme = "PYPI.md"
 requires-python = ">=3.10"
@@ -20,8 +20,8 @@ classifiers = [
     "Topic :: System :: Monitoring",
 ]
 dependencies = [
-    "constella-gpu-tui==0.1.3rc1",
-    "constella-gpu-web==0.1.3rc1",
+    "constella-gpu-tui==0.1.3",
+    "constella-gpu-web==0.1.3",
 ]
 
 [project.urls]
