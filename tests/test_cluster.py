@@ -213,6 +213,39 @@ def test_cluster_state_preserves_declared_and_unknown_performance_profiles() -> 
         "nvidia.gpm.nvlink_tx_per_second",
     ]
 
+    unchanged = sample_message("node-a", 2)
+    unchanged["snapshot"]["gpus"][0]["performance"] = {
+        "profile": "nvidia.gpm.v1",
+        "status": "available",
+        "sampled_at": 102.0,
+        "interval_ms": 1000.0,
+        "metrics": {"nvidia.gpm.sm_active": 43.5},
+    }
+    state.ingest_sample(unchanged, received_at=12.0)
+
+    cached = state.snapshot(now=12.0).nodes[0].gpus[0].performance
+    assert cached is not None
+    assert cached.supported_metrics == [
+        "nvidia.gpm.sm_active",
+        "nvidia.gpm.pcie_tx_per_second",
+        "nvidia.gpm.nvlink_tx_per_second",
+    ]
+
+    changed = sample_message("node-a", 3)
+    changed["snapshot"]["gpus"][0]["performance"] = {
+        "profile": "nvidia.gpm.v1",
+        "status": "available",
+        "sampled_at": 103.0,
+        "interval_ms": 1000.0,
+        "metrics": {"nvidia.gpm.sm_active": 44.5},
+        "supported_metrics": [],
+    }
+    state.ingest_sample(changed, received_at=13.0)
+
+    cleared = state.snapshot(now=13.0).nodes[0].gpus[0].performance
+    assert cleared is not None
+    assert cleared.supported_metrics == []
+
 
 def test_cluster_state_accepts_legacy_agent_without_performance_profiles() -> None:
     state = ClusterState(local_node_id="manager")

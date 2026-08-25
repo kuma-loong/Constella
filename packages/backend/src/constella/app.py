@@ -81,6 +81,7 @@ class ManagerSettings:
             "type": "config",
             "refresh_interval": self.refresh_interval,
             "process_interval": self.process_interval,
+            "supported_metrics_delta": True,
         }
 
     def update(self, update: SettingsUpdate) -> dict[str, object]:

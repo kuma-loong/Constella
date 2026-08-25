@@ -9,6 +9,15 @@ distribution versions follow PEP 440; Git tags use a hyphenated equivalent.
 
 - Stabilized TUI Performance curves with fixed time bins so live samples scroll
   left instead of reflowing the full chart on every refresh.
+- Corrected swapped NVML permission and buffer-size return codes that caused
+  normal process queries to fall back to a slow `nvidia-smi` subprocess.
+
+### Changed
+
+- Send NVIDIA GPM `supported_metrics` on the first sample and capability changes
+  instead of repeating the unchanged list in every agent snapshot.
+- Cache slow-changing NVML device metadata for 60 seconds and prefer the v2
+  memory query without issuing the legacy query first.
 
 ### Removed
 

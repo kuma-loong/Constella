@@ -8,7 +8,7 @@ import os
 import random
 import socket
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -111,6 +111,38 @@ class AgentStatus:
         }
 
 
+@dataclass(slots=True)
+class SupportedMetricsDelta:
+    enabled: bool = False
+    previous: dict[tuple[str, str, str], tuple[str, ...]] = field(default_factory=dict)
+
+    def apply(self, payload: dict[str, Any]) -> None:
+        if not self.enabled:
+            return
+        seen: set[tuple[str, str, str]] = set()
+        for gpu in payload.get("gpus", []):
+            if not isinstance(gpu, dict):
+                continue
+            performance = gpu.get("performance")
+            if not isinstance(performance, dict):
+                continue
+            raw_metrics = performance.get("supported_metrics")
+            if not isinstance(raw_metrics, list):
+                continue
+            key = (
+                str(gpu.get("uuid") or "unknown"),
+                str(gpu.get("index") or 0),
+                str(performance.get("profile") or ""),
+            )
+            seen.add(key)
+            current = tuple(str(metric) for metric in raw_metrics)
+            if self.previous.get(key) == current:
+                performance.pop("supported_metrics", None)
+            else:
+                self.previous[key] = current
+        self.previous = {key: value for key, value in self.previous.items() if key in seen}
+
+
 async def run_agent(config: AgentConfig, *, collector: SnapshotCollector | None = None) -> None:
     owned_collector = collector is None
     collector = collector or SnapshotCollector(
@@ -175,9 +207,16 @@ async def _run_connection(
     ) as websocket:
         status.status = "online"
         status.last_error = None
+        supported_metrics_delta = SupportedMetricsDelta()
         await websocket.send(json.dumps(agent_hello(config, hardware=hardware)))
-        receiver = asyncio.create_task(_receiver_loop(websocket, collector), name="agent-ws-receiver")
-        sender = asyncio.create_task(_sender_loop(websocket, collector, config, status), name="agent-ws-sender")
+        receiver = asyncio.create_task(
+            _receiver_loop(websocket, collector, supported_metrics_delta),
+            name="agent-ws-receiver",
+        )
+        sender = asyncio.create_task(
+            _sender_loop(websocket, collector, config, status, supported_metrics_delta),
+            name="agent-ws-sender",
+        )
         done, pending = await asyncio.wait(
             {receiver, sender},
             return_when=asyncio.FIRST_COMPLETED,
@@ -191,7 +230,11 @@ async def _run_connection(
             task.result()
 
 
-async def _receiver_loop(websocket: Any, collector: SnapshotCollector) -> None:
+async def _receiver_loop(
+    websocket: Any,
+    collector: SnapshotCollector,
+    supported_metrics_delta: SupportedMetricsDelta,
+) -> None:
     async for raw in websocket:
         try:
             message = json.loads(raw)
@@ -199,6 +242,7 @@ async def _receiver_loop(websocket: Any, collector: SnapshotCollector) -> None:
             continue
         if message.get("type") != "config":
             continue
+        supported_metrics_delta.enabled = message.get("supported_metrics_delta") is True
         if "refresh_interval" in message:
             with contextlib.suppress(ValueError, TypeError):
                 collector.set_refresh_interval(float(message["refresh_interval"]))
@@ -212,6 +256,7 @@ async def _sender_loop(
     collector: SnapshotCollector,
     config: AgentConfig,
     status: AgentStatus,
+    supported_metrics_delta: SupportedMetricsDelta,
 ) -> None:
     last_snapshot_seq = 0
     message_seq = 0
@@ -231,6 +276,7 @@ async def _sender_loop(
                         message_seq,
                         snapshot,
                         process_interval=collector.process_interval,
+                        supported_metrics_delta=supported_metrics_delta,
                     )
                 )
             )
@@ -285,6 +331,7 @@ def agent_sample(
     snapshot: Snapshot,
     *,
     process_interval: float | None = None,
+    supported_metrics_delta: SupportedMetricsDelta | None = None,
 ) -> dict[str, Any]:
     return {
         "type": "sample",
@@ -294,13 +341,22 @@ def agent_sample(
         "sampled_at": snapshot.timestamp,
         "refresh_interval": snapshot.refresh_interval,
         "process_interval": process_interval if process_interval is not None else config.process_interval,
-        "snapshot": snapshot_to_agent_payload(snapshot),
+        "snapshot": snapshot_to_agent_payload(
+            snapshot,
+            supported_metrics_delta=supported_metrics_delta,
+        ),
     }
 
 
-def snapshot_to_agent_payload(snapshot: Snapshot) -> dict[str, Any]:
+def snapshot_to_agent_payload(
+    snapshot: Snapshot,
+    *,
+    supported_metrics_delta: SupportedMetricsDelta | None = None,
+) -> dict[str, Any]:
     payload = snapshot.to_dict()
     payload.pop("history", None)
+    if supported_metrics_delta is not None:
+        supported_metrics_delta.apply(payload)
     return payload
 
 

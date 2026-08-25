@@ -7,6 +7,7 @@ import pwd
 import socket
 import subprocess
 import time
+from dataclasses import dataclass
 
 from . import nvidia_smi
 from .nvml_gpm import NvidiaGpmProvider
@@ -31,8 +32,8 @@ from .schema import (
 )
 
 NVML_SUCCESS = 0
-NVML_ERROR_INSUFFICIENT_SIZE = 4
-NVML_ERROR_NO_PERMISSION = 7
+NVML_ERROR_NO_PERMISSION = 4
+NVML_ERROR_INSUFFICIENT_SIZE = 7
 
 NVML_TEMPERATURE_GPU = 0
 NVML_CLOCK_SM = 1
@@ -41,6 +42,7 @@ NVML_CLOCK_MEM = 2
 NVML_DEVICE_NAME_BUFFER_SIZE = 96
 NVML_DEVICE_UUID_BUFFER_SIZE = 96
 NVML_SYSTEM_BUFFER_SIZE = 96
+STATIC_GPU_INFO_REFRESH_SECONDS = 60.0
 
 ARCHITECTURE_MAP = {
     2: "Kepler",
@@ -116,6 +118,19 @@ class NvmlMemoryV2(ctypes.Structure):
         ("free", ctypes.c_ulonglong),
         ("used", ctypes.c_ulonglong),
     ]
+
+
+@dataclass(slots=True)
+class _StaticGpuInfo:
+    refreshed_at: float
+    name: str
+    uuid: str
+    power_limit_watts: float
+    max_clock_sm_mhz: int | None
+    max_clock_mem_mhz: int | None
+    compute_mode: str | None
+    ecc_mode: str | None
+    mig_mode: str | None
 
 
 class NVMLUnavailable(RuntimeError):
@@ -324,6 +339,7 @@ class NVMLSampler:
         self._last_process_at = 0.0
         self._next_process_at = 0.0
         self._process_snapshot: dict[str, tuple[list[GpuProcess], list[OtherUserMemory]]] = {}
+        self._static_gpu_info: dict[int, _StaticGpuInfo] = {}
         self._gpm = NvidiaGpmProvider(self._lib)
 
     def set_process_interval(self, process_interval: float) -> None:
@@ -360,7 +376,15 @@ class NVMLSampler:
         gpus: list[GpuInfo] = []
         process_cache: list[dict[str, list[GpuProcess]] | None] = [None]
         for index in range(count.value):
-            gpus.append(self._sample_gpu(index, process_cache, collect_processes, sampled_at))
+            gpus.append(
+                self._sample_gpu(
+                    index,
+                    process_cache,
+                    collect_processes,
+                    sampled_at,
+                    monotonic_at=now,
+                )
+            )
         if collect_processes:
             self._last_process_at = time.monotonic()
             self._next_process_at = self._last_process_at + self.process_interval
@@ -406,15 +430,16 @@ class NVMLSampler:
         process_cache: list[dict[str, list[GpuProcess]] | None],
         collect_processes: bool,
         sampled_at: float,
+        *,
+        monotonic_at: float,
     ) -> GpuInfo:
         handle = ctypes.c_void_p()
         rc = self._lib.nvmlDeviceGetHandleByIndex(index, ctypes.byref(handle))
         if rc != NVML_SUCCESS:
             return GpuInfo(index=index, error=f"nvmlDeviceGetHandleByIndex failed: {rc}")
 
-        gpu = GpuInfo(index=index)
-        gpu.name = self._device_string(handle, "nvmlDeviceGetName", NVML_DEVICE_NAME_BUFFER_SIZE)
-        gpu.uuid = self._device_string(handle, "nvmlDeviceGetUUID", NVML_DEVICE_UUID_BUFFER_SIZE)
+        static = self._static_gpu_snapshot(index, handle, monotonic_at=monotonic_at)
+        gpu = GpuInfo(index=index, name=static.name, uuid=static.uuid)
         self._fill_memory(gpu, handle)
         self._fill_utilization(gpu, handle)
         gpu.temperature_c = self._uint_device_call(handle, "nvmlDeviceGetTemperature", NVML_TEMPERATURE_GPU)
@@ -422,10 +447,7 @@ class NVMLSampler:
             self._uint_device_call(handle, "nvmlDeviceGetPowerUsage") / 1000.0,
             1,
         )
-        gpu.power_limit_watts = round(
-            self._uint_device_call(handle, "nvmlDeviceGetPowerManagementLimit") / 1000.0,
-            1,
-        )
+        gpu.power_limit_watts = static.power_limit_watts
         gpu.clock_sm_mhz = self._optional_uint_device_call(
             handle,
             "nvmlDeviceGetClockInfo",
@@ -436,22 +458,13 @@ class NVMLSampler:
             "nvmlDeviceGetClockInfo",
             NVML_CLOCK_MEM,
         )
-        gpu.max_clock_sm_mhz = self._optional_uint_device_call(
-            handle,
-            "nvmlDeviceGetMaxClockInfo",
-            NVML_CLOCK_SM,
-        )
-        gpu.max_clock_mem_mhz = self._optional_uint_device_call(
-            handle,
-            "nvmlDeviceGetMaxClockInfo",
-            NVML_CLOCK_MEM,
-        )
+        gpu.max_clock_sm_mhz = static.max_clock_sm_mhz
+        gpu.max_clock_mem_mhz = static.max_clock_mem_mhz
         pstate = self._optional_uint_device_call(handle, "nvmlDeviceGetPerformanceState")
-        compute_mode = self._optional_uint_device_call(handle, "nvmlDeviceGetComputeMode")
         gpu.pstate = PSTATE_MAP.get(pstate) if pstate is not None else None
-        gpu.compute_mode = COMPUTE_MODE_MAP.get(compute_mode) if compute_mode is not None else None
-        gpu.ecc_mode = self._ecc_mode(handle)
-        gpu.mig_mode = self._mig_mode(handle)
+        gpu.compute_mode = static.compute_mode
+        gpu.ecc_mode = static.ecc_mode
+        gpu.mig_mode = static.mig_mode
         gpu.performance = self._sample_performance(index, handle, sampled_at)
         if collect_processes:
             gpu.processes, gpu.other_users = self._processes(handle, gpu.uuid, process_cache)
@@ -459,6 +472,47 @@ class NVMLSampler:
         else:
             gpu.processes, gpu.other_users = self._process_snapshot.get(gpu.uuid, ([], []))
         return gpu
+
+    def _static_gpu_snapshot(
+        self,
+        index: int,
+        handle: ctypes.c_void_p,
+        *,
+        monotonic_at: float,
+    ) -> _StaticGpuInfo:
+        cached = self._static_gpu_info.get(index)
+        if (
+            cached is not None
+            and monotonic_at - cached.refreshed_at < STATIC_GPU_INFO_REFRESH_SECONDS
+        ):
+            return cached
+        compute_mode = self._optional_uint_device_call(handle, "nvmlDeviceGetComputeMode")
+        cached = _StaticGpuInfo(
+            refreshed_at=monotonic_at,
+            name=self._device_string(handle, "nvmlDeviceGetName", NVML_DEVICE_NAME_BUFFER_SIZE),
+            uuid=self._device_string(handle, "nvmlDeviceGetUUID", NVML_DEVICE_UUID_BUFFER_SIZE),
+            power_limit_watts=round(
+                self._uint_device_call(handle, "nvmlDeviceGetPowerManagementLimit") / 1000.0,
+                1,
+            ),
+            max_clock_sm_mhz=self._optional_uint_device_call(
+                handle,
+                "nvmlDeviceGetMaxClockInfo",
+                NVML_CLOCK_SM,
+            ),
+            max_clock_mem_mhz=self._optional_uint_device_call(
+                handle,
+                "nvmlDeviceGetMaxClockInfo",
+                NVML_CLOCK_MEM,
+            ),
+            compute_mode=COMPUTE_MODE_MAP.get(compute_mode)
+            if compute_mode is not None
+            else None,
+            ecc_mode=self._ecc_mode(handle),
+            mig_mode=self._mig_mode(handle),
+        )
+        self._static_gpu_info[index] = cached
+        return cached
 
     def _sample_performance(
         self,
@@ -543,23 +597,19 @@ class NVMLSampler:
         return int(value.value)
 
     def _fill_memory(self, gpu: GpuInfo, handle: ctypes.c_void_p) -> None:
-        mem = NvmlMemory()
-        rc = self._lib.nvmlDeviceGetMemoryInfo(handle, ctypes.byref(mem))
-        if rc != NVML_SUCCESS:
-            return
-
-        total_mb = int(mem.total // (1024 * 1024))
-        free_mb = int(mem.free // (1024 * 1024))
-        used_mb: int | None = None
-
         v2 = self._try_memory_v2(handle)
         if v2 is not None:
-            used_mb, free_mb = v2
-        elif self._reserved_offsets and gpu.index in self._reserved_offsets:
-            used_mb = total_mb - free_mb - self._reserved_offsets[gpu.index]
-
-        if used_mb is None:
-            used_mb = int((mem.total - mem.free) // (1024 * 1024))
+            total_mb, used_mb = v2
+        else:
+            mem = NvmlMemory()
+            rc = self._lib.nvmlDeviceGetMemoryInfo(handle, ctypes.byref(mem))
+            if rc != NVML_SUCCESS:
+                return
+            total_mb = int(mem.total // (1024 * 1024))
+            free_mb = int(mem.free // (1024 * 1024))
+            used_mb = total_mb - free_mb
+            if self._reserved_offsets and gpu.index in self._reserved_offsets:
+                used_mb -= self._reserved_offsets[gpu.index]
 
         gpu.memory_total_mb = total_mb
         gpu.memory_used_mb = max(0, int(used_mb))
@@ -574,8 +624,8 @@ class NVMLSampler:
         if rc != NVML_SUCCESS:
             return None
         used_mb = int((mem.total - mem.free - mem.reserved) // (1024 * 1024))
-        free_mb = int(mem.free // (1024 * 1024))
-        return max(0, used_mb), free_mb
+        total_mb = int(mem.total // (1024 * 1024))
+        return total_mb, max(0, used_mb)
 
     def _calibrate_reserved(self, count: int) -> dict[int, int]:
         if hasattr(self._lib, "nvmlDeviceGetMemoryInfo_v2"):

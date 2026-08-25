@@ -68,6 +68,7 @@ def test_settings_patch_broadcasts_config_to_connected_agent() -> None:
             "type": "config",
             "refresh_interval": 1.0,
             "process_interval": 5.0,
+            "supported_metrics_delta": True,
         }
 
         response = client.patch(
@@ -80,4 +81,5 @@ def test_settings_patch_broadcasts_config_to_connected_agent() -> None:
             "type": "config",
             "refresh_interval": 2.0,
             "process_interval": 5.0,
+            "supported_metrics_delta": True,
         }

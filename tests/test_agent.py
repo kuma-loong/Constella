@@ -6,6 +6,7 @@ import stat
 from constella.agent import (
     AgentConfig,
     AgentStatus,
+    SupportedMetricsDelta,
     agent_heartbeat,
     agent_hello,
     agent_sample,
@@ -13,7 +14,13 @@ from constella.agent import (
     snapshot_to_agent_payload,
     write_state_file,
 )
-from constella.schema import GpuHardwareInfo, GpuInfo, NodeHardware, Snapshot
+from constella.schema import (
+    AcceleratorPerformance,
+    GpuHardwareInfo,
+    GpuInfo,
+    NodeHardware,
+    Snapshot,
+)
 
 
 def test_agent_config_reads_env_and_token_file(tmp_path, monkeypatch) -> None:
@@ -102,6 +109,68 @@ def test_snapshot_to_agent_payload_drops_short_history() -> None:
 
     assert "history" in snapshot.to_dict()
     assert "history" not in payload
+
+
+def test_supported_metrics_are_sent_only_on_first_sample_or_change() -> None:
+    performance = AcceleratorPerformance(
+        profile="nvidia.gpm.v1",
+        status="available",
+        sampled_at=10.0,
+        metrics={"nvidia.gpm.sm_active": 42.0},
+        supported_metrics=["nvidia.gpm.sm_active"],
+    )
+    snapshot = Snapshot(
+        ok=True,
+        source="test",
+        hostname="node-a-host",
+        timestamp=10.0,
+        elapsed_ms=2.0,
+        gpus=[GpuInfo(index=0, uuid="GPU-a", performance=performance)],
+    )
+    delta = SupportedMetricsDelta(enabled=True)
+
+    first = snapshot_to_agent_payload(snapshot, supported_metrics_delta=delta)
+    unchanged = snapshot_to_agent_payload(snapshot, supported_metrics_delta=delta)
+    performance.supported_metrics.append("nvidia.gpm.tensor_active")
+    changed = snapshot_to_agent_payload(snapshot, supported_metrics_delta=delta)
+
+    assert first["gpus"][0]["performance"]["supported_metrics"] == [
+        "nvidia.gpm.sm_active"
+    ]
+    assert "supported_metrics" not in unchanged["gpus"][0]["performance"]
+    assert changed["gpus"][0]["performance"]["supported_metrics"] == [
+        "nvidia.gpm.sm_active",
+        "nvidia.gpm.tensor_active",
+    ]
+
+
+def test_supported_metrics_delta_requires_manager_opt_in() -> None:
+    snapshot = Snapshot(
+        ok=True,
+        source="test",
+        hostname="node-a-host",
+        timestamp=10.0,
+        elapsed_ms=2.0,
+        gpus=[
+            GpuInfo(
+                index=0,
+                uuid="GPU-a",
+                performance=AcceleratorPerformance(
+                    profile="nvidia.gpm.v1",
+                    status="available",
+                    sampled_at=10.0,
+                    supported_metrics=["nvidia.gpm.sm_active"],
+                ),
+            )
+        ],
+    )
+    delta = SupportedMetricsDelta()
+
+    first = snapshot_to_agent_payload(snapshot, supported_metrics_delta=delta)
+    second = snapshot_to_agent_payload(snapshot, supported_metrics_delta=delta)
+
+    assert "supported_metrics" in first["gpus"][0]["performance"]
+    assert "supported_metrics" in second["gpus"][0]["performance"]
 
 
 def test_write_state_file_is_private_json(tmp_path) -> None:

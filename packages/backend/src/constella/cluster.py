@@ -191,6 +191,7 @@ class ClusterState:
             agent_version=runtime.agent_version if runtime else None,
             hardware=runtime.hardware if runtime else None,
             performance_profiles=runtime.performance_profiles if runtime else None,
+            previous_snapshot=runtime.snapshot if runtime else None,
         )
         self._history.update(snapshot)
         self.latest_by_node[node_id] = NodeRuntime(
@@ -313,6 +314,7 @@ def node_snapshot_from_agent_sample(
     agent_version: str | None = None,
     hardware: NodeHardware | None = None,
     performance_profiles: list[str] | None = None,
+    previous_snapshot: NodeSnapshot | None = None,
 ) -> NodeSnapshot:
     if message.get("type") != "sample":
         raise ValueError("agent message is not a sample")
@@ -323,7 +325,20 @@ def node_snapshot_from_agent_sample(
     if not isinstance(payload, dict):
         raise ValueError("agent sample is missing snapshot")
 
-    gpus = [_gpu_from_dict(node_id, item) for item in payload.get("gpus", []) if isinstance(item, dict)]
+    previous_gpus = {
+        (gpu.uuid, gpu.index): gpu for gpu in previous_snapshot.gpus
+    } if previous_snapshot is not None else {}
+    gpus = [
+        _gpu_from_dict(
+            node_id,
+            item,
+            previous=previous_gpus.get(
+                (str(item.get("uuid") or "unknown"), int(item.get("index") or 0))
+            ),
+        )
+        for item in payload.get("gpus", [])
+        if isinstance(item, dict)
+    ]
     sampled_at = float(message.get("sampled_at") or payload.get("timestamp") or received_at)
     refresh_interval = float(message.get("refresh_interval") or payload.get("refresh_interval") or 1.0)
     process_interval = float(message.get("process_interval") or payload.get("process_interval") or 5.0)
@@ -366,7 +381,12 @@ def _hardware_from_dict(payload: Any) -> NodeHardware | None:
     return NodeHardware(gpus=gpus) if gpus else None
 
 
-def _gpu_from_dict(node_id: str, data: dict[str, Any]) -> GpuInfo:
+def _gpu_from_dict(
+    node_id: str,
+    data: dict[str, Any],
+    *,
+    previous: GpuInfo | None = None,
+) -> GpuInfo:
     processes = [
         _process_from_dict(item) for item in data.get("processes", []) if isinstance(item, dict)
     ]
@@ -380,6 +400,17 @@ def _gpu_from_dict(node_id: str, data: dict[str, Any]) -> GpuInfo:
         for item in data.get("other_users", [])
         if isinstance(item, dict)
     ]
+    performance = _performance_from_dict(data.get("performance"))
+    raw_performance = data.get("performance")
+    if (
+        performance is not None
+        and isinstance(raw_performance, dict)
+        and "supported_metrics" not in raw_performance
+        and previous is not None
+        and previous.performance is not None
+        and previous.performance.profile == performance.profile
+    ):
+        performance.supported_metrics = list(previous.performance.supported_metrics)
     gpu = GpuInfo(
         index=int(data.get("index") or 0),
         node_id=node_id,
@@ -405,7 +436,7 @@ def _gpu_from_dict(node_id: str, data: dict[str, Any]) -> GpuInfo:
         compute_mode=data.get("compute_mode"),
         mig_mode=data.get("mig_mode"),
         ecc_mode=data.get("ecc_mode"),
-        performance=_performance_from_dict(data.get("performance")),
+        performance=performance,
         processes=processes,
         other_users=other_users,
         error=data.get("error"),
