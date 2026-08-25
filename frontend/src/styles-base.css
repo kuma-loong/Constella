@@ -202,7 +202,6 @@ a:focus-visible {
   min-width: 0;
 }
 
-.brand-mark,
 .metric-icon {
   display: inline-flex;
   align-items: center;
@@ -215,15 +214,30 @@ a:focus-visible {
 }
 
 .brand-mark {
-  width: 42px;
-  height: 42px;
-  box-shadow: var(--shadow-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  color: var(--telemetry);
+  border-radius: var(--radius-control);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.brand-mark:hover {
+  opacity: 0.82;
+  transform: translateY(-1px);
+}
+
+.brand-mark:active {
+  transform: translateY(0);
 }
 
 .brand-logo {
   display: block;
-  width: 29px;
-  height: 29px;
+  width: 44px;
+  height: 44px;
 }
 
 .brand h1 {

@@ -54,7 +54,7 @@ export function Header({
     <header class="topbar">
       <div class="brand">
         <a class="brand-mark" href="/overview" aria-label="Constella overview">
-          <img class="brand-logo" src="/logo.svg?v=20260627" alt="" />
+          <img class="brand-logo" src="/logo.svg?v=20260825" alt="" />
         </a>
         <div>
           <h1>
