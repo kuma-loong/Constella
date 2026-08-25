@@ -39,9 +39,13 @@
 }
 
 .guide-entry {
-  border-color: color-mix(in srgb, var(--accent) 34%, var(--border)) !important;
-  color: var(--accent-strong) !important;
-  background: var(--accent-soft) !important;
+  transition: border-color 180ms ease, color 180ms ease, background 180ms ease, transform 180ms ease;
+}
+
+.performance-actions .guide-entry:hover {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+  color: var(--accent-strong);
+  background: var(--accent-soft);
 }
 
 .performance-toolbar {

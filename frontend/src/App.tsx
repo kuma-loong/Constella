@@ -342,6 +342,13 @@ export default function App() {
     }
   }
 
+  function handleAppSubmit(event: JSX.TargetedEvent<HTMLDivElement, SubmitEvent>) {
+    const target = event.target as HTMLFormElement;
+    if (analyticsRef.current?.handleSubmit(target)) {
+      event.preventDefault();
+    }
+  }
+
   function handleAppChange(event: JSX.TargetedEvent<HTMLDivElement, Event>) {
     const target = event.target as HTMLElement;
     const select = target.closest("select[data-job-metric]") as HTMLSelectElement | null;
@@ -351,7 +358,7 @@ export default function App() {
   }
 
   return (
-    <div onClick={handleAppClick} onChange={handleAppChange} onKeyDown={handleAppKeyDown}>
+    <div onClick={handleAppClick} onChange={handleAppChange} onKeyDown={handleAppKeyDown} onSubmit={handleAppSubmit}>
       <Header
         snapshot={snapshot}
         route={route}

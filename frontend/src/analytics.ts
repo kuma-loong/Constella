@@ -338,10 +338,6 @@ export function createAnalyticsController({
       renderNode(currentRoute());
       return true;
     }
-    if (action === "job-search") {
-      submitJobSearch();
-      return true;
-    }
     if (action === "job-refresh") {
       jobKey = "";
       jobCurveKey = "";
@@ -422,12 +418,6 @@ export function createAnalyticsController({
   }
 
   function handleKeyDown(event: KeyboardEvent) {
-    const target = event.target as HTMLElement | null;
-    if (event.key === "Enter" && target?.matches("[data-job-query]")) {
-      event.preventDefault();
-      submitJobSearch();
-      return true;
-    }
     if (event.key === "Escape" && jobChartExpanded) {
       event.preventDefault();
       jobChartExpanded = false;
@@ -435,6 +425,14 @@ export function createAnalyticsController({
       return true;
     }
     return false;
+  }
+
+  function handleSubmit(target: HTMLFormElement) {
+    if (!target.matches("[data-job-search-form]")) {
+      return false;
+    }
+    submitJobSearch();
+    return true;
   }
 
   function submitJobSearch() {
@@ -694,21 +692,21 @@ export function createAnalyticsController({
           <h2>Search workload GPU curves</h2>
           <p>${disabled ? "SQLite history is not enabled" : jobMetaText(jobCurvePayload, jobs.length)}</p>
         </div>
-        <div class="analytics-actions job-search-actions">
+        <form class="analytics-actions job-search-actions" data-job-search-form>
           <label class="job-search">
             <span>Search</span>
             <input data-job-query type="search" value="${escapeAttr(jobQuery)}" placeholder="user, task, command, pid" />
           </label>
           <div class="job-toolbar-buttons">
             ${jobMetricSelect(jobMetric)}
-            <button class="icon-button" type="button" data-analytics-action="job-search" aria-label="Search jobs" title="Search jobs">
+            <button class="icon-button" type="submit" aria-label="Search jobs" title="Search jobs">
               <i data-lucide="search"></i>
             </button>
             <button class="icon-button" type="button" data-analytics-action="job-refresh" aria-label="Refresh jobs" title="Refresh jobs">
               <i data-lucide="refresh-cw"></i>
             </button>
           </div>
-        </div>
+        </form>
       </div>
       <div class="job-feature-note">
         <strong>Supports job search within 7 days.</strong>
@@ -1145,6 +1143,7 @@ export function createAnalyticsController({
     handleClick,
     handleChange,
     handleKeyDown,
+    handleSubmit,
     fetchOverview,
     fetchNode,
     fetchJobs,
