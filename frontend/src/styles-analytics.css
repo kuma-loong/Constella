@@ -400,16 +400,18 @@ svg {
 .legend-label b {
   width: 10px;
   height: 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-round);
 }
 
 .job-search-actions {
-  flex: 1 1 700px;
+  flex: 0 1 680px;
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) auto;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
   justify-content: stretch;
   align-items: end;
   gap: 12px;
+  width: min(680px, 100%);
+  max-width: 680px;
   min-width: 0;
   flex-wrap: nowrap;
 }
@@ -423,8 +425,18 @@ svg {
   font-weight: 760;
 }
 
+.job-search > span,
+.job-metric-select > span:first-child {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .job-search input {
   width: 100%;
+  min-width: 0;
   height: 42px;
   padding: 0 14px;
   border: 1px solid var(--border);
@@ -443,31 +455,34 @@ svg {
 
 .job-toolbar-buttons {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
   min-width: 0;
 }
 
 .job-metric-select {
   display: grid;
-  grid-template-columns: auto minmax(148px, 1fr);
-  align-items: center;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
   min-width: 220px;
   color: var(--muted);
   font-size: 11px;
   font-weight: 760;
 }
 
-.job-metric-select > span {
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+.job-metric-control {
+  position: relative;
+  display: block;
+  min-width: 0;
 }
 
 .job-metric-select select {
+  appearance: none;
+  -webkit-appearance: none;
   width: 100%;
+  min-width: 0;
   height: 38px;
-  padding: 0 34px 0 11px;
+  padding: 0 40px 0 11px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   outline: none;
@@ -476,6 +491,17 @@ svg {
   font: inherit;
   font-size: 13px;
   font-weight: 720;
+}
+
+.job-metric-control > svg {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  width: 15px;
+  height: 15px;
+  color: var(--muted);
+  pointer-events: none;
+  transform: translateY(-50%);
 }
 
 .job-metric-select select:focus-visible {
@@ -691,6 +717,98 @@ svg {
   background: var(--warn-soft);
   font-size: 12px;
   font-weight: 700;
+}
+
+/* Jobs follows the project shape system: structure is square, controls stay compact, labels stay restrained. */
+.jobs-section .analytics-card,
+.jobs-section .job-feature-note,
+.jobs-section .line-chart,
+.jobs-section .chart-modal,
+.jobs-section .empty-inline {
+  border-radius: var(--radius-panel);
+}
+
+.jobs-section .job-search input,
+.jobs-section .job-metric-select select,
+.jobs-section .job-resolution-tabs,
+.jobs-section .icon-button {
+  border-radius: var(--radius-control);
+}
+
+.jobs-section .chart-legend button {
+  border-radius: var(--radius-label);
+}
+
+.jobs-section .chart-legend {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+
+.jobs-section .chart-legend button {
+  flex: 0 0 auto;
+}
+
+.jobs-section .job-list {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--surface-sunken);
+}
+
+.jobs-section .job-list-item {
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: transparent;
+}
+
+.jobs-section .job-list-item:last-child {
+  border-bottom: 0;
+}
+
+.jobs-section .job-list-item.is-active {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.jobs-section .job-detail-strip {
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--surface-sunken);
+}
+
+.jobs-section .job-detail-strip span {
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: transparent;
+}
+
+.jobs-section .job-detail-strip span:last-child {
+  border-right: 0;
+}
+
+.jobs-section .job-warnings {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--warn) 24%, var(--border));
+  border-radius: var(--radius-panel);
+  background: var(--warn-soft);
+}
+
+.jobs-section .job-warnings span {
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--warn) 20%, var(--border));
+  border-radius: var(--radius-panel);
+  background: transparent;
+}
+
+.jobs-section .job-warnings span:last-child {
+  border-bottom: 0;
 }
 
 .heatmap-card {

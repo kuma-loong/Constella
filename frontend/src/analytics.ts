@@ -1178,10 +1178,13 @@ function jobMetricSelect(selected: ChartMetric) {
   return `
     <label class="job-metric-select">
       <span>Metric</span>
-      <select data-job-metric aria-label="Job curve metric">
-        <optgroup label="Base telemetry">${options(NODE_METRICS)}</optgroup>
-        <optgroup label="NVIDIA GPM">${options(PERFORMANCE_METRICS)}</optgroup>
-      </select>
+      <span class="job-metric-control">
+        <select data-job-metric aria-label="Job curve metric">
+          <optgroup label="Base telemetry">${options(NODE_METRICS)}</optgroup>
+          <optgroup label="NVIDIA GPM">${options(PERFORMANCE_METRICS)}</optgroup>
+        </select>
+        <i data-lucide="chevron-down" aria-hidden="true"></i>
+      </span>
     </label>
   `;
 }

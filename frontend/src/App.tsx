@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   BarChart3,
   Clock3,
+  ChevronDown,
   Cpu,
   Database,
   Gauge,
@@ -37,6 +38,7 @@ const iconSet = {
   AlertTriangle,
   BarChart3,
   Clock3,
+  ChevronDown,
   Cpu,
   Database,
   Gauge,
@@ -388,7 +390,7 @@ export default function App() {
 
         <section class="analytics-section" ref={overviewAnalyticsRef} hidden={route.kind !== "overview"} />
 
-        <section class="analytics-section" ref={jobCurvesRef} hidden={route.kind !== "jobs"} />
+        <section class="analytics-section jobs-section" ref={jobCurvesRef} hidden={route.kind !== "jobs"} />
 
         <section class="gpu-grid" hidden={route.kind !== "node"}>
           {route.kind === "node" ? <GpuGrid nodeId={route.nodeId} node={selectedNode} /> : null}

@@ -36,6 +36,11 @@
   --chart-8: #506f9a;
   --shadow: 0 18px 48px rgba(24, 26, 27, 0.09);
   --shadow-soft: 0 10px 30px rgba(24, 26, 27, 0.06);
+  /* Shape system: square data surfaces, compact controls, restrained labels, circles only for true markers. */
+  --radius-panel: 0;
+  --radius-control: 6px;
+  --radius-label: 4px;
+  --radius-round: 999px;
   --radius: 14px;
   --radius-sm: 9px;
   --focus: 0 0 0 3px rgba(31, 122, 77, 0.28);
@@ -407,7 +412,7 @@ a:focus-visible {
 .live-pill span {
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-round);
   background: var(--dim);
 }
 
