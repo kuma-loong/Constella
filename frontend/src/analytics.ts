@@ -1072,7 +1072,7 @@ export function createAnalyticsController({
 
   function lineChart(series: AnalyticsSeries[], metric: NodeMetric) {
     return `
-      <div class="chart-wrap">
+      <div class="chart-wrap node-history-chart">
         <div class="chart-plot uplot-theme">
           <div class="line-chart" data-node-chart aria-label="${escapeAttr(metricLabel(metric))} history"></div>
         </div>

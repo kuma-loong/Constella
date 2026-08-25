@@ -317,6 +317,10 @@ svg {
   background: var(--surface-sunken);
 }
 
+.node-history-chart .line-chart {
+  border-radius: 0;
+}
+
 .uplot-theme .uplot {
   width: 100% !important;
   color: var(--text-soft);
