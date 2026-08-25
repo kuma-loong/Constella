@@ -193,6 +193,11 @@ def test_cluster_state_preserves_declared_and_unknown_performance_profiles() -> 
         "sampled_at": 101.0,
         "interval_ms": 1000.0,
         "metrics": {"nvidia.gpm.sm_active": 42.5},
+        "supported_metrics": [
+            "nvidia.gpm.sm_active",
+            "nvidia.gpm.pcie_tx_per_second",
+            "nvidia.gpm.nvlink_tx_per_second",
+        ],
     }
 
     state.register_hello(hello, now=10.0)
@@ -202,6 +207,11 @@ def test_cluster_state_preserves_declared_and_unknown_performance_profiles() -> 
     assert node.performance_profiles == ["future.vendor.v1", "nvidia.gpm.v1"]
     assert node.gpus[0].performance is not None
     assert node.gpus[0].performance.metrics["nvidia.gpm.sm_active"] == 42.5
+    assert node.gpus[0].performance.supported_metrics == [
+        "nvidia.gpm.sm_active",
+        "nvidia.gpm.pcie_tx_per_second",
+        "nvidia.gpm.nvlink_tx_per_second",
+    ]
 
 
 def test_cluster_state_accepts_legacy_agent_without_performance_profiles() -> None:

@@ -427,6 +427,18 @@ def _performance_from_dict(payload: Any) -> AcceleratorPerformance | None:
         for key, value in (raw_metrics.items() if isinstance(raw_metrics, dict) else [])
         if isinstance(value, (int, float))
     }
+    raw_supported_metrics = payload.get("supported_metrics")
+    supported_metrics = (
+        list(
+            dict.fromkeys(
+                metric.strip()
+                for metric in raw_supported_metrics
+                if isinstance(metric, str) and metric.strip()
+            )
+        )
+        if isinstance(raw_supported_metrics, list)
+        else []
+    )
     try:
         return AcceleratorPerformance(
             profile=profile,
@@ -436,6 +448,7 @@ def _performance_from_dict(payload: Any) -> AcceleratorPerformance | None:
             if payload.get("interval_ms") is not None
             else None,
             metrics=metrics,
+            supported_metrics=supported_metrics,
             error=str(payload["error"]) if payload.get("error") else None,
         )
     except (TypeError, ValueError):
