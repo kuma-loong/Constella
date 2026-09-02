@@ -1,14 +1,24 @@
 from __future__ import annotations
 
-from constella_tui.model import duration, gpu_rows, memory, meter, node_label, process_rows
+from constella_tui.model import (
+    duration,
+    gpu_rows,
+    memory,
+    memory_pair,
+    meter,
+    node_label,
+    process_rows,
+)
 
 
 def test_tui_formatters_handle_boundaries() -> None:
     assert memory(512) == "512 MiB"
     assert memory(1536) == "1.5 GiB"
+    assert memory_pair(0, 81510) == "0/79.6 GiB"
+    assert memory_pair(17203, 81510) == "16.8/79.6 GiB"
     assert duration(3661) == "1h 01m"
-    assert meter(-5) == "░" * 10
-    assert meter(150) == "█" * 10
+    assert meter(-5) == "▁" * 10
+    assert meter(150) == "▆" * 10
 
 
 def test_tui_rows_present_gpu_and_process_data() -> None:
@@ -52,9 +62,8 @@ def test_tui_rows_present_gpu_and_process_data() -> None:
     assert gpu_rows(node)[0].cells == (
         "0",
         "NVIDIA A100-SXM4-40GB",
-        "███████░░░  72%",
-        "10.0 GiB / 40.0 GiB",
-        "25%",
+        "▆▆▆▆▆▆▆▁▁▁   72%",
+        "▆▆▁▁▁▁▁▁▁▁  10.0/40.0 GiB",
         "61 C",
         "210 / 400 W",
     )

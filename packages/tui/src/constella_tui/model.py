@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+METER_FILLED = "▆"
+METER_EMPTY = "▁"
+
 
 def _number(value: object, default: float = 0.0) -> float:
     if isinstance(value, bool):
@@ -27,6 +30,15 @@ def memory(value_mb: object) -> str:
     return f"{value:.0f} MiB"
 
 
+def memory_pair(used_mb: object, total_mb: object) -> str:
+    used = _number(used_mb)
+    total = _number(total_mb)
+    if max(used, total) >= 1024:
+        used_text = "0" if used == 0 else f"{used / 1024:.1f}"
+        return f"{used_text}/{total / 1024:.1f} GiB"
+    return f"{used:.0f}/{total:.0f} MiB"
+
+
 def duration(seconds: object) -> str:
     value = max(0, _integer(seconds))
     hours, remainder = divmod(value, 3600)
@@ -41,7 +53,7 @@ def duration(seconds: object) -> str:
 def meter(value: object, *, width: int = 10) -> str:
     normalized = min(100.0, max(0.0, _number(value)))
     filled = round(normalized / 100 * width)
-    return "█" * filled + "░" * (width - filled)
+    return METER_FILLED * filled + METER_EMPTY * (width - filled)
 
 
 def memory_percent(gpu: dict[str, Any]) -> float:
@@ -92,9 +104,11 @@ def gpu_rows(node: dict[str, Any]) -> list[GpuRow]:
                 cells=(
                     str(index),
                     name,
-                    f"{meter(utilization)} {percent(utilization):>4}",
-                    f"{memory(raw_gpu.get('memory_used_mb'))} / {memory(raw_gpu.get('memory_total_mb'))}",
-                    percent(mem_percent),
+                    f"{meter(utilization)}  {percent(utilization):>4}",
+                    (
+                        f"{meter(mem_percent)}  "
+                        f"{memory_pair(raw_gpu.get('memory_used_mb'), raw_gpu.get('memory_total_mb'))}"
+                    ),
                     f"{temperature} C",
                     f"{power:.0f} / {power_limit:.0f} W" if power_limit else f"{power:.0f} W",
                 ),

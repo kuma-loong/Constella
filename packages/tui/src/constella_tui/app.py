@@ -28,7 +28,16 @@ from .charts import (
     heatmap_timestamps,
 )
 from .client import ClusterAPIError, ClusterClient, ClusterConnectionError
-from .model import duration, gpu_rows, memory, node_label, percent, process_rows
+from .model import (
+    METER_FILLED,
+    duration,
+    gpu_rows,
+    memory,
+    memory_percent,
+    node_label,
+    percent,
+    process_rows,
+)
 from .performance import (
     PERFORMANCE_CHART_POINTS,
     PERFORMANCE_METRICS,
@@ -197,7 +206,7 @@ class ConstellaTui(App[None]):
                             id="gpus",
                             zebra_stripes=True,
                             cursor_type="row",
-                            cell_padding=2,
+                            cell_padding=1,
                             cursor_foreground_priority="renderable",
                             cursor_background_priority="css",
                         )
@@ -319,7 +328,6 @@ class ConstellaTui(App[None]):
             ("MODEL", "model"),
             ("UTILIZATION", "utilization"),
             ("MEMORY", "memory"),
-            ("MEM %", "memory_percent"),
             ("TEMP", "temperature"),
             ("POWER", "power"),
         )
@@ -785,7 +793,6 @@ class ConstellaTui(App[None]):
                 "model",
                 "utilization",
                 "memory",
-                "memory_percent",
                 "temperature",
                 "power",
             ),
@@ -925,7 +932,7 @@ class ConstellaTui(App[None]):
     def _render_gpu_facts(self, gpu: dict[str, Any]) -> None:
         total_memory = float(gpu.get("memory_total_mb") or 0)
         used_memory = float(gpu.get("memory_used_mb") or 0)
-        memory_load = used_memory / total_memory * 100 if total_memory else 0
+        memory_load = memory_percent(gpu)
         power = float(gpu.get("power_watts") or 0)
         power_limit = float(gpu.get("power_limit_watts") or 0)
         temperature = float(gpu.get("temperature_c") or 0)
@@ -1569,28 +1576,30 @@ class ConstellaTui(App[None]):
         cells: tuple[str, ...], gpu: dict[str, Any], *, selected: bool = False
     ) -> tuple[str | Text, ...]:
         utilization = float(gpu.get("utilization_gpu") or 0)
-        total_memory = float(gpu.get("memory_total_mb") or 0)
-        used_memory = float(gpu.get("memory_used_mb") or 0)
-        memory_load = used_memory / total_memory * 100 if total_memory else 0
+        memory_load = memory_percent(gpu)
         temperature = float(gpu.get("temperature_c") or 0)
         utilization_style = ConstellaTui._utilization_style(utilization)
         memory_style = ConstellaTui._threshold_style(memory_load, warning=80, danger=94)
         temperature_style = ConstellaTui._threshold_style(temperature, warning=75, danger=85)
-        meter_text, _, utilization_text = cells[2].partition(" ")
-        filled = meter_text.count("█")
-        utilization_cell = Text()
-        utilization_cell.append(meter_text[:filled], style=utilization_style)
-        utilization_cell.append(meter_text[filled:], style="#121824")
-        utilization_cell.append(f"  {utilization_text.strip()}", style=utilization_style)
         return (
             ConstellaTui._gpu_index_cell(int(cells[0]), selected=selected),
             Text(cells[1], style="#E2E8F0"),
-            utilization_cell,
-            Text(cells[3], style=memory_style),
-            Text(cells[4], style=memory_style),
-            Text(cells[5], style=temperature_style),
-            Text(cells[6], style="#8A99AD"),
+            ConstellaTui._styled_meter_cell(cells[2], utilization_style),
+            ConstellaTui._styled_meter_cell(cells[3], memory_style),
+            Text(cells[4], style=temperature_style),
+            Text(cells[5], style="#8A99AD"),
         )
+
+    @staticmethod
+    def _styled_meter_cell(value: str, style: str) -> Text:
+        meter_text, separator, label = value.partition("  ")
+        filled = meter_text.count(METER_FILLED)
+        cell = Text()
+        cell.append(meter_text[:filled], style=style)
+        cell.append(meter_text[filled:], style="#121824")
+        if separator:
+            cell.append(f"  {label}", style=style)
+        return cell
 
     @staticmethod
     def _gpu_index_cell(index: int, *, selected: bool) -> Text:

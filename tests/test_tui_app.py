@@ -271,7 +271,20 @@ async def exercise_app() -> None:
     async with app.run_test(size=(140, 42)) as pilot:
         await pilot.pause(0.2)
         assert len(app.query_one("#nodes", ListView).children) == 1
-        assert app.query_one("#gpus", DataTable).row_count == 1
+        gpu_table = app.query_one("#gpus", DataTable)
+        assert gpu_table.row_count == 1
+        assert [str(key.value) for key in gpu_table.columns] == [
+            "gpu",
+            "model",
+            "utilization",
+            "memory",
+            "temperature",
+            "power",
+        ]
+        assert gpu_table.get_cell("0", "utilization").plain == "▆▆▆▆▆▆▆▁▁▁   72%"
+        assert gpu_table.get_cell("0", "memory").plain == (
+            "▆▆▁▁▁▁▁▁▁▁  10.0/40.0 GiB"
+        )
         assert app.query_one("#processes", DataTable).row_count == 1
         assert app.query_one("#processes", DataTable).cursor_type == "none"
         assert app.query_one("#node-hardware", DataTable).cursor_type == "none"
