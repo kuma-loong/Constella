@@ -140,7 +140,7 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
   }, [selectedNode?.node_id]);
 
   useEffect(() => {
-    if (!selectedNode) {
+    if (!visible || !selectedNode) {
       return;
     }
     window.localStorage.setItem(
@@ -155,7 +155,7 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
       params.delete("gpu");
     }
     window.history.replaceState(window.history.state, "", `/performance?${params.toString()}`);
-  }, [gpuUuids, selectedNode?.node_id]);
+  }, [visible, gpuUuids, selectedNode?.node_id]);
 
   useEffect(() => {
     const syncFromLocation = () => {
