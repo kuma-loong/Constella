@@ -1,4 +1,4 @@
-import type { ClusterSnapshot, NodeSnapshot } from "./types";
+import type { ClusterSnapshot, GpuInfo, NodeSnapshot } from "./types";
 
 export type FabricConfigItem = {
   count: number;
@@ -84,6 +84,16 @@ export function fabricNodeSizeClass(node: NodeSnapshot) {
 
 export function compactGpuName(name: string) {
   return name.replace(/^NVIDIA\s+/, "");
+}
+
+export function deviceLabel(node: NodeSnapshot, gpu: GpuInfo) {
+  if (gpu.device_type === "ascend" && gpu.card_id != null) {
+    const dieCount = node.gpus.filter(
+      (item) => item.device_type === "ascend" && item.card_id === gpu.card_id,
+    ).length;
+    return dieCount > 1 ? `C${gpu.card_id}/D${gpu.die_id ?? gpu.index}` : `NPU${gpu.index}`;
+  }
+  return `GPU${gpu.index}`;
 }
 
 export function sameInterval(left: number | null, right: number | null) {

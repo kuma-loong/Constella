@@ -226,6 +226,13 @@ type PerformanceMetric =
 
 type ChartMetric = NodeMetric | PerformanceMetric;
 
+type JobSearchFilters = {
+  query: string;
+  pid: number | null;
+  nodeId: string;
+  since: number | null;
+};
+
 type AnalyticsControllerOptions = {
   overviewElement: HTMLElement;
   nodeElement: HTMLElement;
@@ -293,6 +300,7 @@ export function createAnalyticsController({
   let nodeChart: uPlot | null = null;
   let nodeChartResize: ResizeObserver | null = null;
   let jobQuery = "";
+  let jobFilters: JobSearchFilters = emptyJobSearchFilters();
   let jobPayload: { enabled: boolean; items?: JobItem[] } | null = null;
   let jobKey = "";
   let jobsLoading = false;
@@ -438,6 +446,12 @@ export function createAnalyticsController({
   function submitJobSearch() {
     const input = jobElement.querySelector<HTMLInputElement>("[data-job-query]");
     jobQuery = input?.value.trim() || "";
+    jobFilters = { ...emptyJobSearchFilters(), query: jobQuery };
+    window.history.replaceState(
+      window.history.state,
+      "",
+      jobQuery ? `/jobs?q=${encodeURIComponent(jobQuery)}` : "/jobs",
+    );
     jobKey = "";
     selectedJobKey = "";
     selectedJobGpuUuids.clear();
@@ -446,6 +460,24 @@ export function createAnalyticsController({
     jobCurveKey = "";
     renderJobs();
     void fetchJobs();
+  }
+
+  function syncJobsLocation(search: string) {
+    const params = new URLSearchParams(search);
+    jobFilters = {
+      query: params.get("q")?.trim() || "",
+      pid: finiteInteger(params.get("pid")),
+      nodeId: params.get("node_id")?.trim() || "",
+      since: finiteNumber(params.get("since")),
+    };
+    jobQuery = jobFilters.query || (jobFilters.pid == null ? "" : String(jobFilters.pid));
+    jobPayload = null;
+    jobKey = "";
+    selectedJobKey = "";
+    selectedJobGpuUuids.clear();
+    jobChartExpanded = false;
+    jobCurvePayload = null;
+    jobCurveKey = "";
   }
 
   async function fetchOverview() {
@@ -544,15 +576,24 @@ export function createAnalyticsController({
   }
 
   async function fetchJobs() {
-    const key = jobQuery;
+    const key = JSON.stringify(jobFilters);
     if (jobsLoading || jobKey === key) {
       return;
     }
     jobsLoading = true;
     renderJobs();
     const params = new URLSearchParams({ limit: "80" });
-    if (jobQuery) {
-      params.set("q", jobQuery);
+    if (jobFilters.query) {
+      params.set("q", jobFilters.query);
+    }
+    if (jobFilters.pid != null) {
+      params.set("pid", String(jobFilters.pid));
+    }
+    if (jobFilters.nodeId) {
+      params.set("node_id", jobFilters.nodeId);
+    }
+    if (jobFilters.since != null) {
+      params.set("since", String(jobFilters.since));
     }
     try {
       const response = await fetch(`/api/highres/jobs?${params.toString()}`, { cache: "no-store" });
@@ -1144,6 +1185,7 @@ export function createAnalyticsController({
     handleChange,
     handleKeyDown,
     handleSubmit,
+    syncJobsLocation,
     fetchOverview,
     fetchNode,
     fetchJobs,
@@ -1151,6 +1193,26 @@ export function createAnalyticsController({
     renderNode,
     renderJobs,
   };
+}
+
+function emptyJobSearchFilters(): JobSearchFilters {
+  return { query: "", pid: null, nodeId: "", since: null };
+}
+
+function finiteInteger(value: string | null) {
+  if (!value) {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function finiteNumber(value: string | null) {
+  if (!value) {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function metricButtonsForAction(selected: ChartMetric, action: string) {

@@ -175,6 +175,7 @@ export default function App() {
       createIcons({ icons: iconSet });
       void controller.fetchNode(nextRoute);
     } else if (nextRoute.kind === "jobs") {
+      controller.syncJobsLocation(window.location.search);
       controller.renderJobs();
       createIcons({ icons: iconSet });
       void controller.fetchJobs();
@@ -287,10 +288,13 @@ export default function App() {
     }
   }
 
-  function navigateTo(pathname: string) {
-    const normalized = pathname === "/" ? "/overview" : pathname;
-    if (normalized !== window.location.pathname) {
-      window.history.pushState(null, "", normalized);
+  function navigateTo(href: string) {
+    const target = new URL(href, window.location.origin);
+    const pathname = target.pathname === "/" ? "/overview" : target.pathname;
+    const nextLocation = `${pathname}${target.search}`;
+    const currentLocation = `${window.location.pathname}${window.location.search}`;
+    if (nextLocation !== currentLocation) {
+      window.history.pushState(null, "", nextLocation);
     }
     setRoute(currentRoute());
   }
@@ -334,7 +338,7 @@ export default function App() {
     const link = targetElement.closest("a[href]") as HTMLAnchorElement | null;
     if (shouldHandleAppLink(event, link)) {
       event.preventDefault();
-      navigateTo(link.pathname);
+      navigateTo(`${link.pathname}${link.search}`);
     }
   }
 

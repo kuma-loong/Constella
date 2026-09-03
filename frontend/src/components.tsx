@@ -1,8 +1,9 @@
-import { useMemo } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Route } from "./analytics";
 import {
   clamp,
   compactGpuName,
+  deviceLabel,
   fabricConfigItems,
   fabricConfigSummary,
   fabricNodeSizeClass,
@@ -15,6 +16,8 @@ import {
   tempClass,
 } from "./cluster-utils";
 import { fmtDuration, fmtGiB, fmtPct } from "./format";
+import { buildProcessView, type ProcessDetail } from "./process-details";
+import { ProcessDrawer } from "./ProcessDrawer";
 import type { ClusterSnapshot, GpuInfo, LiveState, NodeSnapshot, ThemeMode } from "./types";
 
 export type HeaderProps = {
@@ -586,7 +589,27 @@ export function ProcessSection({
   node: NodeSnapshot | null;
   collapsed: boolean;
 }) {
-  const rows = useMemo(() => processRows(node), [node]);
+  const view = useMemo(() => buildProcessView(node), [node]);
+  const [selectedProcess, setSelectedProcess] = useState<ProcessDetail | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const liveSelection = selectedProcess
+    ? view.details.find((detail) => sameProcess(detail, selectedProcess)) || null
+    : null;
+
+  useEffect(() => {
+    setSelectedProcess(null);
+  }, [hidden, nodeId]);
+
+  function openProcess(detail: ProcessDetail, trigger: HTMLButtonElement) {
+    triggerRef.current = trigger;
+    setSelectedProcess(detail);
+  }
+
+  function closeProcess() {
+    setSelectedProcess(null);
+    window.requestAnimationFrame(() => triggerRef.current?.focus());
+  }
+
   return (
     <section
       class={`process-section collapsible-section ${collapsed ? "is-collapsed" : ""}`}
@@ -597,7 +620,7 @@ export function ProcessSection({
         <div>
           <h2>Active accelerator tasks</h2>
           <span>
-            {node?.node_id || nodeId} / {rows.length} active
+            {node?.node_id || nodeId} / {view.rows.length} active
           </span>
         </div>
         <button
@@ -625,16 +648,27 @@ export function ProcessSection({
             </tr>
           </thead>
           <tbody>
-            {rows.length ? (
-              rows.slice(0, 80).map((row) => (
-                <tr title={row.title} key={`${row.node}:${row.device}:${row.pid}:${row.task}`}>
+            {view.rows.length ? (
+              view.rows.slice(0, 80).map((row) => (
+                <tr title={row.title} key={row.key}>
                   <td>{row.node}</td>
                   <td>
-                    <span class="gpu-pill">{row.device}</span>
+                    <div class="process-devices">
+                      {row.devices.map((device) => <span class="gpu-pill" key={device}>{device}</span>)}
+                    </div>
                   </td>
                   <td>{row.user}</td>
                   <td>{row.pid}</td>
-                  <td>{row.task}</td>
+                  <td>
+                    {row.detail ? (
+                      <button
+                        class="process-detail-trigger"
+                        type="button"
+                        aria-label={`Open details for ${row.task}, PID ${row.pid}`}
+                        onClick={(event) => openProcess(row.detail!, event.currentTarget)}
+                      >{row.task}</button>
+                    ) : row.task}
+                  </td>
                   <td>{fmtGiB(row.memory)}</td>
                   <td>{fmtDuration(row.runtime)}</td>
                   <td>{row.kind}</td>
@@ -650,57 +684,22 @@ export function ProcessSection({
           </tbody>
         </table>
       </div>
+      {selectedProcess ? (
+        <ProcessDrawer
+          detail={liveSelection || selectedProcess}
+          active={Boolean(liveSelection)}
+          onClose={closeProcess}
+        />
+      ) : null}
     </section>
   );
 }
 
-export type ProcessRow = {
-  node: string;
-  device: string;
-  user: string;
-  pid: string;
-  task: string;
-  memory: number;
-  runtime: number | null;
-  kind: string;
-  title: string;
-};
-
-export function processRows(node: NodeSnapshot | null) {
-  const rows: ProcessRow[] = [];
-  if (!node) {
-    return [];
-  }
-  for (const gpu of node.gpus) {
-    for (const process of gpu.processes || []) {
-      rows.push({
-        node: node.node_id,
-        device: deviceLabel(node, gpu),
-        user: process.user || "unknown",
-        pid: String(process.pid),
-        task: process.task_name || process.name,
-        memory: process.gpu_memory_mb,
-        runtime: process.runtime_seconds ?? null,
-        kind: process.kind,
-        title: process.cmdline || process.exe || process.name,
-      });
-    }
-    for (const other of gpu.other_users || []) {
-      rows.push({
-        node: node.node_id,
-        device: deviceLabel(node, gpu),
-        user: other.user,
-        pid: `${other.process_count} procs`,
-        task: "aggregate workload",
-        memory: other.total_memory_mb,
-        runtime: other.runtime_seconds ?? null,
-        kind: "aggregate",
-        title: `${other.process_count} processes`,
-      });
-    }
-  }
-  return rows.sort(
-    (a, b) => a.node.localeCompare(b.node) || a.device.localeCompare(b.device) || b.memory - a.memory || (b.runtime || 0) - (a.runtime || 0),
+function sameProcess(left: ProcessDetail, right: ProcessDetail) {
+  return left.pid === right.pid && (
+    left.processStartTime == null ||
+    right.processStartTime == null ||
+    left.processStartTime === right.processStartTime
   );
 }
 
@@ -744,17 +743,4 @@ function nodeAcceleratorMeta(node: NodeSnapshot): string {
 
 function isNpuNode(node: NodeSnapshot): boolean {
   return node.source === "dcmi" || node.source === "npu-smi";
-}
-
-function deviceLabel(node: NodeSnapshot, gpu: GpuInfo): string {
-  if (gpu.device_type === "ascend" && gpu.card_id != null) {
-    const dieCount = node.gpus.filter(
-      (item) => item.device_type === "ascend" && item.card_id === gpu.card_id,
-    ).length;
-    if (dieCount > 1) {
-      return `C${gpu.card_id}/D${gpu.die_id ?? gpu.index}`;
-    }
-    return `NPU${gpu.index}`;
-  }
-  return `GPU${gpu.index}`;
 }

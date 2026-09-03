@@ -89,6 +89,273 @@
   background: var(--surface-raised);
 }
 
+.process-devices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.process-detail-trigger {
+  max-width: 28rem;
+  padding: 0;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 680;
+  text-align: left;
+  overflow-wrap: anywhere;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+  transition: color 160ms ease, text-decoration-color 160ms ease;
+}
+
+.process-detail-trigger:hover {
+  color: var(--accent);
+  text-decoration-color: color-mix(in srgb, var(--accent) 46%, transparent);
+}
+
+.process-detail-trigger:focus-visible {
+  border-radius: 2px;
+  outline: none;
+  box-shadow: var(--focus);
+}
+
+.process-drawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(520px, calc(100vw - 24px));
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-left: 1px solid var(--border);
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: -22px 0 60px rgba(24, 40, 31, 0.16);
+}
+
+:root[data-resolved-theme="dark"] .process-drawer {
+  box-shadow: -24px 0 64px rgba(0, 0, 0, 0.42);
+}
+
+.process-drawer::backdrop {
+  background: rgba(15, 17, 19, 0.24);
+  backdrop-filter: blur(2px);
+}
+
+.process-drawer[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.process-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 18px 16px 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.process-drawer-head > div {
+  min-width: 0;
+}
+
+.process-drawer-head span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 720;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.process-drawer-head h2 {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 21px;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+}
+
+.process-drawer-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.process-ended-note {
+  padding: 11px 22px;
+  border-bottom: 1px solid color-mix(in srgb, var(--warn) 28%, var(--border));
+  color: var(--warn);
+  background: var(--warn-soft);
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.process-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.process-meta > div {
+  min-width: 0;
+  padding: 13px 22px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.process-meta > div:nth-child(2n) {
+  border-right: 0;
+}
+
+.process-meta > div:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.process-meta dt,
+.process-meta dd {
+  margin: 0;
+}
+
+.process-meta dt {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 680;
+}
+
+.process-meta dd {
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 680;
+}
+
+.process-drawer-section {
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.process-section-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.process-section-label h3 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+}
+
+.process-section-label span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.process-device-list {
+  border-top: 1px solid var(--border);
+}
+
+.process-device-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 46px;
+  border-bottom: 1px solid var(--border);
+}
+
+.process-device-list strong {
+  font-size: 13px;
+}
+
+.process-command {
+  display: block;
+  max-height: 180px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-label);
+  color: var(--text-soft);
+  background: var(--surface-sunken);
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.process-executable,
+.process-detail-state p {
+  margin: 9px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.process-drawer-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.process-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  background: var(--surface-raised);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 720;
+  text-decoration: none;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.process-action.is-primary {
+  border-color: var(--accent);
+  color: var(--surface);
+  background: var(--accent-strong);
+}
+
+.process-action:hover {
+  border-color: var(--border-strong);
+}
+
+.process-action.is-primary:hover {
+  border-color: var(--accent-strong);
+  background: var(--accent);
+}
+
+.process-action:active {
+  transform: translateY(1px);
+}
+
+.process-action:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+
 .gpu-pill {
   display: inline-flex;
   align-items: center;

@@ -206,6 +206,29 @@
     border-left: 0;
   }
 
+  .process-drawer {
+    width: 100%;
+    border-left: 0;
+  }
+
+  .process-drawer-head {
+    padding: 14px 12px 13px 16px;
+  }
+
+  .process-drawer-head h2 {
+    font-size: 19px;
+  }
+
+  .process-meta > div,
+  .process-drawer-section {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .process-drawer-actions {
+    padding: 12px;
+  }
+
   .guide-drawer-head {
     padding: 14px 12px 13px 16px;
   }
