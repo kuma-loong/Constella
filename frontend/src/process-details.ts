@@ -2,6 +2,7 @@ import { deviceLabel } from "./cluster-utils";
 import type { GpuProcess, NodeSnapshot } from "./types";
 
 export type ProcessDeviceUsage = {
+  index: number;
   label: string;
   gpuUuid: string;
   memoryMb: number;
@@ -32,6 +33,7 @@ export type ProcessRow = {
   key: string;
   detail: ProcessDetail | null;
   node: string;
+  deviceIndex: number;
   devices: string[];
   user: string;
   pid: string;
@@ -56,6 +58,7 @@ export function buildProcessView(node: NodeSnapshot | null) {
       const detail = byKey.get(key) || createProcessDetail(node, process, key);
       mergeProcessFields(detail, process);
       detail.devices.push({
+        index: gpu.index,
         label: deviceLabel(node, gpu),
         gpuUuid: gpu.uuid,
         memoryMb: process.gpu_memory_mb,
@@ -69,6 +72,7 @@ export function buildProcessView(node: NodeSnapshot | null) {
         key: `aggregate:${gpu.uuid}:${other.user}`,
         detail: null,
         node: node.node_id,
+        deviceIndex: gpu.index,
         devices: [deviceLabel(node, gpu)],
         user: other.user,
         pid: `${other.process_count} procs`,
@@ -81,13 +85,12 @@ export function buildProcessView(node: NodeSnapshot | null) {
     }
   }
 
-  const details = Array.from(byKey.values()).sort(
-    (left, right) => right.totalMemoryMb - left.totalMemoryMb || (right.runtime || 0) - (left.runtime || 0),
-  );
+  const details = Array.from(byKey.values());
+  details.forEach((detail) => detail.devices.sort((left, right) => left.index - right.index));
   const rows = [
     ...details.map(processRow),
     ...aggregateRows,
-  ];
+  ].sort(compareProcessRows);
   return { details, rows };
 }
 
@@ -147,6 +150,7 @@ function processRow(detail: ProcessDetail): ProcessRow {
     key: detail.key,
     detail,
     node: detail.nodeId,
+    deviceIndex: Math.min(...detail.devices.map((device) => device.index)),
     devices: detail.devices.map((device) => device.label),
     user: detail.user,
     pid: String(detail.pid),
@@ -156,4 +160,12 @@ function processRow(detail: ProcessDetail): ProcessRow {
     kind: detail.kind,
     title: detail.cmdline || detail.exe || detail.name,
   };
+}
+
+function compareProcessRows(left: ProcessRow, right: ProcessRow) {
+  return left.node.localeCompare(right.node)
+    || left.deviceIndex - right.deviceIndex
+    || right.memory - left.memory
+    || (right.runtime || 0) - (left.runtime || 0)
+    || left.pid.localeCompare(right.pid, undefined, { numeric: true });
 }
