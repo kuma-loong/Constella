@@ -387,12 +387,12 @@
   }
 
   .heat-legend {
-    align-items: flex-start;
-    flex-direction: column;
+    grid-template-columns: minmax(0, 224px);
     width: 100%;
   }
 
-  .heat-legend-scale {
+  .heat-legend-scale,
+  .heat-legend-abnormal {
     width: min(224px, 100%);
   }
 

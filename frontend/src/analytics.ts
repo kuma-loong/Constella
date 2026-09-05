@@ -1594,10 +1594,10 @@ function heatmapChart(items: AnalyticsHeatmap[], payload: NodeAnalytics | null) 
           <span>busy</span>
         </span>
       </div>
-      <span class="heat-legend-abnormal">
+      <div class="heat-legend-abnormal">
         <b aria-hidden="true"></b>
         <span>abnormal occupancy</span>
-      </span>
+      </div>
     </div>
   `;
 }
@@ -1640,7 +1640,7 @@ function hourlyHeatCell(item: AnalyticsHeatmap, start: number, rangeEnd: number)
       samples > 0 &&
       start + HOUR_SECONDS <= rangeEnd &&
       memoryAvg >= ABNORMAL_MEMORY_MB &&
-      avg < ABNORMAL_GPU_UTILIZATION,
+      avg <= ABNORMAL_GPU_UTILIZATION,
   };
 }
 
@@ -1661,7 +1661,7 @@ function heatmapCell(row: HourlyHeatRow, cell: HourlyHeatCell) {
         `${heatFullTime(cell.start)}-${heatClock(cell.end)}`,
         `GPU avg ${fmtPct(cell.avg)} · peak ${fmtPct(cell.peak)}`,
         `Mem avg ${fmtGiB(cell.memoryAvg)}`,
-        ...(cell.isAbnormal ? ["Abnormal occupancy · ≥20 GiB / <5% GPU for ≥1h"] : []),
+        ...(cell.isAbnormal ? ["Abnormal occupancy · >= 20 GiB, <= 5 GPU util"] : []),
       ].join("\n")
     : [gpuLabel, `${heatFullTime(cell.start)}-${heatClock(cell.end)}`, "No data"].join("\n");
   const stateClass = cell.isAbnormal ? " is-abnormal" : cell.hasData ? "" : " is-missing";
