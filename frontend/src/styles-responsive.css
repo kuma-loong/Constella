@@ -391,8 +391,7 @@
     width: 100%;
   }
 
-  .heat-legend-scale,
-  .heat-legend-abnormal {
+  .heat-legend-scale {
     width: min(224px, 100%);
   }
 

@@ -1210,7 +1210,7 @@ svg {
 
 .heat-legend {
   display: grid;
-  grid-template-columns: repeat(2, 224px);
+  grid-template-columns: 224px max-content;
   align-items: start;
   gap: 18px;
   width: max-content;
@@ -1221,8 +1221,7 @@ svg {
   font-weight: 650;
 }
 
-.heat-legend-scale,
-.heat-legend-abnormal {
+.heat-legend-scale {
   display: grid;
   gap: 5px;
   width: 224px;
@@ -1250,12 +1249,15 @@ svg {
 }
 
 .heat-legend-abnormal {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
   line-height: 1;
 }
 
 .heat-legend-abnormal b {
   display: block;
-  width: 100%;
+  width: 12px;
   height: 10px;
   border: 1px solid color-mix(in srgb, var(--danger) 78%, var(--border));
   border-radius: 3px;
