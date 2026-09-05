@@ -3,7 +3,6 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import os
-import pwd
 import socket
 import subprocess
 import time
@@ -18,6 +17,8 @@ from .procfs import (
     process_parent_pid,
     process_runtime_seconds,
     process_start_time_seconds,
+    process_uid,
+    username_for_uid,
 )
 from .schema import (
     AcceleratorPerformance,
@@ -264,26 +265,6 @@ def _setup(lib: ctypes.CDLL) -> None:
 def _decode_buffer(buf: ctypes.Array[ctypes.c_char]) -> str | None:
     value = bytes(buf.value).decode("utf-8", errors="replace").strip()
     return value or None
-
-
-def _proc_uid(pid: int) -> int | None:
-    try:
-        with open(f"/proc/{pid}/status", "r", encoding="utf-8", errors="replace") as f:
-            for line in f:
-                if line.startswith("Uid:"):
-                    return int(line.split()[1])
-    except (OSError, ValueError):
-        return None
-    return None
-
-
-def _uid_name(uid: int | None) -> str | None:
-    if uid is None:
-        return None
-    try:
-        return pwd.getpwuid(uid).pw_name
-    except KeyError:
-        return str(uid)
 
 
 def _proc_comm(pid: int) -> str | None:
@@ -741,8 +722,8 @@ class NVMLSampler:
         return own, sorted(other.values(), key=lambda item: item.total_memory_mb, reverse=True)
 
     def _fill_process_detail(self, process: GpuProcess, *, include_cmdline: bool) -> None:
-        uid = _proc_uid(process.pid)
-        user = _uid_name(uid)
+        uid = process_uid(process.pid)
+        user = username_for_uid(uid)
         comm = _proc_comm(process.pid)
         exe = process_exe(process.pid)
         ppid = process_parent_pid(process.pid)
@@ -753,6 +734,7 @@ class NVMLSampler:
 
         process.ppid = ppid
         process.user = process.user or user
+        process.user_uid = process.user_uid if process.user_uid is not None else uid
         process.name = process.name or comm or "?"
         process.exe = exe
         process.cmdline = cmdline

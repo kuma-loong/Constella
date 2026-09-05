@@ -5,6 +5,7 @@ import contextlib
 import json
 import logging
 import os
+import pwd
 import random
 import socket
 import time
@@ -208,13 +209,21 @@ async def _run_connection(
         status.status = "online"
         status.last_error = None
         supported_metrics_delta = SupportedMetricsDelta()
-        await websocket.send(json.dumps(agent_hello(config, hardware=hardware)))
+        send_lock = asyncio.Lock()
+        await _send_json(websocket, agent_hello(config, hardware=hardware), send_lock)
         receiver = asyncio.create_task(
-            _receiver_loop(websocket, collector, supported_metrics_delta),
+            _receiver_loop(websocket, collector, supported_metrics_delta, config, send_lock),
             name="agent-ws-receiver",
         )
         sender = asyncio.create_task(
-            _sender_loop(websocket, collector, config, status, supported_metrics_delta),
+            _sender_loop(
+                websocket,
+                collector,
+                config,
+                status,
+                supported_metrics_delta,
+                send_lock,
+            ),
             name="agent-ws-sender",
         )
         done, pending = await asyncio.wait(
@@ -234,13 +243,20 @@ async def _receiver_loop(
     websocket: Any,
     collector: SnapshotCollector,
     supported_metrics_delta: SupportedMetricsDelta,
+    config: AgentConfig,
+    send_lock: asyncio.Lock,
 ) -> None:
     async for raw in websocket:
         try:
             message = json.loads(raw)
         except json.JSONDecodeError:
             continue
-        if message.get("type") != "config":
+        message_type = message.get("type")
+        if message_type == "account_lookup_request":
+            response = await handle_account_lookup_request(message, node_id=config.node_id)
+            await _send_json(websocket, response, send_lock)
+            continue
+        if message_type != "config":
             continue
         supported_metrics_delta.enabled = message.get("supported_metrics_delta") is True
         if "refresh_interval" in message:
@@ -257,6 +273,7 @@ async def _sender_loop(
     config: AgentConfig,
     status: AgentStatus,
     supported_metrics_delta: SupportedMetricsDelta,
+    send_lock: asyncio.Lock,
 ) -> None:
     last_snapshot_seq = 0
     message_seq = 0
@@ -269,23 +286,69 @@ async def _sender_loop(
             last_snapshot_seq = snapshot.seq
             status.last_sample_at = snapshot.timestamp
             message_seq += 1
-            await websocket.send(
-                json.dumps(
-                    agent_sample(
-                        config,
-                        message_seq,
-                        snapshot,
-                        process_interval=collector.process_interval,
-                        supported_metrics_delta=supported_metrics_delta,
-                    )
-                )
+            await _send_json(
+                websocket,
+                agent_sample(
+                    config,
+                    message_seq,
+                    snapshot,
+                    process_interval=collector.process_interval,
+                    supported_metrics_delta=supported_metrics_delta,
+                ),
+                send_lock,
             )
             status.last_sent_at = time.time()
             continue
 
         message_seq += 1
-        await websocket.send(json.dumps(agent_heartbeat(config, message_seq)))
+        await _send_json(websocket, agent_heartbeat(config, message_seq), send_lock)
         status.last_sent_at = time.time()
+
+
+async def _send_json(websocket: Any, payload: dict[str, Any], lock: asyncio.Lock) -> None:
+    async with lock:
+        await websocket.send(json.dumps(payload))
+
+
+def lookup_linux_account(username: str) -> dict[str, Any]:
+    if not isinstance(username, str) or not username or len(username) > 256 or "\x00" in username:
+        raise ValueError("invalid Linux username")
+    try:
+        account = pwd.getpwnam(username)
+    except KeyError:
+        return {"exists": False}
+    return {
+        "exists": True,
+        "canonical_username": account.pw_name,
+        "uid": account.pw_uid,
+        "gid": account.pw_gid,
+        "shell": account.pw_shell,
+    }
+
+
+async def handle_account_lookup_request(
+    message: dict[str, Any],
+    *,
+    node_id: str,
+) -> dict[str, Any]:
+    request_id = str(message.get("request_id") or "")
+    requested_node_id = str(message.get("node_id") or "")
+    username = message.get("username")
+    response: dict[str, Any] = {
+        "type": "account_lookup_response",
+        "request_id": request_id,
+        "node_id": node_id,
+    }
+    if not request_id or requested_node_id != node_id:
+        return {**response, "ok": False, "error": "invalid account lookup request"}
+    try:
+        result = await asyncio.wait_for(
+            asyncio.to_thread(lookup_linux_account, username),
+            timeout=3.0,
+        )
+    except (ValueError, OSError, asyncio.TimeoutError) as exc:
+        return {**response, "ok": False, "error": str(exc)}
+    return {**response, "ok": True, **result}
 
 
 async def _state_writer(path: Path, status: AgentStatus) -> None:
@@ -317,6 +380,7 @@ def agent_hello(config: AgentConfig, *, hardware: NodeHardware | None = None) ->
             "nvml": config.device_type == "nvidia",
             "nvidia_smi_fallback": config.device_type == "nvidia",
             "process_cmdline": True,
+            "account_lookup_v1": True,
             "performance_profiles": performance_profiles(config.device_type),
         },
     }

@@ -29,6 +29,7 @@ class GpuProcess:
     parent_start_time: float | None = None
     detail_status: str = "unknown"
     detail_error: str | None = None
+    user_uid: int | None = None
 
 
 @dataclass(slots=True)

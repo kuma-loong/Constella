@@ -11,6 +11,8 @@ from .procfs import (
     process_parent_pid,
     process_runtime_seconds,
     process_start_time_seconds,
+    process_uid,
+    username_for_uid,
 )
 from .schema import GpuInfo, GpuProcess, Snapshot, cmdline_fingerprint, infer_task_name
 
@@ -119,6 +121,8 @@ def parse_process_query_csv(output: str) -> dict[str, list[GpuProcess]]:
             cmdline, detail_status = process_cmdline(process.pid)
             exe = process_exe(process.pid)
             process.ppid = ppid
+            process.user_uid = process_uid(process.pid)
+            process.user = username_for_uid(process.user_uid)
             process.cmdline = cmdline
             process.cmdline_hash = cmdline_fingerprint(cmdline)
             process.exe = exe

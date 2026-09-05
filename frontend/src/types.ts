@@ -8,6 +8,7 @@ export type GpuProcess = {
   cmdline_hash?: string | null;
   gpu_memory_mb: number;
   user?: string | null;
+  user_uid?: number | null;
   kind: string;
   runtime_seconds?: number | null;
   process_start_time?: number | null;

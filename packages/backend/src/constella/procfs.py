@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import pwd
 import time
 
 _BOOT_TIME_SECONDS: int | None = None
@@ -75,6 +76,22 @@ def process_runtime_seconds(pid: int) -> int | None:
     if started_at is None:
         return None
     return max(0, int(time.time() - started_at))
+
+
+def process_uid(pid: int) -> int | None:
+    try:
+        return os.stat(f"/proc/{pid}").st_uid
+    except OSError:
+        return None
+
+
+def username_for_uid(uid: int | None) -> str | None:
+    if uid is None:
+        return None
+    try:
+        return pwd.getpwuid(uid).pw_name
+    except KeyError:
+        return str(uid)
 
 
 def process_exe(pid: int) -> str | None:

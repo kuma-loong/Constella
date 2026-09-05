@@ -90,7 +90,8 @@ def test_dcmi_sampler_maps_metrics_and_processes(monkeypatch) -> None:
     sampler._next_process_at = 0.0
     sampler._process_snapshot = {}
     monkeypatch.setattr("constella.dcmi._process_name", lambda _pid: "python")
-    monkeypatch.setattr("constella.dcmi._process_user", lambda _pid: "alice")
+    monkeypatch.setattr("constella.dcmi.process_uid", lambda _pid: 1001)
+    monkeypatch.setattr("constella.dcmi.username_for_uid", lambda _uid: "alice")
 
     snapshot = sampler.sample()
 
@@ -108,6 +109,7 @@ def test_dcmi_sampler_maps_metrics_and_processes(monkeypatch) -> None:
     assert snapshot.gpus[0].card_id == "2"
     assert snapshot.gpus[0].die_id == 0
     assert snapshot.gpus[0].processes[0].gpu_memory_mb == 2048
+    assert snapshot.gpus[0].processes[0].user_uid == 1001
 
 
 def test_dcmi_sampler_falls_back_to_ddr_memory() -> None:

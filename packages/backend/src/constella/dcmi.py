@@ -3,7 +3,6 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import os
-import pwd
 import socket
 import time
 
@@ -11,6 +10,8 @@ from .procfs import (
     process_parent_pid,
     process_runtime_seconds,
     process_start_time_seconds,
+    process_uid,
+    username_for_uid,
 )
 from .schema import GpuHardwareInfo, GpuInfo, GpuProcess, NodeHardware, Snapshot
 
@@ -186,13 +187,6 @@ def _process_name(pid: int) -> str:
             return handle.read().strip() or "?"
     except OSError:
         return "?"
-
-
-def _process_user(pid: int) -> str | None:
-    try:
-        return pwd.getpwuid(os.stat(f"/proc/{pid}").st_uid).pw_name
-    except (KeyError, OSError):
-        return None
 
 
 class DCMISampler:
@@ -397,13 +391,15 @@ class DCMISampler:
         for info in list(processes)[: count.value]:
             pid = int(info.pid)
             parent_pid = process_parent_pid(pid)
+            uid = process_uid(pid)
             result.append(
                 GpuProcess(
                     pid=pid,
                     name=_process_name(pid),
                     gpu_memory_mb=int(info.memory_bytes // (1024 * 1024)),
                     ppid=parent_pid,
-                    user=_process_user(pid),
+                    user=username_for_uid(uid),
+                    user_uid=uid,
                     runtime_seconds=process_runtime_seconds(pid),
                     process_start_time=process_start_time_seconds(pid),
                     parent_start_time=(

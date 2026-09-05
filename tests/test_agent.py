@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import stat
 
@@ -10,6 +11,8 @@ from constella.agent import (
     agent_heartbeat,
     agent_hello,
     agent_sample,
+    handle_account_lookup_request,
+    lookup_linux_account,
     reconnect_delay,
     snapshot_to_agent_payload,
     write_state_file,
@@ -81,6 +84,7 @@ def test_agent_protocol_messages_include_required_fields() -> None:
     assert hello["node_id"] == "node-a"
     assert hello["capabilities"]["nvidia_smi_fallback"] is True
     assert hello["capabilities"]["device_type"] == "nvidia"
+    assert hello["capabilities"]["account_lookup_v1"] is True
     assert hello["capabilities"]["performance_profiles"] == ["nvidia.gpm.v1"]
     assert hello["hardware"]["gpus"][0]["architecture"] == "Hopper"
     assert sample["type"] == "sample"
@@ -90,6 +94,31 @@ def test_agent_protocol_messages_include_required_fields() -> None:
     assert "architecture" not in sample["snapshot"]["gpus"][0]
     assert heartbeat["type"] == "heartbeat"
     assert heartbeat["seq"] == 8
+
+
+def test_account_lookup_uses_system_account_database() -> None:
+    account = lookup_linux_account("root")
+
+    assert account["exists"] is True
+    assert account["canonical_username"] == "root"
+    assert account["uid"] == 0
+
+
+def test_account_lookup_request_validates_target_node() -> None:
+    response = asyncio.run(
+        handle_account_lookup_request(
+            {
+                "type": "account_lookup_request",
+                "request_id": "request-1",
+                "node_id": "node-b",
+                "username": "root",
+            },
+            node_id="node-a",
+        )
+    )
+
+    assert response["ok"] is False
+    assert response["node_id"] == "node-a"
 
 
 def test_snapshot_to_agent_payload_drops_short_history() -> None:

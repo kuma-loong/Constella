@@ -502,6 +502,7 @@ def _process_from_dict(data: dict[str, Any]) -> GpuProcess:
         gpu_memory_mb=int(data.get("gpu_memory_mb") or 0),
         ppid=data.get("ppid"),
         user=data.get("user"),
+        user_uid=data.get("user_uid"),
         task_name=data.get("task_name"),
         exe=data.get("exe"),
         cmdline=data.get("cmdline"),

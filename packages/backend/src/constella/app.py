@@ -7,6 +7,7 @@ import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -14,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__
+from .agent_rpc import AgentRpcBroker
 from .analytics import node_analytics, overview_analytics
 from .cluster import ClusterState, parse_agent_hello
 from .collector import ALLOWED_REFRESH_INTERVALS, validate_refresh_interval
@@ -36,6 +38,16 @@ from .schema import local_node_id
 class SettingsUpdate(BaseModel):
     refresh_interval: float | None = None
     process_interval: float | None = None
+
+
+class AppExtension(Protocol):
+    """Optional package hook that keeps edition-specific code out of core."""
+
+    def configure(self, app: FastAPI) -> None: ...
+
+    async def start(self, app: FastAPI) -> None: ...
+
+    async def stop(self, app: FastAPI) -> None: ...
 
 
 @dataclass(slots=True)
@@ -155,6 +167,7 @@ def create_app(
     highres_cache: HighresGpuCache | None = None,
     highres_broadcaster: HighresSampleBroadcaster | None = None,
     frontend_dist: Path | None = None,
+    extension: AppExtension | None = None,
 ) -> FastAPI:
     if manager_settings is None:
         manager_settings = ManagerSettings.from_env(
@@ -170,10 +183,12 @@ def create_app(
     highres_broadcaster = highres_broadcaster or HighresSampleBroadcaster()
     resolved_frontend_dist = resolve_frontend_dist(frontend_dist)
     agent_queues: set[asyncio.Queue[dict[str, object]]] = set()
+    agent_rpc = AgentRpcBroker()
 
     def broadcast_config() -> None:
         for queue in list(agent_queues):
-            queue.put_nowait(manager_settings.config_message())
+            with contextlib.suppress(asyncio.QueueFull):
+                queue.put_nowait(manager_settings.config_message())
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -184,9 +199,18 @@ def create_app(
         app.state.db_sink = db_sink
         app.state.highres_cache = highres_cache
         app.state.highres_broadcaster = highres_broadcaster
-        yield
-        if db_sink is not None:
-            await db_sink.stop()
+        app.state.agent_rpc = agent_rpc
+        extension_started = False
+        try:
+            if extension is not None:
+                await extension.start(app)
+                extension_started = True
+            yield
+        finally:
+            if extension is not None and extension_started:
+                await extension.stop(app)
+            if db_sink is not None:
+                await db_sink.stop()
 
     app = FastAPI(
         title="Constella",
@@ -200,6 +224,9 @@ def create_app(
     app.state.db_sink = db_sink
     app.state.highres_cache = highres_cache
     app.state.highres_broadcaster = highres_broadcaster
+    app.state.agent_rpc = agent_rpc
+    if extension is not None:
+        extension.configure(app)
 
     @app.get("/api/health")
     async def health() -> dict[str, object]:
@@ -404,6 +431,9 @@ def create_app(
         await websocket.accept()
         last_seq = -1
         last_sent_at = 0.0
+        disconnect_task = asyncio.create_task(
+            websocket.receive(), name="cluster-ws-disconnect"
+        )
         try:
             while True:
                 current = cluster_state.snapshot()
@@ -412,15 +442,28 @@ def create_app(
                     await websocket.send_json(current.to_dict())
                     last_sent_at = time.monotonic()
                 interval = max(app.state.settings.refresh_interval, 0.5)
-                await cluster_state.wait_for_update(
-                    last_seq,
-                    timeout=interval,
+                update_task = asyncio.create_task(
+                    cluster_state.wait_for_update(last_seq, timeout=interval),
+                    name="cluster-ws-update",
                 )
+                done, _pending = await asyncio.wait(
+                    {disconnect_task, update_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if disconnect_task in done:
+                    update_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await update_task
+                    return
                 remaining = interval - (time.monotonic() - last_sent_at)
                 if remaining > 0:
                     await asyncio.sleep(remaining)
         except WebSocketDisconnect:
             return
+        finally:
+            disconnect_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await disconnect_task
 
     @app.websocket("/api/agents/ws")
     async def agent_ws(websocket: WebSocket) -> None:
@@ -431,7 +474,7 @@ def create_app(
         await websocket.accept()
         connection_id = object()
         node_id: str | None = None
-        send_queue: asyncio.Queue[dict[str, object]] = asyncio.Queue()
+        send_queue: asyncio.Queue[dict[str, object]] = asyncio.Queue(maxsize=128)
 
         async def sender() -> None:
             while True:
@@ -443,6 +486,12 @@ def create_app(
             hello = parse_agent_hello(await websocket.receive_json())
             node_id = hello.node_id
             cluster_state.register_hello(hello, connection_id=connection_id)
+            agent_rpc.register(
+                node_id,
+                connection_id=connection_id,
+                send_queue=send_queue,
+                capabilities=hello.capabilities,
+            )
             send_queue.put_nowait(app.state.settings.config_message())
 
             while True:
@@ -469,15 +518,18 @@ def create_app(
                             connection_id=connection_id,
                         )
                     send_queue.put_nowait({"type": "ack", "seq": message.get("seq")})
+                elif message_type == "account_lookup_response":
+                    agent_rpc.resolve_account_lookup(message, connection_id=connection_id)
                 else:
                     send_queue.put_nowait(
                         {"type": "error", "error": f"unsupported agent message: {message_type}"}
                     )
         except WebSocketDisconnect:
-            if node_id:
-                cluster_state.disconnect(node_id, connection_id=connection_id)
             return
         finally:
+            if node_id:
+                cluster_state.disconnect(node_id, connection_id=connection_id)
+                agent_rpc.unregister(node_id, connection_id=connection_id)
             agent_queues.discard(send_queue)
             sender_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):

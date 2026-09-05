@@ -7,6 +7,7 @@ import subprocess
 import time
 
 from .schema import GpuInfo, GpuProcess, Snapshot
+from .procfs import process_uid, username_for_uid
 
 
 class NPUUnavailable(RuntimeError):
@@ -136,7 +137,16 @@ def parse_npu_smi(text: str) -> tuple[list[GpuInfo], str | None]:
         if device is None:
             continue
         pid = int(fields[1])
-        device.processes.append(GpuProcess(pid=pid, name=name, gpu_memory_mb=int(memory.group())))
+        uid = process_uid(pid)
+        device.processes.append(
+            GpuProcess(
+                pid=pid,
+                name=name,
+                gpu_memory_mb=int(memory.group()),
+                user=username_for_uid(uid),
+                user_uid=uid,
+            )
+        )
 
     return [devices[key] for key in sorted(devices)], driver
 

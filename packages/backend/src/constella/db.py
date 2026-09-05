@@ -182,6 +182,7 @@ class SQLiteStore:
               process_start_time REAL,
               parent_start_time REAL,
               user TEXT,
+              user_uid INTEGER,
               task_name TEXT NOT NULL,
               process_name TEXT NOT NULL,
               exe TEXT,
@@ -224,6 +225,7 @@ class SQLiteStore:
         self._ensure_column("gpus", "device_type", "TEXT NOT NULL DEFAULT 'nvidia'")
         self._ensure_column("gpus", "card_id", "TEXT")
         self._ensure_column("gpus", "die_id", "INTEGER")
+        self._ensure_column("process_sessions", "user_uid", "INTEGER")
         for stem in NVIDIA_GPM_ROLLUP_METRICS.values():
             self._ensure_column("nvidia_gpm_rollups", f"avg_{stem}", "REAL")
             self._ensure_column("nvidia_gpm_rollups", f"max_{stem}", "REAL")
@@ -745,7 +747,7 @@ class SQLiteStore:
         params.append(limit)
         rows = self._con().execute(
             f"""
-            SELECT session_id, node_id, pid, process_start_time, user, task_name,
+            SELECT session_id, node_id, pid, process_start_time, user, user_uid, task_name,
                    ppid, parent_start_time, process_name, exe, cmdline_hash,
                    first_seen_at, last_seen_at, duration_seconds, status, sample_count
             FROM process_sessions
@@ -786,10 +788,10 @@ class SQLiteStore:
                 """
                 INSERT INTO process_sessions (
                   session_id, node_id, pid, ppid, process_start_time, parent_start_time,
-                  user, task_name, process_name, exe, cmdline_hash, cmdline_text,
+                  user, user_uid, task_name, process_name, exe, cmdline_hash, cmdline_text,
                   first_seen_at, last_seen_at, duration_seconds, status, sample_count
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.0, 'running', 1)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0.0, 'running', 1)
                 ON CONFLICT(session_id) DO UPDATE SET
                   ppid=COALESCE(excluded.ppid, process_sessions.ppid),
                   parent_start_time=COALESCE(
@@ -797,6 +799,7 @@ class SQLiteStore:
                     process_sessions.parent_start_time
                   ),
                   user=COALESCE(excluded.user, process_sessions.user),
+                  user_uid=COALESCE(excluded.user_uid, process_sessions.user_uid),
                   task_name=excluded.task_name,
                   process_name=excluded.process_name,
                   exe=COALESCE(excluded.exe, process_sessions.exe),
@@ -815,6 +818,7 @@ class SQLiteStore:
                     process.process_start_time,
                     process.parent_start_time,
                     process.user,
+                    process.user_uid,
                     task_name,
                     process.name,
                     process.exe,
