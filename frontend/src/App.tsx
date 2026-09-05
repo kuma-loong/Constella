@@ -28,6 +28,7 @@ import {
 import type { JSX } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { createAnalyticsController, type Route } from "./analytics";
+import type { AppExtension, AppRoute } from "./app-extension";
 import { clusterRefreshInterval, findNode, sameInterval } from "./cluster-utils";
 import { Fabric, GpuGrid, Header, ProcessSection, Summary } from "./components";
 import { PerformancePage } from "./performance";
@@ -66,14 +67,14 @@ const DEFAULT_REFRESH_INTERVALS = [0.5, 1, 2, 5];
 const THEME_STORAGE_KEY = "constella.theme";
 const COLLAPSE_STORAGE_KEY = "constella.collapsed";
 
-export default function App() {
+export default function App({ extension }: { extension?: AppExtension }) {
   const [snapshot, setSnapshot] = useState<ClusterSnapshot | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [currentRefreshInterval, setCurrentRefreshInterval] = useState<number | null>(null);
   const [refreshPending, setRefreshPending] = useState(false);
   const [paused, setPaused] = useState(false);
   const [liveState, setLiveState] = useState<LiveState>("connecting");
-  const [route, setRoute] = useState<Route>(() => currentRoute());
+  const [route, setRoute] = useState<AppRoute>(() => currentRoute(extension));
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => readThemeMode());
   const [prefersDark, setPrefersDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => readCollapsedSections());
@@ -104,7 +105,7 @@ export default function App() {
       window.history.replaceState(null, "", "/overview");
       setRoute({ kind: "overview" });
     }
-    const onPopState = () => setRoute(currentRoute());
+    const onPopState = () => setRoute(currentRoute(extension));
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
@@ -138,7 +139,7 @@ export default function App() {
       overviewElement: overviewAnalyticsRef.current,
       nodeElement: nodeHistoryRef.current,
       jobElement: jobCurvesRef.current,
-      currentRoute: () => routeRef.current,
+      currentRoute: () => coreRoute(routeRef.current),
       renderIcons: () => createIcons({ icons: iconSet }),
     });
   }, []);
@@ -161,7 +162,7 @@ export default function App() {
     syncAnalyticsRoute(route);
   }, [route]);
 
-  function syncAnalyticsRoute(nextRoute: Route) {
+  function syncAnalyticsRoute(nextRoute: AppRoute) {
     const controller = analyticsRef.current;
     if (!controller) {
       return;
@@ -237,7 +238,14 @@ export default function App() {
 
   async function fetchSnapshot() {
     try {
-      const response = await fetch("/api/cluster/snapshot", { cache: "no-store" });
+      const response = await fetch("/api/cluster/snapshot", {
+        cache: "no-store",
+        headers: extension?.requestHeaders,
+      });
+      if (response.status === 401) {
+        extension?.onAuthenticationRequired?.();
+        return;
+      }
       const nextSnapshot = (await response.json()) as ClusterSnapshot;
       latestSnapshotRef.current = nextSnapshot;
       setSnapshot(nextSnapshot);
@@ -248,7 +256,14 @@ export default function App() {
 
   async function fetchSettings() {
     try {
-      const response = await fetch("/api/settings", { cache: "no-store" });
+      const response = await fetch("/api/settings", {
+        cache: "no-store",
+        headers: extension?.requestHeaders,
+      });
+      if (response.status === 401) {
+        extension?.onAuthenticationRequired?.();
+        return;
+      }
       if (!response.ok) {
         throw new Error(`settings request failed: ${response.status}`);
       }
@@ -261,7 +276,11 @@ export default function App() {
   }
 
   async function setRefreshInterval(interval: number) {
-    if (refreshPending || sameInterval(interval, currentRefreshInterval)) {
+    if (
+      refreshPending ||
+      extension?.canManageSettings === false ||
+      sameInterval(interval, currentRefreshInterval)
+    ) {
       return;
     }
     const previous = currentRefreshInterval;
@@ -270,7 +289,11 @@ export default function App() {
     try {
       const response = await fetch("/api/settings", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...extension?.requestHeaders,
+          "X-Constella-Request": "same-origin",
+        },
         body: JSON.stringify({ refresh_interval: interval }),
       });
       if (!response.ok) {
@@ -296,7 +319,7 @@ export default function App() {
     if (nextLocation !== currentLocation) {
       window.history.pushState(null, "", nextLocation);
     }
-    setRoute(currentRoute());
+    setRoute(currentRoute(extension));
   }
 
   function cycleThemeMode() {
@@ -336,7 +359,7 @@ export default function App() {
     }
 
     const link = targetElement.closest("a[href]") as HTMLAnchorElement | null;
-    if (shouldHandleAppLink(event, link)) {
+    if (shouldHandleAppLink(event, link, extension)) {
       event.preventDefault();
       navigateTo(`${link.pathname}${link.search}`);
     }
@@ -374,16 +397,19 @@ export default function App() {
         refreshIntervals={settings?.allowed_refresh_intervals || DEFAULT_REFRESH_INTERVALS}
         selectedRefreshInterval={selectedRefreshInterval}
         refreshPending={refreshPending}
+        canManageSettings={extension?.canManageSettings !== false}
         paused={paused}
         onRefreshInterval={setRefreshInterval}
         onTheme={cycleThemeMode}
         onPause={() => setPaused((value) => !value)}
         onRefresh={fetchSnapshot}
+        extraNavigation={extension?.renderNavigation(route)}
+        extraActions={extension?.renderHeaderActions()}
       />
 
       <main class="shell" id="mainContent">
-        <section class="summary-grid" hidden={route.kind === "performance"}>
-          <Summary snapshot={snapshot} route={route} selectedNode={selectedNode} />
+        <section class="summary-grid" hidden={route.kind === "performance" || route.kind === "extension"}>
+          <Summary snapshot={snapshot} route={coreRoute(route)} selectedNode={selectedNode} />
         </section>
 
         <PerformancePage snapshot={snapshot} visible={route.kind === "performance"} />
@@ -408,13 +434,21 @@ export default function App() {
         />
 
         <section class="analytics-section" ref={nodeHistoryRef} hidden={route.kind !== "node"} />
+
+        {route.kind === "extension" ? (
+          <section class="lab-page">{extension?.renderPage(route)}</section>
+        ) : null}
       </main>
     </div>
   );
 }
 
-function currentRoute(): Route {
+function currentRoute(extension?: AppExtension): AppRoute {
   const path = window.location.pathname.replace(/\/+$/, "") || "/overview";
+  const extensionRoute = extension?.parseRoute(path);
+  if (extensionRoute) {
+    return extensionRoute;
+  }
   if (path.startsWith("/nodes/")) {
     const encoded = path.slice("/nodes/".length);
     return { kind: "node", nodeId: decodeURIComponent(encoded) };
@@ -428,11 +462,11 @@ function currentRoute(): Route {
   return { kind: "overview" };
 }
 
-function isAppPath(pathname: string) {
-  return pathname === "/" || pathname === "/overview" || pathname === "/jobs" || pathname === "/performance" || pathname.startsWith("/nodes/");
+function isAppPath(pathname: string, extension?: AppExtension) {
+  return extension?.isPath(pathname) === true || pathname === "/" || pathname === "/overview" || pathname === "/jobs" || pathname === "/performance" || pathname.startsWith("/nodes/");
 }
 
-function shouldHandleAppLink(event: JSX.TargetedMouseEvent<HTMLDivElement>, link: HTMLAnchorElement | null): link is HTMLAnchorElement {
+function shouldHandleAppLink(event: JSX.TargetedMouseEvent<HTMLDivElement>, link: HTMLAnchorElement | null, extension?: AppExtension): link is HTMLAnchorElement {
   if (
     event.defaultPrevented ||
     event.button !== 0 ||
@@ -443,10 +477,14 @@ function shouldHandleAppLink(event: JSX.TargetedMouseEvent<HTMLDivElement>, link
   ) {
     return false;
   }
-  if (!link || link.origin !== window.location.origin || !isAppPath(link.pathname)) {
+  if (!link || link.origin !== window.location.origin || !isAppPath(link.pathname, extension)) {
     return false;
   }
   return !link.target && !link.hasAttribute("download");
+}
+
+function coreRoute(route: AppRoute): Route {
+  return route.kind === "extension" ? { kind: "overview" } : route;
 }
 
 function readThemeMode(): ThemeMode {

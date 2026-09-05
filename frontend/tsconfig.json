@@ -12,7 +12,11 @@
     "isolatedModules": true,
     "moduleDetection": "force",
     "noEmit": true,
-    "strict": true
+    "strict": true,
+    "baseUrl": ".",
+    "paths": {
+      "@constella-edition-entry": ["src/main.tsx"]
+    }
   },
   "include": ["src"]
 }

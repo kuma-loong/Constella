@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import type { ComponentChildren } from "preact";
 import type { Route } from "./analytics";
+import type { AppRoute } from "./app-extension";
 import {
   clamp,
   compactGpuName,
@@ -22,18 +24,21 @@ import type { ClusterSnapshot, GpuInfo, LiveState, NodeSnapshot, ThemeMode } fro
 
 export type HeaderProps = {
   snapshot: ClusterSnapshot | null;
-  route: Route;
+  route: AppRoute;
   selectedNode: NodeSnapshot | null;
   themeMode: ThemeMode;
   liveState: LiveState;
   refreshIntervals: number[];
   selectedRefreshInterval: number | null;
   refreshPending: boolean;
+  canManageSettings: boolean;
   paused: boolean;
   onRefreshInterval: (interval: number) => void;
   onTheme: () => void;
   onPause: () => void;
   onRefresh: () => void;
+  extraNavigation?: ComponentChildren;
+  extraActions?: ComponentChildren;
 };
 
 export function Header({
@@ -45,11 +50,14 @@ export function Header({
   refreshIntervals,
   selectedRefreshInterval,
   refreshPending,
+  canManageSettings,
   paused,
   onRefreshInterval,
   onTheme,
   onPause,
   onRefresh,
+  extraNavigation,
+  extraActions,
 }: HeaderProps) {
   const themeIcon = themeMode === "system" ? "monitor" : themeMode === "dark" ? "moon" : "sun";
   const pauseTitle = paused ? "Resume stream" : "Pause stream";
@@ -63,17 +71,17 @@ export function Header({
           <h1>
             <a href="/overview">Constella</a>
           </h1>
-          <p>{headerLine(snapshot, route, selectedNode)}</p>
+          <p>{headerLine(snapshot, route.kind === "extension" ? { kind: "overview" } : route, selectedNode)}</p>
         </div>
       </div>
 
-      <Nav snapshot={snapshot} route={route} />
+      <Nav snapshot={snapshot} route={route} extraNavigation={extraNavigation} />
 
       <div class="status-cluster">
         <RefreshControl
           intervals={refreshIntervals}
           selected={selectedRefreshInterval}
-          disabled={refreshPending}
+          disabled={refreshPending || !canManageSettings}
           onSelect={onRefreshInterval}
         />
         <button
@@ -101,6 +109,7 @@ export function Header({
         >
           <Icon name="refresh-cw" />
         </button>
+        {extraActions}
       </div>
     </header>
   );
@@ -141,7 +150,15 @@ export function RefreshControl({
   );
 }
 
-export function Nav({ snapshot, route }: { snapshot: ClusterSnapshot | null; route: Route }) {
+export function Nav({
+  snapshot,
+  route,
+  extraNavigation,
+}: {
+  snapshot: ClusterSnapshot | null;
+  route: AppRoute;
+  extraNavigation?: ComponentChildren;
+}) {
   const overviewActive = route.kind === "overview";
   const jobsActive = route.kind === "jobs";
   const performanceActive = route.kind === "performance";
@@ -160,6 +177,7 @@ export function Nav({ snapshot, route }: { snapshot: ClusterSnapshot | null; rou
           <Icon name="activity" />
           <span>Performance</span>
         </a>
+        {extraNavigation}
       </div>
       <div class="nav-row nav-row-nodes" aria-label="Nodes">
         {(snapshot?.nodes || []).map((node) => {

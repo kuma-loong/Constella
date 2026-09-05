@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.1.3"
+VERSION = "0.1.4"
 
 
 def load_project(path: str) -> dict[str, object]:
@@ -16,11 +16,16 @@ def load_project(path: str) -> dict[str, object]:
 def test_release_distribution_dependency_matrix() -> None:
     full = load_project(".")
     backend = load_project("packages/backend")
+    lab = load_project("packages/lab")
     web = load_project("packages/web")
     tui = load_project("packages/tui")
 
-    assert {project["version"] for project in (full, backend, web, tui)} == {VERSION}
+    assert {project["version"] for project in (full, backend, lab, web, tui)} == {VERSION}
     assert backend["name"] == "constella-gpu-backend"
+    assert lab["dependencies"] == [
+        f"constella-gpu-backend=={VERSION}",
+        "pyjwt[crypto]>=2.10.0,<3",
+    ]
     assert web["dependencies"] == [f"constella-gpu-backend=={VERSION}"]
     assert tui["dependencies"] == ["textual>=8.0.0,<9", "websockets>=13.0"]
     assert full["dependencies"] == [
@@ -28,6 +33,7 @@ def test_release_distribution_dependency_matrix() -> None:
         f"constella-gpu-web=={VERSION}",
     ]
     assert backend["scripts"] == {"constella": "constella.cli:main"}
+    assert lab["scripts"] == {"constella-lab": "constella_lab.cli:main"}
     assert tui["scripts"] == {"constella-tui": "constella_tui.app:main"}
     assert "scripts" not in web
     assert "scripts" not in full
@@ -37,9 +43,13 @@ def test_release_distribution_module_ownership() -> None:
     assert (ROOT / "packages/backend/src/constella/cli.py").is_file()
     assert not (ROOT / "packages/backend/src/constella_tui").exists()
     assert not (ROOT / "packages/backend/src/constella_web").exists()
+    assert not (ROOT / "packages/backend/src/constella_lab").exists()
 
     assert (ROOT / "packages/tui/src/constella_tui/app.py").is_file()
     assert not (ROOT / "packages/tui/src/constella").exists()
 
     assert (ROOT / "packages/web/src/constella_web/__init__.py").is_file()
     assert not (ROOT / "packages/web/src/constella").exists()
+
+    assert (ROOT / "packages/lab/src/constella_lab/app.py").is_file()
+    assert not (ROOT / "packages/lab/src/constella").exists()

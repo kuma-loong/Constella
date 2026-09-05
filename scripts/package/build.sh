@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
-rm -rf dist packages/web/src/constella_web/dist
+rm -rf dist packages/web/src/constella_web/dist packages/lab/src/constella_lab/dist
 
 pushd frontend >/dev/null
 if [[ -f package-lock.json ]]; then
@@ -13,6 +13,7 @@ else
   npm install
 fi
 npm run build:package
+npm run build:lab
 popd >/dev/null
 
 uv build --all-packages --out-dir dist

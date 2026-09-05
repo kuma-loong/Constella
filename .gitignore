@@ -10,6 +10,7 @@ node_modules/
 frontend/dist/
 frontend/.vite/
 packages/web/src/constella_web/dist/
+packages/lab/src/constella_lab/dist/
 
 logs/
 run/
