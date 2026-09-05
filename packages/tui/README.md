@@ -5,7 +5,7 @@ connects to a centrally deployed Constella service and reads the realtime
 `/ws/cluster` stream and historical analytics APIs, so live monitoring and
 completed workloads stay available in one terminal workspace.
 
-Constella natively supports heterogeneous accelerator clusters. Version 0.1.3
+Constella natively supports heterogeneous accelerator clusters. Version 0.1.4
 supports NVIDIA GPUs and Ascend NPUs.
 
 ## Views
@@ -25,7 +25,7 @@ Rankings and History require the manager database. They show an explicit unavail
 Install the standalone TUI distribution:
 
 ```bash
-uv tool install "constella-gpu-tui==0.1.3"
+uv tool install "constella-gpu-tui==0.1.4"
 constella-tui
 ```
 

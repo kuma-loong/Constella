@@ -3,6 +3,34 @@
 All notable changes to Constella are documented in this file. Python
 distribution versions follow PEP 440; Git tags use a hyphenated equivalent.
 
+## [0.1.4] - 2026-09-06
+
+### Added
+
+- Added the optional `constella-gpu-lab` distribution with Cloudflare Access
+  identity verification, local roles, lifecycle administration, audit records,
+  and an independent SQLite identity database.
+- Added atomic, self-service Linux account binding across multiple selected
+  nodes, backed by a capability-gated account lookup RPC on existing agents.
+- Added numeric process UIDs to live snapshots and process-session history so
+  workload attribution remains stable when usernames change.
+
+### Security
+
+- Added issuer, audience, signature, expiry, and application-type validation for
+  Cloudflare Access assertions, plus fail-closed startup configuration.
+- Added server-side role enforcement, Origin and request-marker CSRF checks,
+  session-bounded WebSockets, account lookup limits, and immutable audit events.
+- Preserved separate token authentication for Agent and high-resolution machine
+  connections; Linux account lookup executes no shell commands and needs no root.
+
+### Changed
+
+- Added a generic core extension boundary and edition entry point so the public
+  Web and backend packages remain independent of Lab-only code and dependencies.
+- Updated the frontend build dependency lock to resolve published Browserslist
+  security advisories.
+
 ## [0.1.3] - 2026-08-25
 
 Final release of 0.1.3, incorporating the release candidate and the following
@@ -75,5 +103,6 @@ First release candidate for 0.1.3.
   compatible NVML hardware, driver, and metric profiles.
 - The TUI continues to use the existing manager HTTP and `/ws/cluster` APIs.
 
+[0.1.4]: https://github.com/kuma-loong/Constella/releases/tag/v0.1.4
 [0.1.3]: https://github.com/kuma-loong/Constella/releases/tag/v0.1.3
 [0.1.3rc1]: https://github.com/kuma-loong/Constella/releases/tag/v0.1.3-rc.1

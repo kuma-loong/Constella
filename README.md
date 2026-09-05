@@ -30,7 +30,7 @@
 
 Constella is a lightweight accelerator monitoring platform for labs, AI teams,
 and personal compute servers. It natively supports heterogeneous clusters;
-version 0.1.3 supports NVIDIA GPUs and Ascend NPUs.
+version 0.1.4 supports NVIDIA GPUs and Ascend NPUs.
 
 Unlike terminal tools that only show the current state, Constella automatically
 records accelerator workload history, making it easy to review completed
@@ -245,6 +245,8 @@ The manager does not sample GPUs directly. Local and remote nodes both report cu
 - [SQLite History](docs/HISTORY.md): persistence, rollups, maintenance, and job curves.
 - [NVIDIA GPM Performance](docs/NVIDIA_GPM.md): requirements, metric interpretation, retention, and troubleshooting.
 - [Cloudflare Tunnel](docs/CLOUD_TUNNEL.md): domain access without opening an inbound server port.
+- [Lab user system](docs/user-system-design-zh.md): Access identity, roles, audit, and multi-node Linux account binding.
+- [Lab deployment](docs/LAB_DEPLOYMENT.md): build, environment, rollout, backup, and member onboarding.
 - [Node manifest example](docs/nodes.example.yaml): `nodes.yaml` template for remote agents.
 - [PyPI CLI](docs/PYPI_CLI.md): installed service, probe, agent, and cluster commands.
 - [Packaging](docs/PACKAGING.md): build and safely smoke-test wheel and source distributions.
@@ -254,6 +256,7 @@ The manager does not sample GPUs directly. Local and remote nodes both report cu
 
 ```text
 packages/backend/       Python backend, agents, cluster manager, samplers, API/WebSocket
+packages/lab/           Optional Access-protected lab identity and account-binding edition
 packages/web/           Installable production Web assets
 packages/tui/           Textual terminal client, theme, and usage notes
 src/constella_gpu/      Full-distribution metadata package
@@ -282,7 +285,7 @@ npm run dev
 ```
 
 For a release build, `scripts/package/build.sh` builds the frontend into the Web
-distribution and produces all four wheel/source-distribution pairs.
+and Lab distributions and produces all five wheel/source-distribution pairs.
 
 ## API
 

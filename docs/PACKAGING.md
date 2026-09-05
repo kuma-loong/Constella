@@ -1,21 +1,24 @@
 # Packaging Constella for PyPI
 
-Constella 0.1.3 is published as four composable distributions. Each feature is
+Constella 0.1.4 is published as five composable distributions. Each feature is
 owned by exactly one wheel, so installing variants together never overwrites a
 shared Python package.
 
-| Distribution | Backend/API | Web UI | TUI |
-| --- | :---: | :---: | :---: |
-| `constella-gpu` | Yes | Yes | Yes |
-| `constella-gpu-web` | Yes | Yes | No |
-| `constella-gpu-tui` | No | No | Yes |
-| `constella-gpu-backend` | Yes | No | No |
+| Distribution | Backend/API | Web UI | Lab identity | TUI |
+| --- | :---: | :---: | :---: | :---: |
+| `constella-gpu` | Yes | Yes | No | Yes |
+| `constella-gpu-web` | Yes | Yes | No | No |
+| `constella-gpu-lab` | Yes | Lab UI | Yes | No |
+| `constella-gpu-tui` | No | No | No | Yes |
+| `constella-gpu-backend` | Yes | No | No | No |
 
 Package ownership:
 
 - `constella-gpu-backend` owns the `constella` module and `constella` command.
 - `constella-gpu-web` owns only the `constella_web` static-asset package and
   depends on the backend.
+- `constella-gpu-lab` owns `constella_lab`, the Lab static assets, and the
+  `constella-lab` command. It depends on the backend, which never imports Lab.
 - `constella-gpu-tui` owns `constella_tui` and `constella-tui`. It is a remote
   client and deliberately does not depend on the backend.
 - `constella-gpu` is the full meta distribution and depends on Web and TUI.
@@ -32,8 +35,9 @@ TUI distribution is installed.
 ```
 
 The script runs the frontend build into
-`packages/web/src/constella_web/dist`, then uses the uv workspace to build four
-wheels and four source distributions under `dist/`. Generated Web assets and
+`packages/web/src/constella_web/dist` and the Lab build into
+`packages/lab/src/constella_lab/dist`, then uses the uv workspace to build five
+wheels and five source distributions under `dist/`. Generated assets and
 `dist/` are ignored by Git.
 
 Before upload, verify the artifact set and metadata:
@@ -48,7 +52,7 @@ uvx twine check dist/*
 Full installation:
 
 ```bash
-pip install "constella-gpu==0.1.3"
+pip install "constella-gpu==0.1.4"
 constella service start
 constella tui
 ```
@@ -56,23 +60,33 @@ constella tui
 Web-only frontend installation:
 
 ```bash
-pip install "constella-gpu-web==0.1.3"
+pip install "constella-gpu-web==0.1.4"
 constella service start
 ```
 
 Standalone TUI client installation:
 
 ```bash
-uv tool install "constella-gpu-tui==0.1.3"
+uv tool install "constella-gpu-tui==0.1.4"
 constella-tui --url https://gpu.example.com
 ```
 
 Backend/API-only installation:
 
 ```bash
-uv tool install "constella-gpu-backend==0.1.3"
+uv tool install "constella-gpu-backend==0.1.4"
 constella service start --no-local-agent
 ```
+
+Lab installation:
+
+```bash
+pip install "constella-gpu-lab==0.1.4"
+constella-lab serve --host 127.0.0.1 --port 8765
+```
+
+Lab deliberately remains outside the full public monitoring distribution. See
+[Lab deployment](LAB_DEPLOYMENT.md) for required fail-closed Access settings.
 
 `uv tool install` is intentionally used for the standalone TUI and backend
 distributions because each owns an executable. The Web distribution is a

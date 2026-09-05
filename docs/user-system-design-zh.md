@@ -12,7 +12,7 @@
 
 Constella Lab 的第一版用户系统采用下面的组合：
 
-- **Cloudflare Tunnel** 暴露公网域名，Constella manager 仍只监听 `127.0.0.1`。
+- **Cloudflare Tunnel** 暴露公网域名并连接 manager 的 loopback 地址；如远端 agent 通过受信私网直连，manager 可显式监听私网地址，并用防火墙限制来源。
 - **Cloudflare Access + 邮箱一次性验证码（OTP）** 负责登录和入口准入，不自建密码、验证码或邮件服务。
 - Access 的应用和策略会话时长均设置为 **一个月**。用户通常不需要重复收取验证码，但在会话过期、主动退出、清除 Cookie、更换浏览器或管理员撤销会话后需要重新验证。
 - 管理员在 Cloudflare Access 中维护允许登录的**精确邮箱列表**。不能只用“登录方式为 OTP”作为允许条件，否则任何能收到 OTP 的邮箱都可能进入。
@@ -54,7 +54,7 @@ Constella Lab 的第一版用户系统采用下面的组合：
 flowchart LR
   U["成员浏览器"] -->|"邮箱 OTP / 一个月 Access 会话"| CF["Cloudflare Access"]
   CF --> T["Cloudflare Tunnel"]
-  T -->|"Cf-Access-Jwt-Assertion"| M["Constella manager<br/>127.0.0.1"]
+  T -->|"Cf-Access-Jwt-Assertion<br/>loopback origin"| M["Constella manager<br/>loopback 或受限私网监听"]
 
   M --> LDB["Lab SQLite<br/>用户、绑定、审计"]
   M --> TDB["可选遥测 SQLite<br/>任务与指标"]
