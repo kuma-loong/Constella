@@ -102,7 +102,7 @@ export function AdminPage({ currentUser, onUserChange }: { currentUser: LabUser;
   const pendingUsers = data.users.filter((user) => user.status === "pending_identity_review");
 
   return <div class="lab-stack">
-    <header class="lab-page-head"><div><p class="lab-eyebrow">Administration</p><h2>Lab access control</h2><p>Manage local roles, correct bindings, and review security-sensitive changes.</p></div><button class="lab-button is-quiet" type="button" onClick={() => void load()}>Refresh</button></header>
+    <header class="lab-page-head"><div><p class="lab-eyebrow">Lab management</p><h2>People and access</h2><p>Manage member access, correct bindings, and review security-sensitive changes.</p></div><button class="lab-button is-quiet" type="button" onClick={() => void load()}>Refresh</button></header>
     {message ? <div class="lab-notice" role="status">{message}</div> : null}
 
     <section class="lab-panel" aria-labelledby="labUsersTitle">
@@ -151,7 +151,7 @@ function UserRow({ user, onSave }: { user: LabUser; onSave: (user: LabUser, role
   const [role, setRole] = useState<LabRole>(user.role);
   const [status, setStatus] = useState<LabUserStatus>(user.status);
   const changed = role !== user.role || status !== user.status;
-  return <tr><td><strong>{user.display_name || user.email}</strong>{user.display_name ? <small>{user.email}</small> : null}</td><td><label class="sr-only" for={`role-${user.id}`}>Role for {user.email}</label><select id={`role-${user.id}`} value={role} onChange={(event) => setRole(event.currentTarget.value as LabRole)}><option value="viewer">viewer</option><option value="member">member</option><option value="admin">admin</option></select></td><td><label class="sr-only" for={`status-${user.id}`}>Status for {user.email}</label><select id={`status-${user.id}`} value={status} onChange={(event) => setStatus(event.currentTarget.value as LabUserStatus)}><option value="active">active</option><option value="disabled">disabled</option><option value="pending_identity_review">pending review</option></select></td><td>{user.active_binding_count || 0}</td><td>{formatDate(user.last_login_at)}</td><td><button class="lab-button is-quiet" type="button" disabled={!changed} onClick={() => void onSave(user, role, status)}>Save</button></td></tr>;
+  return <tr><td><strong>{user.display_name || user.email}</strong>{user.display_name ? <small>{user.email}</small> : null}</td><td><label class="sr-only" for={`role-${user.id}`}>Role for {user.email}</label><select id={`role-${user.id}`} value={role} onChange={(event) => setRole(event.currentTarget.value as LabRole)}><option value="viewer">View only</option><option value="member">Member</option><option value="admin">Lab administrator</option></select></td><td><label class="sr-only" for={`status-${user.id}`}>Status for {user.email}</label><select id={`status-${user.id}`} value={status} onChange={(event) => setStatus(event.currentTarget.value as LabUserStatus)}><option value="active">Active</option><option value="disabled">Disabled</option><option value="pending_identity_review">Pending review</option></select></td><td>{user.active_binding_count || 0}</td><td>{formatDate(user.last_login_at)}</td><td><button class="lab-button is-quiet" type="button" disabled={!changed} onClick={() => void onSave(user, role, status)}>Save</button></td></tr>;
 }
 
 function formatDate(timestamp: number) {

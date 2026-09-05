@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { LabApiError, labRequest } from "./api";
-import type { AccountResult, BindingNode, LabUser } from "./types";
+import { labRoleLabel, type AccountResult, type BindingNode, type LabUser } from "./types";
 
 type AccountDraft = { selected: boolean; username: string };
 
@@ -12,6 +12,9 @@ export function AccountPage({ user, onUserChange }: { user: LabUser; onUserChang
   const [results, setResults] = useState<AccountResult[] | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "previewing" | "binding" | "error">("loading");
   const [message, setMessage] = useState("");
+  const [displayName, setDisplayName] = useState(user.display_name || "");
+  const [profileState, setProfileState] = useState<"ready" | "saving">("ready");
+  const [profileMessage, setProfileMessage] = useState("");
 
   useEffect(() => {
     if (canBind) {
@@ -20,6 +23,10 @@ export function AccountPage({ user, onUserChange }: { user: LabUser; onUserChang
       setState("ready");
     }
   }, [canBind]);
+
+  useEffect(() => {
+    setDisplayName(user.display_name || "");
+  }, [user.display_name]);
 
   const activeNodeIds = useMemo(
     () => new Set(user.bindings.filter((binding) => !binding.valid_to).map((binding) => binding.node_id)),
@@ -73,6 +80,24 @@ export function AccountPage({ user, onUserChange }: { user: LabUser; onUserChang
     setResults(null);
   }
 
+  async function saveProfile(event: SubmitEvent) {
+    event.preventDefault();
+    setProfileState("saving");
+    setProfileMessage("");
+    try {
+      const payload = await labRequest<{ user: LabUser }>("/api/lab/me", {
+        method: "PATCH",
+        body: JSON.stringify({ display_name: displayName.trim() || null }),
+      });
+      onUserChange(payload.user);
+      setProfileMessage("Display name updated.");
+    } catch (error) {
+      setProfileMessage(formatError(error));
+    } finally {
+      setProfileState("ready");
+    }
+  }
+
   async function preview() {
     if (!selectedAccounts.length || selectedAccounts.some((account) => !account.username)) {
       setMessage("Select at least one available node and enter every Linux username.");
@@ -110,7 +135,7 @@ export function AccountPage({ user, onUserChange }: { user: LabUser; onUserChang
       setDrafts((previous) =>
         Object.fromEntries(Object.entries(previous).map(([key, draft]) => [key, { ...draft, selected: false }])),
       );
-      setMessage("Account bindings created.");
+      setMessage("Node accounts connected.");
       setState("ready");
     } catch (error) {
       setMessage(formatError(error));
@@ -119,14 +144,14 @@ export function AccountPage({ user, onUserChange }: { user: LabUser; onUserChang
   }
 
   async function endBinding(bindingId: string) {
-    if (!window.confirm("End this account binding? Historical ownership records will be retained.")) {
+    if (!window.confirm("Disconnect this node account? Historical ownership records will be retained.")) {
       return;
     }
     try {
       await labRequest(`/api/lab/account-bindings/${encodeURIComponent(bindingId)}`, { method: "DELETE" });
       const payload = await labRequest<{ user: LabUser }>("/api/lab/me");
       onUserChange(payload.user);
-      setMessage("Binding ended.");
+      setMessage("Node account disconnected.");
       await loadNodes();
     } catch (error) {
       setMessage(formatError(error));
@@ -137,45 +162,77 @@ export function AccountPage({ user, onUserChange }: { user: LabUser; onUserChang
     <div class="lab-stack">
       <header class="lab-page-head">
         <div>
-          <p class="lab-eyebrow">Identity</p>
-          <h2>My Linux accounts</h2>
-          <p>Connect your signed-in identity to one account on each GPU node.</p>
+          <p class="lab-eyebrow">Profile</p>
+          <h2>Your access</h2>
+          <p>Choose how you appear in Constella and connect your GPU node accounts.</p>
         </div>
-        <span class="lab-role-label">{user.role}</span>
+        <span class="lab-role-label">{labRoleLabel(user.role)}</span>
       </header>
+
+      <section class="lab-panel" aria-labelledby="profileTitle">
+        <div class="lab-panel-head">
+          <div>
+            <h3 id="profileTitle">Display name</h3>
+            <p>This name appears in the header and member management. It does not change any Linux username.</p>
+          </div>
+        </div>
+        <form class="lab-profile-form" onSubmit={saveProfile}>
+          <label>
+            <span>Name</span>
+            <input
+              value={displayName}
+              maxLength={80}
+              autoComplete="name"
+              placeholder="How others should see you"
+              onInput={(event) => {
+                setDisplayName(event.currentTarget.value);
+                setProfileMessage("");
+              }}
+            />
+          </label>
+          <button
+            class="lab-button is-primary"
+            type="submit"
+            disabled={profileState === "saving" || displayName.trim() === (user.display_name || "")}
+          >
+            {profileState === "saving" ? "Saving..." : "Save name"}
+          </button>
+          {profileMessage ? <span class="lab-profile-message" role="status">{profileMessage}</span> : null}
+        </form>
+      </section>
 
       <section class="lab-panel" aria-labelledby="currentBindingsTitle">
         <div class="lab-panel-head">
           <div>
-            <h3 id="currentBindingsTitle">Current bindings</h3>
+            <h3 id="currentBindingsTitle">Connected node accounts</h3>
             <p>Task ownership is matched by node and numeric UID.</p>
           </div>
         </div>
         {user.bindings.filter((binding) => !binding.valid_to).length ? (
           <div class="lab-table-scroll">
             <table class="lab-table">
-              <thead><tr><th>Node</th><th>Linux user</th><th>UID</th><th>Assurance</th><th>Since</th><th><span class="sr-only">Action</span></th></tr></thead>
+              <thead><tr><th>Node</th><th>Linux user</th><th>UID</th><th>Verification</th><th>Since</th><th><span class="sr-only">Action</span></th></tr></thead>
               <tbody>
                 {user.bindings.filter((binding) => !binding.valid_to).map((binding) => (
                   <tr key={binding.id}>
                     <td>{binding.node_id}</td><td><code>{binding.unix_username}</code></td><td>{binding.unix_uid}</td>
                     <td><span class="lab-status-label">{assuranceLabel(binding.assurance)}</span></td>
                     <td>{formatDate(binding.valid_from)}</td>
-                    <td class="lab-action-cell"><button class="lab-button is-quiet" type="button" onClick={() => void endBinding(binding.id)}>End</button></td>
+                    <td class="lab-action-cell"><button class="lab-button is-quiet" type="button" onClick={() => void endBinding(binding.id)}>Disconnect</button></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        ) : <div class="lab-empty">No accounts bound yet. Select one or more nodes below.</div>}
+        ) : <div class="lab-empty">No node accounts connected yet. Select one or more nodes below.</div>}
       </section>
 
       {!canBind ? <section class="lab-panel" aria-labelledby="newBindingsTitle">
-        <div class="lab-panel-head"><div><h3 id="newBindingsTitle">Add bindings</h3><p>Your viewer role does not permit Linux account binding.</p></div></div>
+        <div class="lab-panel-head"><div><h3 id="newBindingsTitle">Connect node accounts</h3><p>Your view-only role does not permit Linux account connections.</p></div></div>
         <div class="lab-empty">Ask a Lab administrator to grant member access before claiming a node account.</div>
       </section> : <section class="lab-panel" aria-labelledby="newBindingsTitle">
         <div class="lab-panel-head">
-          <div><h3 id="newBindingsTitle">Add bindings</h3><p>Each selected node is queried independently. The final write succeeds as one batch.</p></div>
+          <div><h3 id="newBindingsTitle">Connect node accounts</h3><p>Constella checks every selected node before connecting the accounts together.</p></div>
           <button class="lab-button is-quiet" type="button" onClick={() => void loadNodes()} disabled={state === "loading"}>Refresh nodes</button>
         </div>
 
@@ -203,11 +260,11 @@ export function AccountPage({ user, onUserChange }: { user: LabUser; onUserChang
           </div>
         ) : <div class="lab-empty">No monitored nodes are available yet.</div>}
 
-        {message ? <div class={`lab-notice ${message.includes("created") || message.includes("ended") ? "is-success" : "is-warning"}`} role="status">{message}</div> : null}
+        {message ? <div class={`lab-notice ${message.includes("connected") ? "is-success" : "is-warning"}`} role="status">{message}</div> : null}
         {results?.length && results.every((result) => result.bindable) ? (
           <div class="lab-confirm">
-            <div><strong>Confirm self-claimed bindings</strong><p>The accounts exist, but ownership has not been proven. These bindings are only for task attribution and personal statistics.</p></div>
-            <button class="lab-button is-primary" type="button" disabled={state === "binding"} onClick={() => void bind()}>{state === "binding" ? "Binding..." : `Bind ${results.length} account${results.length === 1 ? "" : "s"}`}</button>
+            <div><strong>Confirm account connections</strong><p>The accounts exist, but ownership has not been proven. They are only used for task attribution and personal statistics.</p></div>
+            <button class="lab-button is-primary" type="button" disabled={state === "binding"} onClick={() => void bind()}>{state === "binding" ? "Connecting..." : `Connect ${results.length} account${results.length === 1 ? "" : "s"}`}</button>
           </div>
         ) : null}
         <div class="lab-panel-actions"><button class="lab-button is-primary" type="button" disabled={state === "previewing" || state === "binding" || !selectedAccounts.length} onClick={() => void preview()}>{state === "previewing" ? "Checking nodes..." : "Check selected accounts"}</button></div>
@@ -224,9 +281,9 @@ function resultError(error?: string) {
 }
 
 function assuranceLabel(value: string) {
-  if (value === "admin_verified") return "admin verified";
-  if (value === "node_verified") return "node verified";
-  return "self claimed";
+  if (value === "admin_verified") return "Admin verified";
+  if (value === "node_verified") return "Node verified";
+  return "Not verified";
 }
 
 function formatDate(timestamp: number) {

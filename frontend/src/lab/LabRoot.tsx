@@ -5,7 +5,7 @@ import { Icon } from "../components";
 import { LAB_HEADERS, LabApiError, labRequest } from "./api";
 import { AccountPage } from "./AccountPage";
 import { AdminPage } from "./AdminPage";
-import type { LabUser } from "./types";
+import { labRoleLabel, type LabUser } from "./types";
 
 export function LabRoot() {
   const [user, setUser] = useState<LabUser | null>(null);
@@ -22,6 +22,10 @@ export function LabRoot() {
   async function loadUser() {
     try {
       const payload = await labRequest<{ user: LabUser }>("/api/lab/me");
+      const canonicalPath = canonicalLabPath(window.location.pathname, payload.user.role === "admin");
+      if (canonicalPath && canonicalPath !== window.location.pathname) {
+        window.history.replaceState(null, "", canonicalPath);
+      }
       setUser(payload.user);
       setError(null);
     } catch (caught) {
@@ -35,15 +39,16 @@ export function LabRoot() {
 
   const extension = useMemo<AppExtension | undefined>(() => {
     if (!user) return undefined;
+    const canManageLab = user.role === "admin";
     return {
-      parseRoute,
-      isPath: (pathname) => pathname === "/account" || pathname === "/admin",
-      renderNavigation: (route) => <LabNavigation route={route} admin={user.role === "admin"} />,
+      parseRoute: (pathname) => parseRoute(pathname, canManageLab),
+      isPath: (pathname) => ["/profile", "/management", "/account", "/admin"].includes(pathname),
+      renderNavigation: (route) => <LabNavigation route={route} canManageLab={canManageLab} />,
       renderHeaderActions: () => <UserMenu user={user} />,
-      renderPage: (route) => route.key === "admin" && user.role === "admin"
+      renderPage: (route) => route.key === "management" && canManageLab
         ? <AdminPage currentUser={user} onUserChange={setUser} />
         : <AccountPage user={user} onUserChange={setUser} />,
-      canManageSettings: user.role === "admin",
+      canManageSettings: canManageLab,
       requestHeaders: LAB_HEADERS,
       onAuthenticationRequired: () => window.location.reload(),
     };
@@ -62,23 +67,34 @@ export function LabRoot() {
   return <App extension={extension} />;
 }
 
-function parseRoute(pathname: string): ExtensionRoute | null {
-  if (pathname === "/account") return { kind: "extension", key: "account" };
-  if (pathname === "/admin") return { kind: "extension", key: "admin" };
+function parseRoute(pathname: string, canManageLab: boolean): ExtensionRoute | null {
+  if (pathname === "/profile" || pathname === "/account") {
+    return { kind: "extension", key: "profile" };
+  }
+  if (pathname === "/management" || pathname === "/admin") {
+    return { kind: "extension", key: canManageLab ? "management" : "profile" };
+  }
   return null;
 }
 
-function LabNavigation({ route, admin }: { route: AppRoute; admin: boolean }) {
+function canonicalLabPath(pathname: string, canManageLab: boolean): string | null {
+  if (pathname === "/account") return "/profile";
+  if (pathname === "/admin") return canManageLab ? "/management" : "/profile";
+  if (pathname === "/management" && !canManageLab) return "/profile";
+  return null;
+}
+
+function LabNavigation({ route, canManageLab }: { route: AppRoute; canManageLab: boolean }) {
   return <>
-    <a class={`nav-link ${route.kind === "extension" && route.key === "account" ? "is-active" : ""}`} aria-current={route.kind === "extension" && route.key === "account" ? "page" : undefined} href="/account"><Icon name="users" /><span>My account</span></a>
-    {admin ? <a class={`nav-link ${route.kind === "extension" && route.key === "admin" ? "is-active" : ""}`} aria-current={route.kind === "extension" && route.key === "admin" ? "page" : undefined} href="/admin"><Icon name="database" /><span>Admin</span></a> : null}
+    <a class={`nav-link ${route.kind === "extension" && route.key === "profile" ? "is-active" : ""}`} aria-current={route.kind === "extension" && route.key === "profile" ? "page" : undefined} href="/profile"><Icon name="users" /><span>Profile</span></a>
+    {canManageLab ? <a class={`nav-link ${route.kind === "extension" && route.key === "management" ? "is-active" : ""}`} aria-current={route.kind === "extension" && route.key === "management" ? "page" : undefined} href="/management"><Icon name="database" /><span>Lab management</span></a> : null}
   </>;
 }
 
 function UserMenu({ user }: { user: LabUser }) {
   const label = user.display_name || user.email.split("@")[0];
   return <details class="lab-user-menu">
-    <summary aria-label={`Signed in as ${user.email}`} title={user.email}><span class="lab-user-avatar">{label.slice(0, 2).toUpperCase()}</span><span class="lab-user-summary"><strong>{label}</strong><small>{user.role}</small></span></summary>
-    <div class="lab-user-popover"><strong>{user.display_name || user.email}</strong>{user.display_name ? <span>{user.email}</span> : null}<span class="lab-status-label">{user.role}</span><a href="/account">My account</a>{user.role === "admin" ? <a href="/admin">Administration</a> : null}<a href="/cdn-cgi/access/logout">Sign out</a></div>
+    <summary aria-label={`Signed in as ${user.email}`} title={user.email}><span class="lab-user-avatar">{label.slice(0, 2).toUpperCase()}</span><span class="lab-user-summary"><strong>{label}</strong><small>{labRoleLabel(user.role)}</small></span></summary>
+    <div class="lab-user-popover"><strong>{user.display_name || user.email}</strong>{user.display_name ? <span>{user.email}</span> : null}<span class="lab-status-label">{labRoleLabel(user.role)}</span><a href="/profile">Profile</a>{user.role === "admin" ? <a href="/management">Lab management</a> : null}<a href="/cdn-cgi/access/logout">Sign out</a></div>
   </details>;
 }

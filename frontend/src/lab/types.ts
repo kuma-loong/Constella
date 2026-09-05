@@ -1,6 +1,12 @@
 export type LabRole = "viewer" | "member" | "admin";
 export type LabUserStatus = "active" | "disabled" | "pending_identity_review";
 
+export function labRoleLabel(role: LabRole) {
+  if (role === "admin") return "Lab administrator";
+  if (role === "viewer") return "View only";
+  return "Member";
+}
+
 export type LabBinding = {
   id: string;
   user_id: string;

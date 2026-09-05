@@ -146,6 +146,7 @@
 .lab-table input:not([type="checkbox"]),
 .lab-table select,
 .lab-fill-row input,
+.lab-profile-form input,
 .lab-admin-form input,
 .lab-admin-form select {
   width: 100%;
@@ -161,6 +162,7 @@
 .lab-table input:focus-visible,
 .lab-table select:focus-visible,
 .lab-fill-row input:focus-visible,
+.lab-profile-form input:focus-visible,
 .lab-admin-form input:focus-visible,
 .lab-admin-form select:focus-visible {
   outline: none;
@@ -304,12 +306,28 @@
 }
 
 .lab-fill-row label span,
+.lab-profile-form label span,
 .lab-admin-form label span {
   display: block;
   margin-bottom: 5px;
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
+}
+
+.lab-profile-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 360px) auto minmax(0, 1fr);
+  align-items: end;
+  gap: 12px;
+  padding: 16px 18px;
+  background: var(--surface-raised);
+}
+
+.lab-profile-message {
+  align-self: center;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .lab-admin-form {
@@ -507,6 +525,10 @@
   }
 
   .lab-admin-form {
+    grid-template-columns: 1fr;
+  }
+
+  .lab-profile-form {
     grid-template-columns: 1fr;
   }
 

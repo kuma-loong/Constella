@@ -78,12 +78,14 @@ export function Header({
       <Nav snapshot={snapshot} route={route} extraNavigation={extraNavigation} />
 
       <div class="status-cluster">
-        <RefreshControl
-          intervals={refreshIntervals}
-          selected={selectedRefreshInterval}
-          disabled={refreshPending || !canManageSettings}
-          onSelect={onRefreshInterval}
-        />
+        {canManageSettings ? (
+          <RefreshControl
+            intervals={refreshIntervals}
+            selected={selectedRefreshInterval}
+            disabled={refreshPending}
+            onSelect={onRefreshInterval}
+          />
+        ) : null}
         <button
           class="icon-button theme-button"
           type="button"

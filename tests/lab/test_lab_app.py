@@ -103,11 +103,18 @@ def test_member_cannot_change_settings_and_csrf_is_required(tmp_path) -> None:
             "/api/settings", json={"refresh_interval": 2}, headers=headers(csrf=True)
         )
         no_csrf = client.patch("/api/lab/me", json={}, headers=headers())
+        updated_profile = client.patch(
+            "/api/lab/me",
+            json={"display_name": "Lab Member"},
+            headers=headers(csrf=True),
+        )
 
     assert denied.status_code == 403
     assert denied.json()["error"] == "admin_required"
     assert no_csrf.status_code == 403
     assert no_csrf.json()["error"] == "csrf_check_failed"
+    assert updated_profile.status_code == 200
+    assert updated_profile.json()["user"]["display_name"] == "Lab Member"
 
 
 def test_viewer_cannot_query_or_bind_node_accounts(tmp_path) -> None:
