@@ -1257,7 +1257,7 @@ svg {
 
 .heat-legend-abnormal b {
   display: block;
-  width: 12px;
+  width: 24px;
   height: 10px;
   border: 1px solid color-mix(in srgb, var(--danger) 78%, var(--border));
   border-radius: 3px;
