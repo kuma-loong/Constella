@@ -368,13 +368,17 @@
     width: 100%;
   }
 
+  .heatmap-scroll {
+    overflow-x: auto;
+  }
+
   .heatmap-card {
     width: 100%;
   }
 
   .heat-row,
   .heat-axis {
-    grid-template-columns: repeat(12, minmax(22px, 1fr));
+    grid-template-columns: repeat(12, minmax(0, 1fr));
     gap: 3px;
   }
 
@@ -383,6 +387,12 @@
   }
 
   .heat-legend {
+    align-items: flex-start;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .heat-legend-scale {
     width: min(224px, 100%);
   }
 

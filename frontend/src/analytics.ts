@@ -246,6 +246,8 @@ const NODE_RANGES = ["1h", "24h", "7d", "30d"];
 const HEATMAP_HOURS = 12;
 const HEATMAP_RANGE = "24h";
 const HOUR_SECONDS = 60 * 60;
+const ABNORMAL_MEMORY_MB = 20 * 1024;
+const ABNORMAL_GPU_UTILIZATION = 5;
 const NODE_METRICS: { key: NodeMetric; label: string; max?: number }[] = [
   { key: "avg_gpu_utilization", label: "Utilization", max: 100 },
   { key: "avg_memory_used_mb", label: "Memory" },
@@ -1565,6 +1567,7 @@ type HourlyHeatCell = {
   peak: number;
   memoryAvg: number;
   hasData: boolean;
+  isAbnormal: boolean;
 };
 
 type HourlyHeatRow = {
@@ -1581,28 +1584,35 @@ function heatmapChart(items: AnalyticsHeatmap[], payload: NodeAnalytics | null) 
         ${heatAxis(rows[0]?.cells.map((cell) => cell.start) || [])}
       </div>
     </div>
-    <div class="heat-legend" aria-label="Heatmap utilization legend">
-      <b class="heat-legend-ramp"></b>
-      <span class="heat-legend-labels">
-        <span>idle</span>
-        <span>low</span>
-        <span>active</span>
-        <span>busy</span>
+    <div class="heat-legend" aria-label="Heatmap utilization and abnormal occupancy legend">
+      <div class="heat-legend-scale">
+        <b class="heat-legend-ramp"></b>
+        <span class="heat-legend-labels">
+          <span>idle</span>
+          <span>low</span>
+          <span>active</span>
+          <span>busy</span>
+        </span>
+      </div>
+      <span class="heat-legend-abnormal">
+        <b aria-hidden="true"></b>
+        <span>abnormal occupancy</span>
       </span>
     </div>
   `;
 }
 
 function hourlyHeatmapRows(items: AnalyticsHeatmap[], payload: NodeAnalytics | null): HourlyHeatRow[] {
-  const end = Math.ceil((payload?.range_end || payload?.generated_at || Date.now() / 1000) / HOUR_SECONDS) * HOUR_SECONDS;
+  const rangeEnd = payload?.range_end || payload?.generated_at || Date.now() / 1000;
+  const end = Math.ceil(rangeEnd / HOUR_SECONDS) * HOUR_SECONDS;
   const starts = Array.from({ length: HEATMAP_HOURS }, (_item, index) => end - (HEATMAP_HOURS - index) * HOUR_SECONDS);
   return items.map((item) => ({
     gpuIndex: item.gpu_index,
-    cells: starts.map((start) => hourlyHeatCell(item, start)),
+    cells: starts.map((start) => hourlyHeatCell(item, start, rangeEnd)),
   }));
 }
 
-function hourlyHeatCell(item: AnalyticsHeatmap, start: number): HourlyHeatCell {
+function hourlyHeatCell(item: AnalyticsHeatmap, start: number, rangeEnd: number): HourlyHeatCell {
   let samples = 0;
   let gpuWeighted = 0;
   let memoryWeighted = 0;
@@ -1617,13 +1627,20 @@ function hourlyHeatCell(item: AnalyticsHeatmap, start: number): HourlyHeatCell {
     memoryWeighted += (bucket.avg_memory_used_mb || 0) * weight;
     peak = Math.max(peak, bucket.max_gpu_utilization || 0);
   }
+  const avg = samples ? gpuWeighted / samples : 0;
+  const memoryAvg = samples ? memoryWeighted / samples : 0;
   return {
     start,
     end: start + HOUR_SECONDS,
-    avg: samples ? gpuWeighted / samples : 0,
+    avg,
     peak,
-    memoryAvg: samples ? memoryWeighted / samples : 0,
+    memoryAvg,
     hasData: samples > 0,
+    isAbnormal:
+      samples > 0 &&
+      start + HOUR_SECONDS <= rangeEnd &&
+      memoryAvg >= ABNORMAL_MEMORY_MB &&
+      avg < ABNORMAL_GPU_UTILIZATION,
   };
 }
 
@@ -1644,16 +1661,18 @@ function heatmapCell(row: HourlyHeatRow, cell: HourlyHeatCell) {
         `${heatFullTime(cell.start)}-${heatClock(cell.end)}`,
         `GPU avg ${fmtPct(cell.avg)} · peak ${fmtPct(cell.peak)}`,
         `Mem avg ${fmtGiB(cell.memoryAvg)}`,
+        ...(cell.isAbnormal ? ["Abnormal occupancy · ≥20 GiB / <5% GPU for ≥1h"] : []),
       ].join("\n")
     : [gpuLabel, `${heatFullTime(cell.start)}-${heatClock(cell.end)}`, "No data"].join("\n");
+  const stateClass = cell.isAbnormal ? " is-abnormal" : cell.hasData ? "" : " is-missing";
   return `
     <span
-      class="heat-cell ${cell.hasData ? "" : "is-missing"}"
+      class="heat-cell${stateClass}"
       tabindex="0"
       role="img"
       aria-label="${escapeMultilineAttr(tooltip)}"
       data-tooltip="${escapeMultilineAttr(tooltip)}"
-      style="${cell.hasData ? `background:${heatColor(cell.avg)}` : ""}"
+      style="${cell.hasData && !cell.isAbnormal ? `background:${heatColor(cell.avg)}` : ""}"
     ></span>
   `;
 }

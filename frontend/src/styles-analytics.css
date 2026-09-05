@@ -1182,6 +1182,11 @@ svg {
     var(--surface-sunken);
 }
 
+.heat-cell.is-abnormal {
+  border-color: color-mix(in srgb, var(--danger) 78%, var(--border));
+  background: var(--danger);
+}
+
 .heat-axis-spacer {
   min-height: 17px;
 }
@@ -1204,13 +1209,23 @@ svg {
 }
 
 .heat-legend {
-  display: grid;
-  gap: 5px;
-  width: 224px;
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  width: max-content;
+  max-width: 100%;
   margin-top: 14px;
   color: var(--muted);
   font-size: 12px;
   font-weight: 650;
+}
+
+.heat-legend-scale {
+  display: grid;
+  gap: 5px;
+  width: 224px;
+  max-width: 100%;
 }
 
 .heat-legend-ramp {
@@ -1231,6 +1246,23 @@ svg {
 
 .heat-legend-labels span {
   text-align: center;
+}
+
+.heat-legend-abnormal {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 22px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.heat-legend-abnormal b {
+  width: 12px;
+  height: 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 78%, var(--border));
+  border-radius: 3px;
+  background: var(--danger);
 }
 
 .empty-inline {
