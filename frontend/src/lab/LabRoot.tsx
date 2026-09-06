@@ -3,6 +3,7 @@ import App from "../App";
 import type { AppExtension, AppRoute, ExtensionRoute } from "../app-extension";
 import { Icon } from "../components";
 import { LAB_HEADERS, LabApiError, labRequest } from "./api";
+import { ProfilePage } from "./ProfilePage";
 import { AccountPage } from "./AccountPage";
 import { AdminPage } from "./AdminPage";
 import { OnboardingDialog } from "./OnboardingDialog";
@@ -43,12 +44,13 @@ export function LabRoot() {
     const canManageLab = user.role === "admin";
     return {
       parseRoute: (pathname) => parseRoute(pathname, canManageLab),
-      isPath: (pathname) => ["/profile", "/management", "/account", "/admin"].includes(pathname),
+      isPath: (pathname) => ["/profile", "/profile/settings", "/management", "/account", "/admin"].includes(pathname),
       renderNavigation: (route) => <LabNavigation route={route} canManageLab={canManageLab} />,
       renderHeaderActions: () => <UserMenu user={user} />,
-      renderPage: (route) => route.key === "management" && canManageLab
+      renderPage: (route, snapshot) => route.key === "management" && canManageLab
         ? <AdminPage currentUser={user} onUserChange={setUser} />
-        : <AccountPage user={user} onUserChange={setUser} />,
+        : route.key === "account" ? <AccountPage user={user} onUserChange={setUser} />
+        : <ProfilePage user={user} snapshot={snapshot} />,
       canManageSettings: canManageLab,
       requestHeaders: LAB_HEADERS,
       onAuthenticationRequired: () => window.location.reload(),
@@ -73,7 +75,8 @@ export function LabRoot() {
 }
 
 function parseRoute(pathname: string, canManageLab: boolean): ExtensionRoute | null {
-  if (pathname === "/profile" || pathname === "/account") {
+  if (pathname === "/profile/settings" || pathname === "/account") return { kind: "extension", key: "account" };
+  if (pathname === "/profile") {
     return { kind: "extension", key: "profile" };
   }
   if (pathname === "/management" || pathname === "/admin") {
@@ -83,7 +86,7 @@ function parseRoute(pathname: string, canManageLab: boolean): ExtensionRoute | n
 }
 
 function canonicalLabPath(pathname: string, canManageLab: boolean): string | null {
-  if (pathname === "/account") return "/profile";
+  if (pathname === "/account") return "/profile/settings";
   if (pathname === "/admin") return canManageLab ? "/management" : "/profile";
   if (pathname === "/management" && !canManageLab) return "/profile";
   return null;
@@ -91,7 +94,7 @@ function canonicalLabPath(pathname: string, canManageLab: boolean): string | nul
 
 function LabNavigation({ route, canManageLab }: { route: AppRoute; canManageLab: boolean }) {
   return <>
-    <a class={`nav-link ${route.kind === "extension" && route.key === "profile" ? "is-active" : ""}`} aria-current={route.kind === "extension" && route.key === "profile" ? "page" : undefined} href="/profile"><Icon name="users" /><span>Profile</span></a>
+    <a class={`nav-link ${route.kind === "extension" && ["profile", "account"].includes(route.key) ? "is-active" : ""}`} aria-current={route.kind === "extension" && ["profile", "account"].includes(route.key) ? "page" : undefined} href="/profile"><Icon name="users" /><span>Profile</span></a>
     {canManageLab ? <a class={`nav-link ${route.kind === "extension" && route.key === "management" ? "is-active" : ""}`} aria-current={route.kind === "extension" && route.key === "management" ? "page" : undefined} href="/management"><Icon name="database" /><span>Lab management</span></a> : null}
   </>;
 }

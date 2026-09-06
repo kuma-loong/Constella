@@ -49,8 +49,8 @@ export function AccountPage({ user, onUserChange }: { user: LabUser; onUserChang
     <div class="lab-stack">
       <header class="lab-page-head">
         <div>
-          <p class="lab-eyebrow">Profile</p>
-          <h2>Your access</h2>
+          <a class="lab-eyebrow" href="/profile">Back to your activity</a>
+          <h2>Account settings</h2>
           <p>Choose how you appear in Constella and connect your GPU node accounts.</p>
         </div>
         <span class="lab-role-label">{labRoleLabel(user.role)}</span>

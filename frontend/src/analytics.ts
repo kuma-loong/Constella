@@ -475,7 +475,7 @@ export function createAnalyticsController({
     jobQuery = jobFilters.query || (jobFilters.pid == null ? "" : String(jobFilters.pid));
     jobPayload = null;
     jobKey = "";
-    selectedJobKey = "";
+    selectedJobKey = params.get("job_key") || "";
     selectedJobGpuUuids.clear();
     jobChartExpanded = false;
     jobCurvePayload = null;
@@ -585,6 +585,10 @@ export function createAnalyticsController({
     jobsLoading = true;
     renderJobs();
     const params = new URLSearchParams({ limit: "80" });
+    const locationParams = new URLSearchParams(location.search);
+    if (locationParams.has("job_key") || locationParams.get("range") === "30d") {
+      params.set("recent_seconds", "2592000");
+    }
     if (jobFilters.query) {
       params.set("q", jobFilters.query);
     }
@@ -606,8 +610,8 @@ export function createAnalyticsController({
       jobKey = key;
       if (!selectedJobKey && jobPayload.items?.length) {
         selectedJobKey = jobPayload.items[0].job_key;
-        void fetchJobCurve(selectedJobKey);
       }
+      if (selectedJobKey) void fetchJobCurve(selectedJobKey);
     } catch {
       jobPayload = { enabled: false };
       jobKey = key;
@@ -643,6 +647,7 @@ export function createAnalyticsController({
       if (request === jobCurveRequest) {
         jobCurvePayload = performance ? normalizePerformanceJobCurve(nextPayload as PerformanceJobCurve) : nextPayload as JobCurve;
         jobCurveKey = curveKey;
+        if (nextPayload.resolution_mode === "1h") jobResolution = "1h";
       }
     } catch {
       if (request === jobCurveRequest) {
@@ -752,8 +757,8 @@ export function createAnalyticsController({
         </form>
       </div>
       <div class="job-feature-note">
-        <strong>Supports job search within 7 days.</strong>
-        <span>Jobs within 2h and shorter than 1h use high-resolution data; others automatically use compressed rollup precision.</span>
+        <strong>Recent jobs · up to 30 days of history.</strong>
+        <span>Search starts with the last 7 days. Jobs older than 7 days use hourly GPU measurements.</span>
       </div>
       ${
         disabled
@@ -903,7 +908,7 @@ export function createAnalyticsController({
             <span><i data-lucide="line-chart"></i>${selected ? escapeHtml(selected.task_name) : "GPU curve"}</span>
             <div class="job-title-controls">
               <em>Resolution</em>
-              ${jobResolutionButtons(jobResolution)}
+              ${jobResolutionButtons(jobResolution, !!selected && selected.started_at < Date.now() / 1000 - 604800)}
             </div>
           </div>
           ${selected ? jobDetail(selected) : emptyInline("select a job to render its GPU curve")}
@@ -1253,7 +1258,7 @@ function jobMetricSelect(selected: ChartMetric) {
   `;
 }
 
-function jobResolutionButtons(selected: JobResolution) {
+function jobResolutionButtons(selected: JobResolution, hourlyOnly = false) {
   return `
     <div class="segmented job-resolution-tabs" role="group" aria-label="Job curve resolution">
       ${JOB_RESOLUTIONS.map(
@@ -1263,6 +1268,7 @@ function jobResolutionButtons(selected: JobResolution) {
             type="button"
             data-analytics-action="job-resolution"
             data-resolution="${item.key}"
+            ${hourlyOnly && (item.key === "20s" || item.key === "2m") ? 'disabled title="Jobs older than 7 days use hourly measurements"' : ""}
             aria-pressed="${item.key === selected ? "true" : "false"}"
           >${item.label}</button>
         `,

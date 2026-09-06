@@ -430,7 +430,7 @@ export default function App({ extension }: { extension?: AppExtension }) {
         <section class="analytics-section" ref={nodeHistoryRef} hidden={route.kind !== "node"} />
 
         {route.kind === "extension" ? (
-          <section class="lab-page">{extension?.renderPage(route)}</section>
+          <section class="lab-page">{extension?.renderPage(route, snapshot)}</section>
         ) : null}
       </main>
     </div>
