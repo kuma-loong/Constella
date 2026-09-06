@@ -6,7 +6,7 @@ import json
 import logging
 import sqlite3
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +17,8 @@ from .performance_rollup import (
     nvidia_gpm_row_columns,
     nvidia_gpm_table_sql,
 )
-from .schema import GpuInfo, GpuProcess, NodeSnapshot, process_session_id
+from .process_filter import filter_gpu_processes
+from .schema import GpuInfo, GpuProcess, NodeSnapshot, node_totals_from_gpus, process_session_id
 
 logger = logging.getLogger(__name__)
 
@@ -243,6 +244,9 @@ class SQLiteStore:
             con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def write_node_snapshot(self, snapshot: NodeSnapshot, *, write_raw: bool = False) -> None:
+        # Also protect direct callers and optional raw debug snapshots.
+        gpus = [filter_gpu_processes(gpu) for gpu in snapshot.gpus]
+        snapshot = replace(snapshot, gpus=gpus, totals=node_totals_from_gpus(gpus))
         con = self._con()
         sampled_at = snapshot.sampled_at
         written_sessions: set[str] = set()

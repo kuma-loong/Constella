@@ -16,6 +16,7 @@ AGENT_RUNTIME_MODULES = (
     "agent.py",
     "agent_main.py",
     "cluster.py",
+    "process_filter.py",
     "collector.py",
     "dcmi.py",
     "npu.py",

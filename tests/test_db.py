@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sqlite3
 
@@ -15,8 +16,36 @@ from constella.schema import (
     GpuInfo,
     GpuProcess,
     NodeSnapshot,
+    OtherUserMemory,
     node_totals_from_gpus,
 )
+
+
+def test_store_excludes_desktop_sessions_usages_and_raw_payloads(tmp_path) -> None:
+    snapshot = make_node_snapshot(100.0)
+    snapshot.gpus[0].processes.extend([
+        GpuProcess(pid=2, name="Xorg", gpu_memory_mb=10, user="root"),
+        GpuProcess(pid=3, name="python", gpu_memory_mb=20, user="gdm"),
+    ])
+    snapshot.gpus[0].other_users = [
+        OtherUserMemory(user="gdm", process_count=2, total_memory_mb=10),
+    ]
+    store = SQLiteStore(tmp_path / "filtered.db")
+    store.open()
+    try:
+        store.write_node_snapshot(snapshot, write_raw=True)
+        con = store.connection
+        assert [row[0] for row in con.execute("SELECT pid FROM process_sessions")] == [1234]
+        assert con.execute("SELECT COUNT(*) FROM process_gpu_usages").fetchone()[0] == 2
+        raw = json.loads(con.execute("SELECT payload_json FROM raw_snapshots").fetchone()[0])
+        assert [process["pid"] for process in raw["gpus"][0]["processes"]] == [1234]
+        assert raw["gpus"][0]["other_users"] == []
+        assert raw["totals"]["active_processes"] == 1
+        assert raw["gpus"][0]["memory_used_mb"] == snapshot.gpus[0].memory_used_mb
+        assert len(snapshot.gpus[0].processes) == 3
+        assert len(snapshot.gpus[0].other_users) == 1
+    finally:
+        store.close()
 
 
 def test_store_migrates_existing_gpu_inventory_columns(tmp_path) -> None:

@@ -28,6 +28,18 @@ DB_PATH=run/constella.db RAW_SNAPSHOT_SECONDS=30 ./scripts/service/start.sh
 
 ## Retention
 
+The manager excludes processes owned by `gdm` or `Debian-gdm`, and desktop
+services with executable basenames `X`, `Xorg`, `Xwayland`, `gnome-shell`,
+`kwin_x11`, `kwin_wayland`, `plasmashell`, `mutter`, `cinnamon`, `muffin`,
+`xfwm4`, `picom`, or `compton`. Matches are exact and case-sensitive against
+the process name or executable path basename, not task labels or command-line
+arguments. These processes are omitted from realtime workload lists, job curves,
+new process sessions, process-GPU usage, and optional raw snapshots. Aggregated
+user entries for the excluded users are also omitted; other aggregate entries
+do not contain process names and cannot be filtered by service name.
+Device-level utilization and memory metrics still reflect actual hardware use.
+Existing database records are not deleted automatically.
+
 - 20s rollups: 7 days
 - 2m rollups: 60 days
 - 1h rollups: 365 days

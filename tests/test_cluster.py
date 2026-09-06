@@ -64,6 +64,27 @@ def test_cluster_state_registers_sample_and_drops_old_seq() -> None:
     assert node.history["node-a:GPU-abc"]["memory"] == [25.0]
 
 
+def test_cluster_filters_desktop_processes_before_publishing() -> None:
+    state = ClusterState(local_node_id="manager")
+    message = sample_message("node-a", 1)
+    gpu = message["snapshot"]["gpus"][0]
+    gpu["processes"].extend([
+        {"pid": 124, "name": "/usr/lib/xorg/Xorg", "user": "alice"},
+        {"pid": 125, "name": "unknown", "user": "gdm"},
+    ])
+    gpu["other_users"] = [
+        {"user": "Debian-gdm", "process_count": 2, "total_memory_mb": 10},
+        {"user": "bob", "process_count": 1, "total_memory_mb": 5},
+    ]
+    assert state.ingest_sample(message, received_at=102.0)
+    node = state.snapshot(now=102.0).nodes[0]
+    assert [process.pid for process in node.gpus[0].processes] == [123]
+    assert [other.user for other in node.gpus[0].other_users] == ["bob"]
+    assert node.totals.active_processes == 2
+    assert node.gpus[0].memory_used_mb == 25
+    assert len(gpu["processes"]) == 3
+
+
 def test_cluster_state_builds_short_history_from_samples_without_agent_history() -> None:
     state = ClusterState(local_node_id="manager", history_size=2)
     state.register_hello(AgentHello(node_id="node-a", hostname="host-a"), now=10.0)

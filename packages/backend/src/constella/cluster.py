@@ -6,6 +6,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
+from .process_filter import filter_gpu_processes
 from .schema import (
     AcceleratorPerformance,
     ClusterSnapshot,
@@ -339,6 +340,7 @@ def node_snapshot_from_agent_sample(
         for item in payload.get("gpus", [])
         if isinstance(item, dict)
     ]
+    gpus = [filter_gpu_processes(gpu) for gpu in gpus]
     sampled_at = float(message.get("sampled_at") or payload.get("timestamp") or received_at)
     refresh_interval = float(message.get("refresh_interval") or payload.get("refresh_interval") or 1.0)
     process_interval = float(message.get("process_interval") or payload.get("process_interval") or 5.0)
