@@ -3,51 +3,67 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Constella · Your workspace</title>
+  <title>Constella · Your activity</title>
   <link rel="stylesheet" href="../../../frontend/node_modules/@fontsource-variable/geist/index.css">
   <link rel="stylesheet" href="../../../frontend/node_modules/@fontsource-variable/geist-mono/index.css">
   <link rel="stylesheet" href="profile.css">
   <script src="../../../frontend/node_modules/lucide/dist/umd/lucide.min.js" defer></script>
-  <script src="charts.js" defer></script>
+  <script src="activity-data.js" defer></script>
+  <script src="activity.js" defer></script>
   <script src="profile.js" defer></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to dashboard</a>
   <header class="shell">
     <div class="brand"><img src="../../../frontend/public/logo.svg" alt=""><strong>Constella</strong><span class="edition">LAB</span></div>
-    <div class="shell-right"><span class="live"><span class="dot"></span>Cluster connected</span><button id="theme" class="icon-button" aria-label="Switch color theme"><i data-lucide="sun"></i></button><span class="avatar">GQ</span></div>
+    <div class="shell-right"><span class="live"><span class="dot"></span>Preview workspace</span><button id="theme" class="icon-button" aria-label="Switch color theme"><i data-lucide="sun"></i></button><span class="avatar">GQ</span></div>
   </header>
   <nav aria-label="Main navigation"><span><i data-lucide="list-tree"></i>Overview</span><span><i data-lucide="chart-no-axes-combined"></i>Jobs</span><span><i data-lucide="activity"></i>Performance</span><strong aria-current="page"><i data-lucide="user-round"></i>Profile</strong></nav>
   <main id="main">
-    <div class="design-note"><span>Design preview · Sample data</span><label>Preview state<select id="scenario"><option value="ready">With activity</option><option value="empty">No activity</option><option value="unbound">No accounts</option><option value="partial">Partial history</option><option value="error">Loading error</option></select></label></div>
-    <div class="page-heading"><div><p class="eyebrow">YOUR WORKSPACE</p><h1>Your work, at a glance.</h1><p class="identity">Gu Quansheng <span>·</span> <span id="binding-count">3 connected accounts</span></p></div><div class="heading-actions"><button id="settings"><i data-lucide="settings-2"></i>Account settings</button><button id="running-shortcut" class="quiet"><span class="dot"></span>2 running<i data-lucide="arrow-down"></i></button></div></div>
-    <div class="period-toolbar"><div class="period-field"><span class="field-label">Period</span><div class="segments" role="group" aria-label="Period"><button data-period="7" aria-pressed="true">Last 7 days</button><button data-period="30" aria-pressed="false">Last 30 days</button></div></div><p class="date-label" id="period-label"></p></div>
+    <div class="page-heading">
+      <div><h1>Your activity</h1><p class="identity">Gu Quansheng <span>·</span> <span id="binding-count">3 connected accounts</span></p></div>
+      <div class="heading-actions"><button id="running-shortcut" class="quiet"><span class="dot"></span>2 running<i data-lucide="arrow-down"></i></button><button id="settings"><i data-lucide="settings-2"></i>Account settings</button></div>
+    </div>
+    <div class="period-toolbar">
+      <div class="period-field"><span class="field-label">Period</span><div class="segments" role="group" aria-label="Period"><button data-period="7" aria-pressed="true">Last 7 days</button><button data-period="30" aria-pressed="false">Last 30 days</button></div></div>
+      <p class="date-label" id="period-label"></p>
+    </div>
     <div id="notice" class="notice" hidden></div>
     <div id="dashboard">
-      <section class="hero" aria-label="Your GPU activity">
-        <div class="usage">
-          <div class="section-label"><h2>GPU hours</h2><button id="definition" class="icon-button" aria-label="About GPU hours"><i data-lucide="info"></i></button></div>
-          <div class="hero-value"><span id="gpu-hours">126.4</span><span>GPU·h</span></div>
-          <p class="comparison" id="comparison">+18.6 GPU·h from the previous period</p>
-          <div class="chart-caption"><span>Daily GPU hours</span><span id="bar-readout" aria-live="polite">Select a day to see jobs</span></div>
-          <div class="daily-chart" id="daily-chart" aria-label="Daily GPU hours"></div>
-
-        </div>
-        <aside class="rhythm"><p class="eyebrow">YOUR RHYTHM</p><h2>Busiest hours</h2><div class="peak-time" id="peak-time">20:00<span>—</span>23:00</div><p>When your jobs use GPUs the most.</p><div id="hour-chart" class="hour-chart" role="img" aria-label="GPU activity by hour, busiest from 20:00 to 23:00"></div><div class="rhythm-foot"><i data-lucide="clock-3"></i><span>Asia/Shanghai · UTC+8</span></div></aside>
-      </section>
       <section class="stats-band" aria-label="Activity summary">
-        <div><p>Time with active jobs</p><strong id="active-hours">46.2 <small>h</small></strong></div><div><p>Active days</p><strong id="active-days">6 <small>/ 7 days</small></strong></div><div><p>Most-used GPU</p><strong>H100 <small id="favorite-share">72% of GPU hours</small></strong></div>
+        <div><div class="stat-label">GPU hours <button id="definition" class="icon-button" aria-label="About GPU hours"><i data-lucide="info"></i></button></div><strong id="gpu-hours"></strong><span class="stat-note">Across your connected accounts</span></div>
+        <div><p class="stat-label">Time with active jobs</p><strong id="active-hours"></strong><span class="stat-note">Overlapping jobs counted once</span></div>
+        <div><p class="stat-label">Active days</p><strong id="active-days"></strong><span class="stat-note" id="active-note"></span></div>
       </section>
+      <div class="activity-layout">
+        <section class="activity-panel" aria-labelledby="activity-title">
+          <div class="section-heading"><div><h2 id="activity-title">Weekly activity</h2><p class="section-description">Select a day to explore your jobs.</p></div><span class="timezone">UTC+8</span></div>
+          <div id="activity-filter" class="activity-filter" hidden><span id="activity-filter-label"></span><button class="quiet" id="clear-model" aria-label="Clear GPU filter"><i data-lucide="x"></i></button></div>
+          <div class="mobile-days" id="mobile-days" aria-label="Choose a day"></div>
+          <div class="timeline-header"><span>Date</span><div class="time-axis" id="time-axis"></div><span>GPU·h</span></div>
+          <div id="activity-days" class="activity-days"></div>
+          <div class="activity-footer">
+            <div class="activity-legend"><span>Concurrent GPUs</span><span><i class="level-1"></i>1</span><span><i class="level-2"></i>2–3</span><span><i class="level-3"></i>4+</span><span class="missing-legend" hidden><i></i>Not recorded</span></div>
+            <p class="peak-summary"><span>Busiest hours</span><strong id="peak-label"></strong></p>
+          </div>
+        </section>
+        <aside class="gpu-panel" id="hardware" aria-labelledby="hardware-title">
+          <div class="section-heading"><div><h2 id="hardware-title">Your GPUs</h2></div></div>
+          <div id="model-list"></div>
+          <div class="selection-summary" id="selection-summary"><p>Across this week</p><strong></strong><span></span></div>
+          <div class="activity-tip"><i data-lucide="mouse-pointer-2"></i><p>Select a GPU model to find its activity and jobs.</p></div>
+        </aside>
+      </div>
     </div>
     <section class="jobs" aria-labelledby="jobs-title">
-      <div class="section-heading"><div><p class="eyebrow">YOUR ACTIVITY</p><h2 id="jobs-title">Recent jobs <span id="running-count" class="running-label">2 running</span></h2></div><button id="full-jobs" class="quiet">All jobs <i data-lucide="arrow-up-right"></i></button></div>
+      <div class="section-heading"><div><h2 id="jobs-title">Recent jobs <span id="running-count" class="running-label">2 running</span></h2></div><button id="full-jobs" class="quiet">All jobs <i data-lucide="arrow-up-right"></i></button></div>
       <div class="job-toolbar"><div class="filter-field"><span class="field-label">Status</span><div class="segments" role="group" aria-label="Status"><button data-filter="all" aria-pressed="true">All</button><button data-filter="running" aria-pressed="false">Running</button><button data-filter="ended" aria-pressed="false">Ended</button></div></div><label class="search-field">Search jobs<input type="search" id="search" placeholder="Job, node, or PID"></label></div>
-      <div id="date-filter" class="date-filter" hidden><span></span><button class="quiet" id="clear-date">Clear date <i data-lucide="x"></i></button></div>
+      <div id="date-filter" class="date-filter" hidden><span></span><button class="quiet" id="clear-date">Clear filters <i data-lucide="x"></i></button></div>
       <div class="table-head"><span>Job / Status</span><span>Node / GPU</span><span>Duration</span><span>Last active</span><span></span></div>
       <div id="job-list" aria-live="polite"></div>
     </section>
-    <section class="hardware" id="hardware"><div><p class="eyebrow">YOUR HARDWARE</p><h2>Your GPUs</h2><p>GPU hours by model</p></div><div id="model-list"></div></section>
-    <footer class="page-footer"><span id="coverage">Based on your recorded GPU activity</span><span>Updated Sep 6, 2026 at 16:42 · UTC+8</span></footer>
+    <div class="design-note"><span>Design preview · Sample data</span><label>Preview state<select id="scenario"><option value="ready">With activity</option><option value="empty">No activity</option><option value="unbound">No accounts</option><option value="partial">Partial history</option><option value="loading">Loading</option><option value="error">Loading error</option></select></label></div>
+    <footer class="page-footer"><span id="coverage">Based on your recorded GPU activity</span><span>Asia/Shanghai · UTC+8</span></footer>
   </main>
   <dialog id="detail-dialog" class="drawer" aria-labelledby="detail-title"><header class="dialog-head"><div><p class="eyebrow" id="detail-eyebrow">TASK DETAILS</p><h2 id="detail-title"></h2></div><button class="icon-button close-dialog" aria-label="Close job details"><i data-lucide="x"></i></button></header><div class="detail-tabs" role="group" aria-label="Job detail views"><button data-detail="overview" aria-pressed="true">Overview</button><button data-detail="gpu" aria-pressed="false">GPU</button><button data-detail="performance" aria-pressed="false">Performance</button></div><div id="detail-body" class="detail-body"></div><footer class="drawer-footer"><button class="primary" id="analyze">Explore in Jobs<i data-lucide="arrow-up-right"></i></button><button id="copy-command"><i data-lucide="copy"></i>Copy command</button><p id="detail-status" role="status"></p></footer></dialog>
   <dialog id="info-dialog" class="info-dialog" aria-labelledby="info-title"><header class="dialog-head"><h2 id="info-title"></h2><button class="icon-button close-dialog" aria-label="Close"><i data-lucide="x"></i></button></header><div id="info-body"></div></dialog>
