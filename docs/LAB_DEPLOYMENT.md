@@ -66,6 +66,23 @@ port.
 constella-lab serve --host 0.0.0.0 --port 8765
 ```
 
+Source deployments that also use Constella's local Agent and Highres Sidecar can
+use the shared service scripts by setting `EDITION=lab`. Load the required Lab
+environment first; keep that environment file outside Git and mode `0600`.
+
+```bash
+set -a
+. /absolute/private/path/constella-lab.env
+set +a
+
+EDITION=lab HOST=0.0.0.0 PORT=8765 \
+AGENT_TOKEN_FILE=/absolute/private/path/agent-token \
+DB_PATH=/absolute/private/path/constella.db \
+HIGHRES_SIDECAR=1 \
+HIGHRES_TOKEN_FILE=/absolute/private/path/highres-token \
+./scripts/service/start.sh
+```
+
 A future Internet-facing agent path must use a separate hostname with Cloudflare
 Service Auth in addition to the Constella agent token. Never put machine agents
 through the email OTP flow and never create an unconditional public Access bypass

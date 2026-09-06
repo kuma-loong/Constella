@@ -9,6 +9,7 @@ export no_proxy="${no_proxy:-127.0.0.1,localhost}"
 
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8765}"
+EDITION="${EDITION:-core}"
 REFRESH="${REFRESH:-1.0}"
 PROCESS_REFRESH="${PROCESS_REFRESH:-5.0}"
 AGENT_TOKEN_FILE="${AGENT_TOKEN_FILE:-}"
@@ -55,22 +56,43 @@ if [[ "$DEVICE" != "nvidia" && "$DEVICE" != "ascend" ]]; then
   exit 2
 fi
 
+if [[ "$EDITION" != "core" && "$EDITION" != "lab" ]]; then
+  echo "edition must be one of: core, lab" >&2
+  exit 2
+fi
+
 mkdir -p "$LOG_DIR" "$RUN_DIR"
 
 if [[ -f uv.lock ]]; then
-  uv sync --frozen
+  if [[ "$EDITION" == "lab" ]]; then
+    uv sync --frozen --all-packages
+  else
+    uv sync --frozen
+  fi
 else
-  uv sync
+  if [[ "$EDITION" == "lab" ]]; then
+    uv sync --all-packages
+  else
+    uv sync
+  fi
 fi
 
-if [[ ! -d frontend/dist ]]; then
+if [[ "$EDITION" == "lab" ]]; then
+  FRONTEND_DIST="$ROOT_DIR/packages/lab/src/constella_lab/dist"
+  FRONTEND_BUILD="build:lab"
+else
+  FRONTEND_DIST="$ROOT_DIR/frontend/dist"
+  FRONTEND_BUILD="build"
+fi
+
+if [[ ! -d "$FRONTEND_DIST" ]]; then
   pushd frontend >/dev/null
   if [[ -f package-lock.json ]]; then
     npm ci
   else
     npm install
   fi
-  npm run build
+  npm run "$FRONTEND_BUILD"
   popd >/dev/null
 fi
 
@@ -137,14 +159,23 @@ if [[ -n "$DB_PATH" ]]; then
   export CONSTELLA_RAW_SNAPSHOT_SECONDS="$RAW_SNAPSHOT_SECONDS"
 fi
 
-CMD=(
-  "$ROOT_DIR/.venv/bin/constella"
-  serve
-  --host "$HOST"
-  --port "$PORT"
-  --refresh "$REFRESH"
-  --process-refresh "$PROCESS_REFRESH"
-)
+if [[ "$EDITION" == "lab" ]]; then
+  CMD=(
+    "$ROOT_DIR/.venv/bin/constella-lab"
+    serve
+    --host "$HOST"
+    --port "$PORT"
+  )
+else
+  CMD=(
+    "$ROOT_DIR/.venv/bin/constella"
+    serve
+    --host "$HOST"
+    --port "$PORT"
+    --refresh "$REFRESH"
+    --process-refresh "$PROCESS_REFRESH"
+  )
+fi
 
 if [[ -f "$PID_FILE" ]]; then
   PID="$(cat "$PID_FILE")"
