@@ -6,11 +6,25 @@ cd "$ROOT_DIR"
 
 NODES="${NODES:-nodes.yaml}"
 NO_SYNC="${NO_SYNC:-0}"
+EDITION="${EDITION:-core}"
+
+if [[ "$EDITION" != "core" && "$EDITION" != "lab" ]]; then
+  echo "edition must be one of: core, lab" >&2
+  exit 2
+fi
 
 if [[ -f uv.lock ]]; then
-  uv sync --frozen
+  if [[ "$EDITION" == "lab" ]]; then
+    uv sync --frozen --all-packages
+  else
+    uv sync --frozen
+  fi
 else
-  uv sync
+  if [[ "$EDITION" == "lab" ]]; then
+    uv sync --all-packages
+  else
+    uv sync
+  fi
 fi
 
 ARGS=(cluster start --nodes "$NODES")

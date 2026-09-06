@@ -81,6 +81,9 @@ DB_PATH=/absolute/private/path/constella.db \
 HIGHRES_SIDECAR=1 \
 HIGHRES_TOKEN_FILE=/absolute/private/path/highres-token \
 ./scripts/service/start.sh
+
+EDITION=lab NODES=/absolute/private/path/nodes.yaml \
+./scripts/cluster/start.sh
 ```
 
 A future Internet-facing agent path must use a separate hostname with Cloudflare
