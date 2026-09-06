@@ -92,6 +92,9 @@ export function AccountBindingForm({ user, onUserChange, mode = "profile" }: Acc
         body: JSON.stringify({ accounts: selectedAccounts }),
       });
       setResults(payload.results);
+      if (payload.results.some((result) => !result.bindable)) {
+        setMessage("Some accounts could not be checked. Review the errors below.");
+      }
       setState("ready");
     } catch (error) {
       setMessage(formatError(error));
@@ -129,7 +132,7 @@ export function AccountBindingForm({ user, onUserChange, mode = "profile" }: Acc
     </div>
 
     <div class="lab-fill-row">
-      <label><span>Username for selected nodes</span><input value={sharedUsername} onInput={(event) => setSharedUsername(event.currentTarget.value)} placeholder="alice" autoComplete="off" /></label>
+      <label><span>Username</span><input value={sharedUsername} onInput={(event) => setSharedUsername(event.currentTarget.value)} placeholder="alice" autoComplete="off" /></label>
       <button class="lab-button is-quiet" type="button" onClick={fillSelected}>Fill selected</button>
     </div>
 
@@ -171,6 +174,13 @@ function resultError(error?: string) {
   if (error === "node_offline") return "node offline";
   if (error === "account_lookup_unsupported") return "agent upgrade required";
   if (error === "account_lookup_unavailable") return "lookup unavailable";
+  if (error === "account_lookup_failed") return "node lookup failed";
+  if (error === "account_not_found") return "username not found";
+  if (error === "invalid_username") return "invalid username format";
+  if (error === "username_not_allowed") return "username not allowed";
+  if (error === "uid_not_allowed") return "system UID not allowed";
+  if (error === "login_disabled") return "login disabled for this account";
+  if (error === "account_already_bound") return "account already connected";
   return "account unavailable";
 }
 

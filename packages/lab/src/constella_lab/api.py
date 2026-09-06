@@ -298,7 +298,7 @@ async def _lookup_accounts(
     async def lookup(account: AccountInput) -> dict[str, Any]:
         base: dict[str, Any] = {"node_id": account.node_id, "bindable": False}
         if not username_re.fullmatch(account.username):
-            return {**base, "error": "account_not_bindable"}
+            return {**base, "error": "invalid_username"}
         try:
             result = await request.app.state.agent_rpc.account_lookup(
                 account.node_id,
@@ -311,21 +311,22 @@ async def _lookup_accounts(
             return {**base, "error": "node_offline"}
         except AgentRpcError:
             return {**base, "error": "account_lookup_unavailable"}
-        if not _account_allowed(result, config=config):
+        rejection_reason = _account_rejection_reason(result, config=config)
+        if rejection_reason is not None:
             store.audit(
                 actor_user_id=user_id,
                 action="account.lookup_rejected",
                 target_type="node",
                 target_id=account.node_id,
                 request_id=_request_id(request),
-                details={"reason": _account_rejection_reason(result, config=config)},
+                details={"reason": rejection_reason},
             )
-            return {**base, "error": "account_not_bindable"}
+            return {**base, "error": _public_rejection_error(rejection_reason)}
         uid = int(result["uid"])
         if not ignore_binding_conflict and not store.can_bind(
             user_id=user_id, node_id=account.node_id, unix_uid=uid
         ):
-            return {**base, "error": "account_not_bindable"}
+            return {**base, "error": "account_already_bound"}
         return {
             **base,
             "bindable": True,
@@ -337,13 +338,11 @@ async def _lookup_accounts(
     return list(await asyncio.gather(*(lookup(account) for account in accounts)))
 
 
-def _account_allowed(result: dict[str, Any], *, config: LabConfig) -> bool:
-    return _account_rejection_reason(result, config=config) is None
-
-
 def _account_rejection_reason(result: dict[str, Any], *, config: LabConfig) -> str | None:
-    if result.get("ok") is not True or result.get("exists") is not True:
-        return "not_found_or_lookup_failed"
+    if result.get("ok") is not True:
+        return "lookup_failed"
+    if result.get("exists") is not True:
+        return "account_not_found"
     username = result.get("canonical_username")
     uid = result.get("uid")
     shell = str(result.get("shell") or "")
@@ -356,6 +355,16 @@ def _account_rejection_reason(result: dict[str, Any], *, config: LabConfig) -> s
     if shell.endswith(("/nologin", "/false")):
         return "denied_shell"
     return None
+
+
+def _public_rejection_error(reason: str) -> str:
+    return {
+        "lookup_failed": "account_lookup_failed",
+        "account_not_found": "account_not_found",
+        "denied_username": "username_not_allowed",
+        "denied_uid": "uid_not_allowed",
+        "denied_shell": "login_disabled",
+    }.get(reason, "account_not_bindable")
 
 
 def _validate_unique_nodes(accounts: list[AccountInput]) -> None:

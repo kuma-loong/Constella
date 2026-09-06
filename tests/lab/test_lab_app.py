@@ -239,4 +239,5 @@ def test_failed_multi_node_recheck_creates_no_bindings(tmp_path) -> None:
         me = client.get("/api/lab/me", headers=headers())
 
     assert response.status_code == 422
+    assert response.json()["detail"]["results"][1]["error"] == "account_not_found"
     assert me.json()["user"]["bindings"] == []
