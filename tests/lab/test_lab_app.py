@@ -86,6 +86,7 @@ def test_lab_requires_access_identity_and_bootstraps_admin(tmp_path) -> None:
     assert response.status_code == 200
     assert response.json()["user"]["role"] == "admin"
     assert response.json()["user"]["status"] == "active"
+    assert response.json()["user"]["onboarding_completed_at"] is None
     assert response.headers["x-content-type-options"] == "nosniff"
     assert (tmp_path / "lab" / "identity.sqlite3").stat().st_mode & 0o777 == 0o600
 
@@ -201,6 +202,7 @@ def test_multi_node_binding_is_rechecked_and_created_atomically(tmp_path) -> Non
     assert all(item["bindable"] for item in preview.json()["results"])
     assert created.status_code == 201
     assert len(created.json()["bindings"]) == 2
+    assert me.json()["user"]["onboarding_completed_at"] is not None
     assert {(item["node_id"], item["unix_uid"]) for item in me.json()["user"]["bindings"]} == {
         ("node-a", 1001),
         ("node-b", 2001),

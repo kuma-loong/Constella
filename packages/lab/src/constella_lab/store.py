@@ -63,6 +63,7 @@ class LabStore:
                   created_at REAL NOT NULL,
                   updated_at REAL NOT NULL,
                   last_login_at REAL NOT NULL,
+                  onboarding_completed_at REAL,
                   UNIQUE(access_issuer, access_subject)
                 );
 
@@ -111,6 +112,34 @@ class LabStore:
 
                 INSERT OR IGNORE INTO lab_schema_migrations(version, applied_at)
                 VALUES (1, CAST(strftime('%s', 'now') AS REAL));
+                """
+            )
+            user_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(lab_users)")
+            }
+            if "onboarding_completed_at" not in user_columns:
+                connection.execute(
+                    "ALTER TABLE lab_users ADD COLUMN onboarding_completed_at REAL"
+                )
+                connection.execute(
+                    """
+                    UPDATE lab_users
+                    SET onboarding_completed_at = (
+                      SELECT MIN(valid_from)
+                      FROM lab_account_bindings
+                      WHERE user_id = lab_users.id
+                    )
+                    WHERE EXISTS (
+                      SELECT 1
+                      FROM lab_account_bindings
+                      WHERE user_id = lab_users.id
+                    )
+                    """
+                )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO lab_schema_migrations(version, applied_at)
+                VALUES (2, CAST(strftime('%s', 'now') AS REAL))
                 """
             )
         self.connection = connection
@@ -328,6 +357,25 @@ class LabStore:
                         now=now,
                     )
                     created_ids.append(binding_id)
+                completed = con.execute(
+                    """
+                    UPDATE lab_users
+                    SET onboarding_completed_at = ?, updated_at = ?
+                    WHERE id = ? AND onboarding_completed_at IS NULL
+                    """,
+                    (now, now, user_id),
+                )
+                if completed.rowcount:
+                    self._audit_sql(
+                        con,
+                        actor_user_id=actor_user_id,
+                        action="user.onboarding_completed",
+                        target_type="user",
+                        target_id=user_id,
+                        request_id=request_id,
+                        details={"binding_count": len(created_ids)},
+                        now=now,
+                    )
         except sqlite3.IntegrityError as exc:
             raise BindingConflictError("account is already bound") from exc
         return [

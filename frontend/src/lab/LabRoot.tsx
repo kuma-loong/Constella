@@ -5,6 +5,7 @@ import { Icon } from "../components";
 import { LAB_HEADERS, LabApiError, labRequest } from "./api";
 import { AccountPage } from "./AccountPage";
 import { AdminPage } from "./AdminPage";
+import { OnboardingDialog } from "./OnboardingDialog";
 import { labRoleLabel, type LabUser } from "./types";
 
 export function LabRoot() {
@@ -64,6 +65,10 @@ export function LabRoot() {
     </main>;
   }
 
+  const needsOnboarding = user.onboarding_completed_at == null && user.role !== "viewer";
+  if (needsOnboarding) {
+    return <OnboardingDialog user={user} onUserChange={setUser} />;
+  }
   return <App extension={extension} />;
 }
 

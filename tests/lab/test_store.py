@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from constella_lab.store import BindingConflictError, LabStore, LastAdminError
@@ -35,6 +37,7 @@ def test_active_binding_uniqueness_rolls_back_entire_batch(tmp_path) -> None:
     try:
         first = create_user(store, subject="first", email="first@example.com")
         second = create_user(store, subject="second", email="second@example.com")
+        assert first["onboarding_completed_at"] is None
         store.create_bindings(
             user_id=first["id"],
             actor_user_id=first["id"],
@@ -68,6 +71,8 @@ def test_active_binding_uniqueness_rolls_back_entire_batch(tmp_path) -> None:
                     },
                 ],
             )
+        assert store.user_with_bindings(first["id"])["onboarding_completed_at"] is not None
+        assert store.user_with_bindings(second["id"])["onboarding_completed_at"] is None
         assert store.list_bindings(user_id=second["id"]) == []
     finally:
         store.close()
@@ -90,6 +95,42 @@ def test_sqlite_backup_restores_identity_state(tmp_path) -> None:
         assert restored.list_users()[0]["role"] == "admin"
     finally:
         restored.close()
+
+
+def test_existing_binding_migrates_to_completed_onboarding(tmp_path) -> None:
+    path = tmp_path / "identity.sqlite3"
+    store = LabStore(path)
+    store.open()
+    try:
+        member = create_user(store, subject="member", email="member@example.com")
+        store.create_bindings(
+            user_id=member["id"],
+            actor_user_id=member["id"],
+            request_id="request-2",
+            accounts=[
+                {
+                    "node_id": "node-a",
+                    "canonical_username": "member",
+                    "uid": 1001,
+                    "gid": 1001,
+                }
+            ],
+        )
+    finally:
+        store.close()
+
+    with sqlite3.connect(path) as connection:
+        connection.execute("ALTER TABLE lab_users DROP COLUMN onboarding_completed_at")
+        connection.execute("DELETE FROM lab_schema_migrations WHERE version = 2")
+
+    migrated = LabStore(path)
+    migrated.open()
+    try:
+        user = migrated.user_with_bindings(member["id"])
+        assert user is not None
+        assert user["onboarding_completed_at"] is not None
+    finally:
+        migrated.close()
 
 
 def test_last_active_admin_cannot_be_disabled(tmp_path) -> None:

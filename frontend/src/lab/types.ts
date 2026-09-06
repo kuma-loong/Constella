@@ -31,6 +31,7 @@ export type LabUser = {
   created_at: number;
   updated_at: number;
   last_login_at: number;
+  onboarding_completed_at?: number | null;
   active_binding_count?: number;
   bindings: LabBinding[];
 };

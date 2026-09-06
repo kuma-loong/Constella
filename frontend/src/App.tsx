@@ -32,6 +32,7 @@ import type { AppExtension, AppRoute } from "./app-extension";
 import { clusterRefreshInterval, findNode, sameInterval } from "./cluster-utils";
 import { Fabric, GpuGrid, Header, ProcessSection, Summary } from "./components";
 import { PerformancePage } from "./performance";
+import { applyDocumentTheme, readThemeMode } from "./theme";
 import type { ClusterSnapshot, LiveState, Settings, ThemeMode } from "./types";
 
 const iconSet = {
@@ -64,7 +65,6 @@ const iconSet = {
 type AnalyticsController = ReturnType<typeof createAnalyticsController>;
 
 const DEFAULT_REFRESH_INTERVALS = [0.5, 1, 2, 5];
-const THEME_STORAGE_KEY = "constella.theme";
 const COLLAPSE_STORAGE_KEY = "constella.collapsed";
 
 export default function App({ extension }: { extension?: AppExtension }) {
@@ -118,13 +118,7 @@ export default function App({ extension }: { extension?: AppExtension }) {
   }, []);
 
   useEffect(() => {
-    const resolved = themeMode === "system" ? (prefersDark ? "dark" : "light") : themeMode;
-    document.documentElement.dataset.theme = themeMode;
-    document.documentElement.dataset.resolvedTheme = resolved;
-    document
-      .querySelector('meta[name="theme-color"]')
-      ?.setAttribute("content", resolved === "dark" ? "#0f1113" : "#f7f7f4");
-    window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
+    applyDocumentTheme(themeMode, prefersDark);
   }, [prefersDark, themeMode]);
 
   useEffect(() => {
@@ -485,11 +479,6 @@ function shouldHandleAppLink(event: JSX.TargetedMouseEvent<HTMLDivElement>, link
 
 function coreRoute(route: AppRoute): Route {
   return route.kind === "extension" ? { kind: "overview" } : route;
-}
-
-function readThemeMode(): ThemeMode {
-  const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
-  return saved === "light" || saved === "dark" || saved === "system" ? saved : "system";
 }
 
 function readCollapsedSections() {
