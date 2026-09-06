@@ -241,3 +241,67 @@ def test_failed_multi_node_recheck_creates_no_bindings(tmp_path) -> None:
     assert response.status_code == 422
     assert response.json()["detail"]["results"][1]["error"] == "account_not_found"
     assert me.json()["user"]["bindings"] == []
+
+
+def test_personal_activity_reads_bound_uid_intervals_and_isolates_users(tmp_path, monkeypatch) -> None:
+    from constella.db import AsyncDBSink, SQLiteSinkConfig
+    from constella.schema import GpuInfo, GpuProcess, NodeSnapshot, node_totals_from_gpus
+
+    verifier = MutableVerifier(identity("admin-sub", "admin@example.com"))
+    sink = AsyncDBSink(SQLiteSinkConfig(path=tmp_path / "telemetry.sqlite3"))
+    app = create_lab_app(config=config(tmp_path), verifier=verifier, db_sink=sink)
+    start = time.time() - 5 * 3600
+    with TestClient(app) as client:
+        user = client.get("/api/lab/me", headers=headers()).json()["user"]
+        store = app.state.lab_store
+        store.create_bindings(user_id=user["id"], actor_user_id=user["id"], request_id="test", accounts=[
+            {"node_id": "a", "canonical_username": "usra", "uid": 1001, "gid": 1001},
+            {"node_id": "b", "canonical_username": "usrb", "uid": 2001, "gid": 2001},
+        ])
+        with store.connection:
+            store.connection.execute("UPDATE lab_account_bindings SET valid_from = ?", (start,))
+        for at in (start, start + 7200):
+            for node, uid, name, count in (("a", 1001, "usra", 2), ("b", 2001, "usrb", 1)):
+                gpus = [GpuInfo(index=i, uuid=f"GPU-{i}", name="NVIDIA H100", utilization_gpu=50,
+                    utilization_mem=20, memory_total_mb=80000, memory_used_mb=20000, power_watts=100,
+                    power_limit_watts=700, temperature_c=40, processes=[GpuProcess(pid=42, name="python",
+                    task_name="training", user=name, user_uid=uid, gpu_memory_mb=20000,
+                    process_start_time=start)]) for i in range(count)]
+                snapshot = NodeSnapshot(node_id=node, hostname=node, seq=int(at), sampled_at=at, received_at=at,
+                    refresh_interval=1, process_interval=5, status="online", source="test",
+                    gpus=gpus, totals=node_totals_from_gpus(gpus))
+                sink.store.write_node_snapshot(snapshot)
+        sink.store.close_stale_sessions(now=time.time())
+        response = client.get("/api/lab/me/activity?range=7d&limit=1", headers=headers())
+        assert response.status_code == 200
+        data = response.json()
+        assert data["summary"]["gpu_hours"] == 6 and data["summary"]["active_hours"] == 2
+        assert data["jobs"]["total"] == 2 and len(data["jobs"]["items"]) == 1
+        assert {r["model"] for r in data["gpu_models"]} == {"H100"}
+        assert data["coverage"] == "unknown"
+        overview = client.get("/api/analytics/overview?range=7d", headers=headers()).json()
+        assert len(overview["user_gpu_hours"]) == 1
+        assert overview["user_gpu_hours"][0]["gpu_hours"] == 6
+        assert client.get("/api/lab/me/activity?range=90d", headers=headers()).status_code == 422
+        assert client.get("/api/lab/me/activity").status_code == 401
+        verifier.identity = identity("member-sub", "member@example.com")
+        other = client.get(f"/api/lab/me/activity?user_id={user['id']}", headers=headers()).json()
+        assert other["availability"] == "unbound" and other["summary"]["gpu_hours"] == 0
+        verifier.identity = identity("admin-sub", "admin@example.com")
+        # A disconnected account retains its history and invalidates the cached binding scope.
+        with store.connection:
+            store.connection.execute("UPDATE lab_account_bindings SET valid_to = ?, status = 'revoked' WHERE node_id = 'b'", (start + 3600,))
+        changed = client.get("/api/lab/me/activity", headers=headers()).json()
+        assert changed["summary"]["gpu_hours"] == 5
+
+        for gpu in snapshot.gpus:
+            gpu.processes[0].pid = 99
+            gpu.processes[0].user_uid = None
+        sink.store.write_node_snapshot(snapshot)
+        missing_uid = client.get("/api/lab/me/activity?range=30d", headers=headers()).json()
+        assert missing_uid["missing_uid_sessions"] == 1
+        assert missing_uid["summary"]["gpu_hours"] == 5
+        monkeypatch.setattr("constella_lab.activity.MAX_ROWS", 1)
+        with store.connection:
+            store.connection.execute("UPDATE lab_account_bindings SET valid_from = ?", (start - 1,))
+        assert client.get("/api/lab/me/activity", headers=headers()).status_code == 503

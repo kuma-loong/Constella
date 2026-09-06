@@ -603,3 +603,54 @@ def test_job_performance_curve_uses_highres_and_marks_device_scope(tmp_path) -> 
         assert "not attributed" in payload["warnings"][0]
     finally:
         sink.store.close()
+
+
+def test_thirty_day_jobs_keep_default_seven_days_and_use_start_hour_bucket(tmp_path) -> None:
+    from constella.highres import JOB_MAX_LOOKBACK_SECONDS, get_job, job_curve
+
+    sink = AsyncDBSink(SQLiteSinkConfig(path=tmp_path / "history.db"))
+    sink.store.open()
+    now = time.time()
+    start = int((now - 20 * 86400) // 3600) * 3600 + 900
+    try:
+        for at in (start, start + 120):
+            snap = make_node_snapshot(at, process_start_time=start, parent_start_time=start - 2)
+            snap.gpus[0].performance = AcceleratorPerformance(
+                profile="nvidia.gpm.v1", status="available", sampled_at=at,
+                metrics={"nvidia.gpm.sm_active": 75.0},
+                supported_metrics=["nvidia.gpm.sm_active"],
+            )
+            sink.store.write_node_snapshot(snap)
+            sink.performance_rollups_enabled = True
+            sink._accumulate_snapshot(snap)
+        sink.flush_rollups(now=now)
+        for source, target in ((20, 120), (120, 3600)):
+            sink.store.rollup_gpu_metric_rollups(from_bucket_seconds=source, to_bucket_seconds=target, now=now)
+            sink.store.rollup_nvidia_gpm_rollups(from_bucket_seconds=source, to_bucket_seconds=target, now=now)
+        assert query_jobs(sink.store, now=now) == []
+        job = query_jobs(sink.store, now=now, recent_seconds=JOB_MAX_LOOKBACK_SECONDS)[0]
+        key = job["job_key"]
+        assert get_job(sink.store, key, now=now)
+        assert get_job(sink.store, key, now=start + 120 + JOB_MAX_LOOKBACK_SECONDS + 1) is None
+        for resolution in ("auto", "20s", "2m", "1h"):
+            for query in (job_curve, job_performance_curve):
+                curve = query(sink.store, HighresGpuCache(), key=key, resolution=resolution, now=now)
+                assert curve["resolution_seconds"] == ROLLUP_1H
+                assert curve["source"] == "rollup"
+                series = curve["series"][0]
+                if query is job_curve:
+                    assert series["points"][0]["bucket_start"] == start - 900
+                else:
+                    assert series["metrics"]["nvidia.gpm.sm_active"]["points"][0][0] == start - 900
+        for app in (
+            create_app(cluster_state=ClusterState(local_node_id="test"), db_sink=sink),
+            create_highres_sidecar_app(HighresSidecarConfig(db_path=sink.store.path), store=sink.store),
+        ):
+            client = TestClient(app)
+            assert client.get("/api/highres/jobs").json()["items"] == []
+            assert len(client.get("/api/highres/jobs?recent_seconds=2592000").json()["items"]) == 1
+            assert client.get(f"/api/highres/jobs/{key}").status_code == 200
+            assert client.get(f"/api/highres/jobs/{key}/gpu").json()["resolution_seconds"] == 3600
+            assert client.get(f"/api/highres/jobs/{key}/performance").json()["resolution_seconds"] == 3600
+    finally:
+        sink.store.close()

@@ -17,6 +17,7 @@ from . import __version__
 from .db import SQLiteStore
 from .highres import (
     HIGHRES_JOB_LOOKBACK_SECONDS,
+    JOB_MAX_LOOKBACK_SECONDS,
     HighresGpuCache,
     csv_values,
     get_job,
@@ -220,7 +221,7 @@ def create_highres_sidecar_app(
                 since=since,
                 until=until,
                 max_duration_seconds=max_duration_seconds,
-                recent_seconds=max(60.0, min(recent_seconds, HIGHRES_JOB_LOOKBACK_SECONDS)),
+                recent_seconds=max(60.0, min(recent_seconds, JOB_MAX_LOOKBACK_SECONDS)),
                 limit=max(1, min(limit, 500)),
             ),
         }

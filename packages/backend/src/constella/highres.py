@@ -17,6 +17,7 @@ from .schema import GpuInfo, NodeSnapshot
 HIGHRES_RETENTION_SECONDS = 2 * 60 * 60
 HIGHRES_MAX_JOB_SECONDS = 60 * 60
 HIGHRES_JOB_LOOKBACK_SECONDS = 7 * 24 * 60 * 60
+JOB_MAX_LOOKBACK_SECONDS = 30 * 24 * 60 * 60
 HIGHRES_MIN_INTERVAL_SECONDS = 0.5
 HIGHRES_DEFAULT_PADDING_SECONDS = 20.0
 ROLLUP_RESOLUTION_LABELS = {
@@ -309,7 +310,7 @@ def get_job(
     key: str,
     *,
     now: float | None = None,
-    lookback_seconds: float | None = HIGHRES_JOB_LOOKBACK_SECONDS,
+    lookback_seconds: float | None = JOB_MAX_LOOKBACK_SECONDS,
 ) -> dict[str, Any] | None:
     current_time = time.time() if now is None else now
     range_start = (
@@ -317,7 +318,18 @@ def get_job(
         if lookback_seconds is not None
         else None
     )
-    return _group_jobs(_job_rows(store, range_start=range_start, range_end=None)).get(key)
+    parts = key.rsplit(":", 3)
+    if len(parts) != 4:
+        return None
+    try:
+        owner_pid = int(parts[3])
+        if not math.isfinite(float(parts[2])) or not 0 < owner_pid <= 2**63 - 1:
+            return None
+    except ValueError:
+        return None
+    rows = _job_rows(store, range_start=range_start, range_end=None,
+                     node_id=parts[0], user=parts[1], owner_pid=owner_pid)
+    return _group_jobs(rows).get(key)
 
 
 def job_curve(
@@ -338,9 +350,10 @@ def job_curve(
     required_start = float(job["started_at"])
     required_end = float(job["last_seen_at"])
     duration = max(0.0, float(job["duration_seconds"]))
-    resolution_mode, requested_bucket = _normalize_resolution(resolution)
-    warnings: list[str] = []
-    if resolution_mode == "auto" and duration < HIGHRES_MAX_JOB_SECONDS:
+    resolution_mode, requested_bucket, warnings = _job_resolution(
+        resolution, started_at=required_start, now=now
+    )
+    if resolution_mode == "auto" and requested_bucket is None and duration < HIGHRES_MAX_JOB_SECONDS:
         highres = _highres_curve(
             cache,
             job=job,
@@ -363,7 +376,7 @@ def job_curve(
                 "warnings": warnings,
             }
         warnings.append("high-resolution cache does not cover the full job window")
-    elif resolution_mode == "auto":
+    elif resolution_mode == "auto" and requested_bucket is None:
         warnings.append("job duration is 1 hour or longer, using rollup history")
     bucket_seconds = (
         requested_bucket
@@ -415,15 +428,18 @@ def job_performance_curve(
     range_start = max(0.0, float(job["started_at"]) - padding)
     range_end = float(job["last_seen_at"]) + padding
     duration = max(0.0, float(job["duration_seconds"]))
-    resolution_mode, requested_bucket = _normalize_resolution(resolution)
+    resolution_mode, requested_bucket, resolution_warnings = _job_resolution(
+        resolution, started_at=float(job["started_at"]), now=now
+    )
     warnings = [
-        "performance metrics are device-wide and are not attributed to an individual process"
+        "performance metrics are device-wide and are not attributed to an individual process",
+        *resolution_warnings,
     ]
     concurrent_sessions = _concurrent_session_count(store, job)
     if concurrent_sessions:
         warnings.append("other process sessions overlap this GPU time window")
 
-    if resolution_mode == "auto" and duration < HIGHRES_MAX_JOB_SECONDS:
+    if resolution_mode == "auto" and requested_bucket is None and duration < HIGHRES_MAX_JOB_SECONDS:
         highres = _highres_performance_curve(
             cache,
             job=job,
@@ -481,9 +497,21 @@ def _job_rows(
     *,
     range_start: float | None,
     range_end: float | None,
+    node_id: str | None = None,
+    user: str | None = None,
+    owner_pid: int | None = None,
 ) -> list[sqlite3.Row]:
     clauses: list[str] = []
     params: list[Any] = []
+    if node_id is not None:
+        clauses.append("s.node_id = ?")
+        params.append(node_id)
+    if user is not None:
+        clauses.append("COALESCE(s.user, 'unknown') = ?" if user == "unknown" else "s.user = ?")
+        params.append(user)
+    if owner_pid is not None:
+        clauses.append("(s.pid = ? OR s.ppid = ?)")
+        params.extend((owner_pid, owner_pid))
     if range_start is not None:
         clauses.append("s.last_seen_at >= ?")
         params.append(range_start)
@@ -725,7 +753,8 @@ def _rollup_curve(
         points = store.query_gpu_history(
             node_id=gpu["node_id"],
             gpu_uuid=gpu["gpu_uuid"],
-            since=range_start,
+            since=math.floor(range_start / bucket_seconds) * bucket_seconds
+            if bucket_seconds == ROLLUP_1H else range_start,
             until=range_end,
             bucket_seconds=bucket_seconds,
             limit=limit,
@@ -753,7 +782,8 @@ def _rollup_performance_curve(
         rows = store.query_nvidia_gpm_history(
             node_id=gpu["node_id"],
             gpu_uuid=gpu["gpu_uuid"],
-            since=range_start,
+            since=math.floor(range_start / bucket_seconds) * bucket_seconds
+            if bucket_seconds == ROLLUP_1H else range_start,
             until=range_end,
             bucket_seconds=bucket_seconds,
             metrics=metrics,
@@ -833,6 +863,21 @@ def _normalize_resolution(value: str | None) -> tuple[str, int | None]:
             if bucket == seconds:
                 return label, seconds
     return "auto", None
+
+
+def _job_resolution(
+    resolution: str, *, started_at: float, now: float | None
+) -> tuple[str, int | None, list[str]]:
+    mode, bucket = _normalize_resolution(resolution)
+    current = time.time() if now is None else now
+    warnings: list[str] = []
+    if started_at < current - HIGHRES_JOB_LOOKBACK_SECONDS:
+        mode = "auto" if mode == "auto" else "1h"
+        bucket = ROLLUP_1H
+        warnings.append("Jobs with activity older than 7 days use hourly history.")
+    if bucket == ROLLUP_1H:
+        warnings.append("Hourly readings cover the whole GPU and may include activity outside the job.")
+    return mode, bucket, warnings
 
 
 def _auto_rollup_bucket(*, range_start: float, range_end: float) -> int:

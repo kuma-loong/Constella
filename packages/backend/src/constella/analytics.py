@@ -6,7 +6,7 @@ import time
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from .db import ROLLUP_1H, ROLLUP_2M, ROLLUP_20S, SQLiteStore
@@ -63,7 +63,8 @@ class JobUsage:
         return self.memory_seconds / self.usage_seconds
 
 
-def overview_analytics(store: SQLiteStore, *, range_name: str = "7d", now: float | None = None) -> dict[str, Any]:
+def overview_analytics(store: SQLiteStore, *, range_name: str = "7d", now: float | None = None,
+                       user_resolver: Callable | None = None) -> dict[str, Any]:
     range_end = time.time() if now is None else now
     range_start = range_end - _range_seconds(range_name, default="7d")
     rows = _usage_rows(store, range_start=range_start, range_end=range_end)
@@ -84,7 +85,8 @@ def overview_analytics(store: SQLiteStore, *, range_name: str = "7d", now: float
 
     return {
         **_meta(range_start=range_start, range_end=range_end, generated_at=range_end),
-        "user_gpu_hours": [_user_payload(item) for item in _top(users.values(), "weighted_gpu_hours", 20)],
+        "user_gpu_hours": user_resolver(rows, range_start, range_end) if user_resolver else
+            [_user_payload(item) for item in _top(users.values(), "weighted_gpu_hours", 20)],
         "job_rankings": [_job_payload(item) for item in jobs_sorted[:20]],
         "anomalies": _anomaly_payloads(
             store,
@@ -180,7 +182,7 @@ def _usage_rows(store: SQLiteStore, *, range_start: float, range_end: float) -> 
         """
         SELECT
           s.session_id, s.node_id, s.pid, s.ppid, s.process_start_time, s.parent_start_time,
-          s.user, s.task_name, s.process_name, s.first_seen_at AS session_first_seen_at,
+          s.user, s.user_uid, s.task_name, s.process_name, s.first_seen_at AS session_first_seen_at,
           s.last_seen_at AS session_last_seen_at, s.duration_seconds, s.status,
           u.gpu_uuid, u.first_seen_at, u.last_seen_at, u.avg_memory_mb, u.max_memory_mb,
           g.name AS gpu_name, g.gpu_index, g.device_type, g.card_id, g.die_id

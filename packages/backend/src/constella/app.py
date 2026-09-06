@@ -22,6 +22,7 @@ from .collector import ALLOWED_REFRESH_INTERVALS, validate_refresh_interval
 from .db import AsyncDBSink, SQLiteSinkConfig
 from .highres import (
     HIGHRES_JOB_LOOKBACK_SECONDS,
+    JOB_MAX_LOOKBACK_SECONDS,
     HighresGpuCache,
     HighresSampleBroadcaster,
     csv_values,
@@ -347,7 +348,7 @@ def create_app(
                     if max_duration_seconds is not None
                     else None
                 ),
-                recent_seconds=max(60.0, min(recent_seconds, HIGHRES_JOB_LOOKBACK_SECONDS)),
+                recent_seconds=max(60.0, min(recent_seconds, JOB_MAX_LOOKBACK_SECONDS)),
                 limit=max(1, min(limit, 500)),
             ),
         }
@@ -405,7 +406,8 @@ def create_app(
     async def analytics_overview(range: str = "7d") -> dict[str, object]:
         if db_sink is None:
             return {"enabled": False}
-        return overview_analytics(db_sink.store, range_name=range)
+        return overview_analytics(db_sink.store, range_name=range,
+                                  user_resolver=getattr(app.state, "user_usage_resolver", None))
 
     @app.get("/api/analytics/node/{node_id}")
     async def analytics_node(node_id: str, range: str = "24h") -> dict[str, object]:
