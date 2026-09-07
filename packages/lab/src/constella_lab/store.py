@@ -450,6 +450,26 @@ class LabStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def choose_readonly(self, user_id: str, *, request_id: str) -> dict[str, Any]:
+        now = time.time()
+        with self._lock, self._con():
+            con = self._con()
+            changed = con.execute(
+                """UPDATE lab_users SET role = 'viewer', onboarding_completed_at = ?,
+                   updated_at = ? WHERE id = ? AND role = 'member' AND status = 'active'
+                   AND onboarding_completed_at IS NULL
+                   AND NOT EXISTS (SELECT 1 FROM lab_account_bindings WHERE user_id = ?)""",
+                (now, now, user_id, user_id),
+            ).rowcount
+            if not changed:
+                raise ValueError("readonly_onboarding_unavailable")
+            self._audit_sql(
+                con, actor_user_id=user_id, action="user.readonly_selected",
+                target_type="user", target_id=user_id, request_id=request_id,
+                details={}, now=now,
+            )
+        return self.user_with_bindings(user_id)
+
     def admin_update_user(
         self,
         user_id: str,

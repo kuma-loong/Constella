@@ -24,7 +24,7 @@ export function LabRoot() {
   async function loadUser() {
     try {
       const payload = await labRequest<{ user: LabUser }>("/api/lab/me");
-      const canonicalPath = canonicalLabPath(window.location.pathname, payload.user.role === "admin");
+      const canonicalPath = payload.user.role === "viewer" && ["/profile", "/profile/settings", "/account", "/management", "/admin"].includes(window.location.pathname) ? "/overview" : canonicalLabPath(window.location.pathname, payload.user.role === "admin");
       if (canonicalPath && canonicalPath !== window.location.pathname) {
         window.history.replaceState(null, "", canonicalPath);
       }
@@ -45,10 +45,11 @@ export function LabRoot() {
     return {
       parseRoute: (pathname) => parseRoute(pathname, canManageLab),
       isPath: (pathname) => ["/profile", "/profile/settings", "/management", "/account", "/admin"].includes(pathname),
-      renderNavigation: (route) => <LabNavigation route={route} canManageLab={canManageLab} />,
+      renderNavigation: (route) => user.role === "viewer" ? null : <LabNavigation route={route} canManageLab={canManageLab} />,
       renderHeaderActions: () => <UserMenu user={user} />,
       renderPage: (route, snapshot) => route.key === "management" && canManageLab
         ? <AdminPage currentUser={user} onUserChange={setUser} />
+        : user.role === "viewer" ? <p>Read-only access does not include a personal dashboard.</p>
         : route.key === "account" ? <AccountPage user={user} onUserChange={setUser} />
         : <ProfilePage user={user} snapshot={snapshot} />,
       canManageSettings: canManageLab,
@@ -104,6 +105,6 @@ function UserMenu({ user }: { user: LabUser }) {
   const label = user.display_name || user.email.split("@")[0];
   return <details class="lab-user-menu">
     <summary aria-label={`Signed in as ${user.email}`} title={user.email}><span class="lab-user-avatar">{label.slice(0, 2).toUpperCase()}</span><span class="lab-user-summary"><strong>{label}</strong><small>{labRoleLabel(user.role)}</small></span></summary>
-    <div class="lab-user-popover"><strong>{user.display_name || user.email}</strong>{user.display_name ? <span>{user.email}</span> : null}<span class="lab-status-label">{labRoleLabel(user.role)}</span><a href="/profile">Profile</a>{user.role === "admin" ? <a href="/management">Lab management</a> : null}<a href="/cdn-cgi/access/logout">Sign out</a></div>
+    <div class="lab-user-popover"><strong>{user.display_name || user.email}</strong>{user.display_name ? <span>{user.email}</span> : null}<span class="lab-status-label">{labRoleLabel(user.role)}</span>{user.role !== "viewer" && <a href="/profile">Profile</a>}{user.role === "admin" ? <a href="/management">Lab management</a> : null}<a href="/cdn-cgi/access/logout">Sign out</a></div>
   </details>;
 }

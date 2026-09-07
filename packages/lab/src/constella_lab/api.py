@@ -75,6 +75,15 @@ def build_lab_router(*, config: LabConfig, store: LabStore) -> APIRouter:
         user = _user(request)
         return {"user": store.user_with_bindings(user["id"]), "request_id": _request_id(request)}
 
+    @router.post("/me/readonly")
+    async def choose_readonly(request: Request) -> dict[str, Any]:
+        user = _user(request)
+        try:
+            updated = store.choose_readonly(user["id"], request_id=_request_id(request))
+        except ValueError as exc:
+            raise _error(409, "readonly_onboarding_unavailable", request) from exc
+        return {"user": updated, "request_id": _request_id(request)}
+
     @router.patch("/me")
     async def update_me(update: ProfileUpdate, request: Request) -> dict[str, Any]:
         user = _require_member(request)

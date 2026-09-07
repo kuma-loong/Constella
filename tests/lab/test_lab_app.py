@@ -305,3 +305,23 @@ def test_personal_activity_reads_bound_uid_intervals_and_isolates_users(tmp_path
         with store.connection:
             store.connection.execute("UPDATE lab_account_bindings SET valid_from = ?", (start - 1,))
         assert client.get("/api/lab/me/activity", headers=headers()).status_code == 503
+
+
+def test_choose_readonly_persists_and_blocks_personal_features(tmp_path):
+    verifier = MutableVerifier(identity("member-sub", "member@example.com"))
+    app = create_lab_app(config=config(tmp_path), verifier=verifier)
+    with TestClient(app) as client:
+        assert client.post("/api/lab/me/readonly", headers=headers()).status_code == 403
+        response = client.post("/api/lab/me/readonly", headers=headers(csrf=True))
+        assert response.status_code == 200
+        user = response.json()["user"]
+        assert user["role"] == "viewer" and user["onboarding_completed_at"] is not None
+        assert user["bindings"] == []
+        assert client.get("/api/lab/me", headers=headers()).json()["user"] == user
+        assert client.get("/api/cluster/snapshot", headers=headers()).status_code == 200
+        assert client.get("/api/lab/me/activity", headers=headers()).status_code == 403
+        assert client.patch("/api/lab/me", json={"display_name": "changed"}, headers=headers(csrf=True)).status_code == 403
+        assert client.post("/api/lab/me/readonly", headers=headers(csrf=True)).status_code == 409
+        verifier.identity = identity("admin-sub", "admin@example.com")
+        assert client.post("/api/lab/me/readonly", headers=headers(csrf=True)).status_code == 409
+        assert client.get("/api/lab/me", headers=headers()).json()["user"]["role"] == "admin"

@@ -369,6 +369,8 @@ def build_activity_router(store: LabStore) -> APIRouter:
         cursor: str | None = Query(None, max_length=500),
         limit: int = Query(20, ge=1, le=100),
     ) -> dict[str, Any]:
+        if request.state.lab_user["role"] == "viewer":
+            raise HTTPException(403, detail="member_required")
         user_id = request.state.lab_user["id"]
         bindings = store.list_bindings(active_only=False)
         sink = request.app.state.db_sink
