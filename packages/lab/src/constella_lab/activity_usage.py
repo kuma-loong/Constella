@@ -26,6 +26,23 @@ class Usage:
     row: dict[str, Any]
 
 
+def legacy_bindings(
+    bindings: list[dict[str, Any]], start: float
+) -> dict[tuple[str, str], list[dict[str, Any]]]:
+    accounts: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for binding in bindings:
+        if binding.get("unix_username"):
+            accounts[(binding["node_id"], binding["unix_username"])].append(binding)
+    for key, history in accounts.items():
+        ordered = sorted(history, key=lambda b: b["valid_from"])
+        # Only the first owner inherits legacy history before the initial binding.
+        accounts[key] = [
+            {**ordered[0], "valid_from": min(start, ordered[0]["valid_from"])},
+            *ordered[1:],
+        ]
+    return accounts
+
+
 def resolve_usage(
     rows: Iterable[Any],
     bindings: list[dict[str, Any]],
@@ -35,13 +52,19 @@ def resolve_usage(
     accounts: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
     for binding in bindings:
         accounts[(binding["node_id"], binding["unix_uid"])].append(binding)
+    usernames = legacy_bindings(bindings, start)
     result = []
     for source in rows:
         row = dict(source)
         left, right = max(start, row["first_seen_at"]), min(end, row["last_seen_at"])
         if right < left:
             continue
-        matches = accounts.get((row["node_id"], row.get("user_uid")), [])
+        # Legacy samples have no UID; names are scoped to the original node.
+        matches = (
+            usernames.get((row["node_id"], row.get("user")), [])
+            if row.get("user_uid") is None
+            else accounts.get((row["node_id"], row["user_uid"]), [])
+        )
         edges = sorted(
             {
                 left,

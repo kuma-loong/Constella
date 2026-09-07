@@ -249,3 +249,31 @@ def test_cache_singleflight_identity_isolation_binding_invalidation(tmp_path, mo
         assert len(service.cache) == 16
 
     asyncio.run(run())
+
+
+def test_legacy_username_matches_nodes_and_preserves_uid_priority():
+    bindings = [
+        {**binding(start=START + HOUR), "unix_username": "usra"},
+        {**binding("b", 1002, start=START + HOUR), "unix_username": "usrb"},
+    ]
+    rows = [
+        row(uid=None), row(node="b", uid=None, user="usrb"),
+        row(node="c", uid=None), row(uid=9999), row(uid=None, user=None),
+        row(uid=1001, user="renamed", start=START + HOUR),
+    ]
+    records = resolve_usage(rows, bindings, START, START + 3 * HOUR)
+    owned = [r for r in records if r.owner == "user:kuma"]
+    assert summary(owned, START, START + 3 * HOUR)["gpu_hours"] == 4
+    assert len(owned) == 3
+    assert len([r for r in records if r.owner.startswith("account:")]) == 3
+
+
+def test_legacy_username_transfer_keeps_old_owner_and_unbound_gap():
+    bindings = [
+        {**binding(start=START + HOUR, end=START + 2 * HOUR), "unix_username": "usra"},
+        {**binding(uid=2001, owner="new", start=START + 3 * HOUR), "unix_username": "usra"},
+    ]
+    records = resolve_usage([row(uid=None, end=START + 4 * HOUR)], bindings, START, START + 4 * HOUR)
+    assert [(r.owner, (r.end - r.start) / HOUR) for r in records] == [
+        ("user:kuma", 2), ('account:["a", "usra"]', 1), ("user:new", 1),
+    ]

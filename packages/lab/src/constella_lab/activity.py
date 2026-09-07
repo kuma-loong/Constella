@@ -21,6 +21,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from .activity_usage import (
     TIMEZONE,
     Usage,
+    legacy_bindings,
     model_statistics,
     resolve_usage,
     segments,
@@ -60,12 +61,16 @@ def read_activity(
         )
         for i in range(period)
     ]
+    history = [b for entries in legacy_bindings(bindings, start).values() for b in entries]
     eligible = union(
-        (max(start, b["valid_from"]), min(now, b["valid_to"] or now)) for b in bindings
+        (max(start, b["valid_from"]), min(now, b["valid_to"] or now))
+        for b in [*bindings, *history]
+        if b["user_id"] == user_id
     )
     nodes: dict[str, set[int]] = defaultdict(set)
     for binding in bindings:
-        nodes[binding["node_id"]].add(binding["unix_uid"])
+        if binding["user_id"] == user_id:
+            nodes[binding["node_id"]].add(binding["unix_uid"])
     rows: list[dict[str, Any]] = []
     if nodes:
         # Do not call SQLiteStore.open(): that initializer can run schema maintenance.
@@ -365,7 +370,7 @@ def build_activity_router(store: LabStore) -> APIRouter:
         limit: int = Query(20, ge=1, le=100),
     ) -> dict[str, Any]:
         user_id = request.state.lab_user["id"]
-        bindings = store.list_bindings(user_id=user_id, active_only=False)
+        bindings = store.list_bindings(active_only=False)
         sink = request.app.state.db_sink
         if sink is None:
             return {"enabled": False, "availability": "history_disabled"}
@@ -383,7 +388,7 @@ def build_activity_router(store: LabStore) -> APIRouter:
                     cursor=cursor,
                     limit=limit,
                 )
-            return {**result, "availability": "ready" if bindings else "unbound"}
+            return {**result, "availability": "ready" if any(b["user_id"] == user_id for b in bindings) else "unbound"}
         except (sqlite3.Error, ValueError) as exc:
             raise HTTPException(503, detail="activity_temporarily_unavailable") from exc
 
