@@ -599,6 +599,7 @@ export function Sparkline({ values, color, max }: { values: number[]; color: str
 }
 
 export function ProcessSection({
+  showDetails = true,
   hidden,
   nodeId,
   node,
@@ -608,6 +609,7 @@ export function ProcessSection({
   nodeId: string;
   node: NodeSnapshot | null;
   collapsed: boolean;
+  showDetails?: boolean;
 }) {
   const view = useMemo(() => buildProcessView(node), [node]);
   const [selectedProcess, setSelectedProcess] = useState<ProcessDetail | null>(null);
@@ -618,7 +620,7 @@ export function ProcessSection({
 
   useEffect(() => {
     setSelectedProcess(null);
-  }, [hidden, nodeId]);
+  }, [hidden, nodeId, showDetails]);
 
   function openProcess(detail: ProcessDetail, trigger: HTMLButtonElement) {
     triggerRef.current = trigger;
@@ -680,7 +682,7 @@ export function ProcessSection({
                   <td>{row.user}</td>
                   <td>{row.pid}</td>
                   <td>
-                    {row.detail ? (
+                    {showDetails && row.detail ? (
                       <button
                         class="process-detail-trigger"
                         type="button"
@@ -704,7 +706,7 @@ export function ProcessSection({
           </tbody>
         </table>
       </div>
-      {selectedProcess ? (
+      {showDetails && selectedProcess ? (
         <ProcessDrawer
           detail={liveSelection || selectedProcess}
           active={Boolean(liveSelection)}

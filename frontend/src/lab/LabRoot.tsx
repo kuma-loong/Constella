@@ -52,6 +52,7 @@ export function LabRoot() {
         : route.key === "account" ? <AccountPage user={user} onUserChange={setUser} />
         : <ProfilePage user={user} snapshot={snapshot} />,
       canManageSettings: canManageLab,
+      showNodeProcessDetails: false,
       requestHeaders: LAB_HEADERS,
       onAuthenticationRequired: () => window.location.reload(),
     };

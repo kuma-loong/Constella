@@ -12,6 +12,7 @@ export type AppExtension = {
   renderHeaderActions: () => ComponentChildren;
   renderPage: (route: ExtensionRoute, snapshot: ClusterSnapshot | null) => ComponentChildren;
   canManageSettings: boolean;
+  showNodeProcessDetails?: boolean;
   requestHeaders?: Record<string, string>;
   onAuthenticationRequired?: () => void;
 };

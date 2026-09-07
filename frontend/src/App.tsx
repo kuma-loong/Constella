@@ -424,6 +424,7 @@ export default function App({ extension }: { extension?: AppExtension }) {
           hidden={route.kind !== "node"}
           nodeId={route.kind === "node" ? route.nodeId : ""}
           node={selectedNode}
+          showDetails={extension?.showNodeProcessDetails ?? true}
           collapsed={collapsedSections.has("processes")}
         />
 
