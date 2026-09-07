@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { Icon } from "./ProfileIcon";
 import { fmtDuration } from "../format";
 import { dateLabel, hours, type Activity, type ActivityJob } from "./profile-data";
@@ -14,6 +14,8 @@ export function ProfileTimeline({ data, date, model, onDate, onJob, onInspect }:
   data: Activity; date: string; model: string; onDate: (date: string) => void; onJob: (job: ActivityJob) => void; onInspect: (span: { start: number; end: number } | null) => void;
 }) {
   const strip = useRef<HTMLDivElement>(null);
+  const [showAll, setShowAll] = useState(false);
+  useEffect(() => setShowAll(false), [date, model, data.days.length]);
   const mobileDate = date || data.days.at(-1)?.date;
   useEffect(() => {
     const active = strip.current?.querySelector<HTMLElement>('[aria-pressed="true"]');
@@ -31,6 +33,7 @@ export function ProfileTimeline({ data, date, model, onDate, onJob, onInspect }:
     }}>{data.days.map(day => {
       const expanded = date === day.date;
       const tracks = expanded ? data.day_jobs.items : [];
+      const visibleTracks = showAll ? tracks : tracks.slice(0, 10);
       return <article key={day.date} class={`activity-day ${expanded ? "is-expanded" : ""} ${day.date === mobileDate ? "is-mobile-day" : ""}`}>
         <button class="day-select" aria-label={`${day.date}, ${hours(day.gpu_hours)} GPU hours. Explore jobs.`} aria-expanded={expanded} aria-controls={`lanes-${day.date}`} onClick={() => onDate(expanded && !matchMedia("(max-width:759px)").matches ? "" : day.date)}>
           <span class="day-label"><Icon name="chevron-right" /><strong>{dateLabel(day.date, true)}</strong><span>{dateLabel(day.date)}</span></span>
@@ -40,12 +43,13 @@ export function ProfileTimeline({ data, date, model, onDate, onJob, onInspect }:
           <span class="day-total">{day.gpu_hours ? hours(day.gpu_hours) : "—"}</span>
         </button>
         <div class="day-expansion" id={`lanes-${day.date}`} inert={!expanded}><div class="expansion-inner"><div class="day-lanes">
-          {tracks.map(job => <button class="job-track" key={job.job_key} onClick={() => onJob(job)} title={`${job.task_name} · ${job.node_id}`}>
+          {visibleTracks.map(job => <button class="job-track" key={job.job_key} onClick={() => onJob(job)} title={`${job.task_name} · ${job.node_id}`}>
             <span class="lane-label">{job.task_name}<small>{job.models.join(" / ")}</small></span>
             <span class="lane-track">{(job.segments || []).filter(r => r.start < day.end && r.end > day.start).map(r => <span class={`task-span level-${level(r.count)}`} style={geometry(r.start, r.end, day.start)} />)}</span>
             <span class="lane-end">{job.status === "running" ? "Running" : fmtDuration(Math.max(0, Math.min(job.last_seen_at, day.end) - Math.max(job.started_at, day.start)))}</span>
           </button>)}
-          <p class="day-detail-caption">{tracks.length ? `${data.day_jobs.total} jobs · ${hours(day.active_hours)} h with active jobs` : "No jobs recorded on this day."}{data.day_jobs.total > tracks.length ? ` · Showing ${tracks.length}; use Recent jobs to explore more.` : ""}</p>
+          {tracks.length > 10 && <button class="quiet day-lanes-toggle" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>{showAll ? "Show first 10" : `Show all ${tracks.length} jobs`}</button>}
+          <p class="day-detail-caption">{tracks.length ? `${data.day_jobs.total} jobs · ${hours(day.active_hours)} h with active jobs` : "No jobs recorded on this day."}{data.day_jobs.total > visibleTracks.length ? ` · Showing ${visibleTracks.length}${showAll ? "; use Recent jobs to explore more" : ""}.` : ""}</p>
         </div></div></div>
       </article>;
     })}</div>
