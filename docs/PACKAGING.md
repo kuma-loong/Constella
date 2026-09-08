@@ -1,6 +1,6 @@
 # Packaging Constella for PyPI
 
-Constella 0.1.4 is prepared as five composable distributions. Each feature is
+Constella 0.1.4 provides five composable distributions. Each feature is
 owned by exactly one wheel, so installing variants together never overwrites a
 shared Python package.
 

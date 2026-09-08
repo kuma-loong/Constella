@@ -3,7 +3,7 @@
 All notable changes to Constella are documented in this file. Python
 distribution versions follow PEP 440; Git tags use a hyphenated equivalent.
 
-## [0.1.4] - Unreleased / 未发布
+## [0.1.4] - 2026-09-09
 
 ### English
 
