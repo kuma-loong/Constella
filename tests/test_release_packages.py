@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.1.5"
+VERSION = "0.1.4"
 
 
 def load_project(path: str) -> dict[str, object]:

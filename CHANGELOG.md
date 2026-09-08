@@ -3,7 +3,7 @@
 All notable changes to Constella are documented in this file. Python
 distribution versions follow PEP 440; Git tags use a hyphenated equivalent.
 
-## [0.1.5] - Unreleased / 未发布
+## [0.1.4] - Unreleased / 未发布
 
 ### English
 
@@ -55,34 +55,6 @@ Constella Lab 面向多人共享 GPU 集群，在监控基础上提供身份认�
 - **休眠和断网后可靠恢复：** 浏览器恢复后自动重连实时监控，手动刷新同步更新节点历史曲线与热力图；临时请求失败后可以重试，并保留已加载的历史数据。
 - **历史查询更流畅：** 隔离数据库写入与历史读取，减少对实时监控的干扰，并改善数据库维护失败后的恢复能力。
 - **节点排障更直观：** 标准 Web 版本支持进程详情与异常 GPU 显存占用提示，并改善移动端 Performance 页面和页面导航体验。
-
-## [0.1.4] - 2026-09-06
-
-### Added
-
-- Added the optional `constella-gpu-lab` distribution with Cloudflare Access
-  identity verification, local roles, lifecycle administration, audit records,
-  and an independent SQLite identity database.
-- Added atomic, self-service Linux account binding across multiple selected
-  nodes, backed by a capability-gated account lookup RPC on existing agents.
-- Added numeric process UIDs to live snapshots and process-session history so
-  workload attribution remains stable when usernames change.
-
-### Security
-
-- Added issuer, audience, signature, expiry, and application-type validation for
-  Cloudflare Access assertions, plus fail-closed startup configuration.
-- Added server-side role enforcement, Origin and request-marker CSRF checks,
-  session-bounded WebSockets, account lookup limits, and immutable audit events.
-- Preserved separate token authentication for Agent and high-resolution machine
-  connections; Linux account lookup executes no shell commands and needs no root.
-
-### Changed
-
-- Added a generic core extension boundary and edition entry point so the public
-  Web and backend packages remain independent of Lab-only code and dependencies.
-- Updated the frontend build dependency lock to resolve published Browserslist
-  security advisories.
 
 ## [0.1.3] - 2026-08-25
 
@@ -156,7 +128,6 @@ First release candidate for 0.1.3.
   compatible NVML hardware, driver, and metric profiles.
 - The TUI continues to use the existing manager HTTP and `/ws/cluster` APIs.
 
-[0.1.5]: https://github.com/kuma-loong/Constella/releases/tag/v0.1.5
 [0.1.4]: https://github.com/kuma-loong/Constella/releases/tag/v0.1.4
 [0.1.3]: https://github.com/kuma-loong/Constella/releases/tag/v0.1.3
 [0.1.3rc1]: https://github.com/kuma-loong/Constella/releases/tag/v0.1.3-rc.1

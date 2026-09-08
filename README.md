@@ -30,7 +30,7 @@
 
 Constella is a lightweight accelerator monitoring platform for labs, AI teams,
 and personal compute servers. It natively supports heterogeneous clusters;
-version 0.1.5 supports NVIDIA GPUs and Ascend NPUs.
+version 0.1.4 supports NVIDIA GPUs and Ascend NPUs.
 
 Unlike terminal tools that only show the current state, Constella automatically
 records accelerator workload history, making it easy to review completed
