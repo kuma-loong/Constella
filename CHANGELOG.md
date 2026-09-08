@@ -3,6 +3,42 @@
 All notable changes to Constella are documented in this file. Python
 distribution versions follow PEP 440; Git tags use a hyphenated equivalent.
 
+## [0.1.5] - Unreleased
+
+### Added
+
+- Added a personal Lab activity dashboard with daily workload history, GPU-hour
+  attribution, filters, linked job details, and up to thirty days of history.
+- Added read-only onboarding for users who do not need to bind a Linux account.
+
+### Fixed
+
+- Recover live monitoring after browser sleep, lock-screen suspension, or network
+  interruption, and discard messages from retired WebSocket connections.
+- Refresh Node history and heatmaps together, deduplicate matching requests, and
+  allow failed or stalled requests to be retried without hiding existing data.
+- Distinguish temporary history errors from empty history and disabled storage;
+  time out frontend history, snapshot, and Lab identity requests.
+- Stop WebSocket producers before closing connections and avoid sending after a
+  client disconnects during the refresh interval.
+- Run telemetry database writes outside the manager event loop, use independent
+  read-only history connections, and back off failed maintenance operations.
+- Attribute legacy activity using both node and username, and exclude desktop
+  services from workload tracking.
+
+### Changed
+
+- Limit expanded activity days to ten workload rows and keep node process-detail
+  entry points hidden in the Lab edition.
+- Build release packages in a temporary source copy so packaging cannot replace
+  the frontend assets used by a running source deployment.
+
+### Compatibility
+
+- Keeps the five distribution layout and existing agent HTTP/WebSocket APIs.
+- Requires Python 3.10 or newer. Existing monitoring and Lab databases are retained.
+- This is a prepared release; publication and a Git release tag require review.
+
 ## [0.1.4] - 2026-09-06
 
 ### Added
@@ -103,6 +139,7 @@ First release candidate for 0.1.3.
   compatible NVML hardware, driver, and metric profiles.
 - The TUI continues to use the existing manager HTTP and `/ws/cluster` APIs.
 
+[0.1.5]: https://github.com/kuma-loong/Constella/releases/tag/v0.1.5
 [0.1.4]: https://github.com/kuma-loong/Constella/releases/tag/v0.1.4
 [0.1.3]: https://github.com/kuma-loong/Constella/releases/tag/v0.1.3
 [0.1.3rc1]: https://github.com/kuma-loong/Constella/releases/tag/v0.1.3-rc.1

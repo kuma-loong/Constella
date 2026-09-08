@@ -1,6 +1,6 @@
 [project]
 name = "constella-gpu-lab"
-version = "0.1.4"
+version = "0.1.5"
 description = "Constella lab identity, authorization, and Linux account binding edition."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,7 +20,7 @@ classifiers = [
     "Topic :: System :: Monitoring",
 ]
 dependencies = [
-    "constella-gpu-backend==0.1.4",
+    "constella-gpu-backend==0.1.5",
     "pyjwt[crypto]>=2.10.0,<3",
 ]
 

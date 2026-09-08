@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.1.4"
+VERSION = "0.1.5"
 
 
 def load_project(path: str) -> dict[str, object]:
@@ -53,3 +53,24 @@ def test_release_distribution_module_ownership() -> None:
 
     assert (ROOT / "packages/lab/src/constella_lab/app.py").is_file()
     assert not (ROOT / "packages/lab/src/constella").exists()
+
+
+def test_release_module_and_frontend_versions_match() -> None:
+    import ast
+    import json
+
+    modules = [ROOT / "src/constella_gpu/__init__.py"]
+    modules.extend((ROOT / "packages").glob("*/src/*/__init__.py"))
+    for module in modules:
+        tree = ast.parse(module.read_text())
+        versions = [
+            ast.literal_eval(node.value)
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "__version__"
+                    for target in node.targets)
+        ]
+        assert versions == [VERSION], module
+    package = json.loads((ROOT / "frontend/package.json").read_text())
+    lock = json.loads((ROOT / "frontend/package-lock.json").read_text())
+    assert package["version"] == lock["version"] == lock["packages"][""]["version"] == VERSION

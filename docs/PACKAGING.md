@@ -1,6 +1,6 @@
 # Packaging Constella for PyPI
 
-Constella 0.1.4 is published as five composable distributions. Each feature is
+Constella 0.1.5 is prepared as five composable distributions. Each feature is
 owned by exactly one wheel, so installing variants together never overwrites a
 shared Python package.
 
@@ -34,17 +34,24 @@ TUI distribution is installed.
 ./scripts/package/build.sh
 ```
 
-The script runs the frontend build into
-`packages/web/src/constella_web/dist` and the Lab build into
-`packages/lab/src/constella_lab/dist`, then uses the uv workspace to build five
-wheels and five source distributions under `dist/`. Generated assets and
-`dist/` are ignored by Git.
+The script copies Git-tracked working-tree files to a temporary directory under
+`run/preview-package-*`. It builds both frontend editions and all five wheel/source
+distribution pairs there, then places the ten archives in `dist/0.1.5/`. Existing
+production assets, virtual environments, and older release archives are untouched.
+New source files must be added to Git before building. The staging directory is
+removed when the build exits; `dist/` remains ignored by Git.
+
+An existing output directory must be empty. To use another location:
+
+```bash
+./scripts/package/build.sh --out-dir dist/review-0.1.5
+```
 
 Before upload, verify the artifact set and metadata:
 
 ```bash
-ls -1 dist/
-uvx twine check dist/*
+ls -1 dist/0.1.5/
+uvx 'twine>=7' check dist/0.1.5/*.whl dist/0.1.5/*.tar.gz
 ```
 
 ## Installed usage
@@ -52,7 +59,7 @@ uvx twine check dist/*
 Full installation:
 
 ```bash
-pip install "constella-gpu==0.1.4"
+pip install "constella-gpu==0.1.5"
 constella service start
 constella tui
 ```
@@ -60,28 +67,28 @@ constella tui
 Web-only frontend installation:
 
 ```bash
-pip install "constella-gpu-web==0.1.4"
+pip install "constella-gpu-web==0.1.5"
 constella service start
 ```
 
 Standalone TUI client installation:
 
 ```bash
-uv tool install "constella-gpu-tui==0.1.4"
+uv tool install "constella-gpu-tui==0.1.5"
 constella-tui --url https://gpu.example.com
 ```
 
 Backend/API-only installation:
 
 ```bash
-uv tool install "constella-gpu-backend==0.1.4"
+uv tool install "constella-gpu-backend==0.1.5"
 constella service start --no-local-agent
 ```
 
 Lab installation:
 
 ```bash
-pip install "constella-gpu-lab==0.1.4"
+pip install "constella-gpu-lab==0.1.5"
 constella-lab serve --host 127.0.0.1 --port 8765
 ```
 

@@ -20,6 +20,13 @@ nodes.yaml
 temp.md
 
 .env
+.env.*
+!.env.example
+.pypirc
+*.db
+*.db-wal
+*.db-shm
+*.sqlite*
 .DS_Store
 
 # Local reference checkout, kept for reading only.
