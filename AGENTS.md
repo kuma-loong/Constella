@@ -19,6 +19,7 @@
 - Use a dedicated branch with the `codex/` prefix for feature work.
 - Preserve unrelated user changes and untracked files. Do not use destructive Git commands.
 - Keep commits focused and use clear imperative messages.
+- Write all new changelog entries and release notes in both Chinese and English, with matching content in both languages.
 - Do not commit generated frontend `dist` files unless packaging explicitly requires them.
 
 ## Code organization
