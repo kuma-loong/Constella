@@ -3,54 +3,70 @@
 All notable changes to Constella are documented in this file. Python
 distribution versions follow PEP 440; Git tags use a hyphenated equivalent.
 
-## [0.1.5] - 未发布 / Unreleased
+## [0.1.5] - Unreleased / 未发布
 
-### 新增 / Added
+### English
 
-- 新增 Lab 个人活动面板，支持每日任务历史、GPU 小时归属统计、筛选、关联任务详情及最长 30 天的历史记录。
-  Added a personal Lab activity dashboard with daily workload history, GPU-hour
+#### Added
+
+- Added a personal Lab activity dashboard with daily workload history, GPU-hour
   attribution, filters, linked job details, and up to thirty days of history.
-- 新增只读用户引导流程，无需绑定 Linux 账号。
-  Added read-only onboarding for users who do not need to bind a Linux account.
+- Added read-only onboarding for users who do not need to bind a Linux account.
 
-### 修复 / Fixed
+#### Fixed
 
-- 浏览器休眠、锁屏挂起或网络中断后自动恢复实时监控，并丢弃已停用 WebSocket 连接的消息。
-  Recover live monitoring after browser sleep, lock-screen suspension, or network
+- Recover live monitoring after browser sleep, lock-screen suspension, or network
   interruption, and discard messages from retired WebSocket connections.
-- 同步刷新节点历史曲线和热力图，合并重复请求；失败或卡住的请求可以重试，同时保留已显示的数据。
-  Refresh Node history and heatmaps together, deduplicate matching requests, and
+- Refresh Node history and heatmaps together, deduplicate matching requests, and
   allow failed or stalled requests to be retried without hiding existing data.
-- 区分历史数据临时请求错误、无历史数据和存储未启用三种状态；为前端历史、快照及 Lab 身份请求增加超时限制。
-  Distinguish temporary history errors from empty history and disabled storage;
+- Distinguish temporary history errors from empty history and disabled storage;
   time out frontend history, snapshot, and Lab identity requests.
-- 关闭 WebSocket 连接前先停止数据推送任务，避免客户端在刷新间隔内断开后仍向其发送数据。
-  Stop WebSocket producers before closing connections and avoid sending after a
+- Stop WebSocket producers before closing connections and avoid sending after a
   client disconnects during the refresh interval.
-- 将监控数据库写入移出管理器事件循环，历史查询使用独立只读连接，维护操作失败后按退避策略重试。
-  Run telemetry database writes outside the manager event loop, use independent
+- Run telemetry database writes outside the manager event loop, use independent
   read-only history connections, and back off failed maintenance operations.
-- 结合节点和用户名归属旧版活动记录，并将桌面服务排除在任务跟踪之外。
-  Attribute legacy activity using both node and username, and exclude desktop
+- Attribute legacy activity using both node and username, and exclude desktop
   services from workload tracking.
 
-### 调整 / Changed
+#### Changed
 
-- 展开的每日活动最多显示 10 条任务记录，Lab 版本继续隐藏节点进程详情入口。
-  Limit expanded activity days to ten workload rows and keep node process-detail
+- Limit expanded activity days to ten workload rows and keep node process-detail
   entry points hidden in the Lab edition.
-- 在临时源码副本中构建发布包，避免打包过程替换正在运行的源码部署所使用的前端资源。
-  Build release packages in a temporary source copy so packaging cannot replace
+- Build release packages in a temporary source copy so packaging cannot replace
   the frontend assets used by a running source deployment.
 
-### 兼容性 / Compatibility
+#### Compatibility
+
+- Keeps the five distribution layout and existing agent HTTP/WebSocket APIs.
+- Requires Python 3.10 or newer. Existing monitoring and Lab databases are retained.
+- This is a prepared release; publication and a Git release tag require review.
+
+### 中文
+
+#### 新增
+
+- 新增 Lab 个人活动面板，支持每日任务历史、GPU 小时归属统计、筛选、关联任务详情及最长 30 天的历史记录。
+- 新增只读用户引导流程，无需绑定 Linux 账号。
+
+#### 修复
+
+- 浏览器休眠、锁屏挂起或网络中断后自动恢复实时监控，并丢弃已停用 WebSocket 连接的消息。
+- 同步刷新节点历史曲线和热力图，合并重复请求；失败或卡住的请求可以重试，同时保留已显示的数据。
+- 区分历史数据临时请求错误、无历史数据和存储未启用三种状态；为前端历史、快照及 Lab 身份请求增加超时限制。
+- 关闭 WebSocket 连接前先停止数据推送任务，避免客户端在刷新间隔内断开后仍向其发送数据。
+- 将监控数据库写入移出管理器事件循环，历史查询使用独立只读连接，维护操作失败后按退避策略重试。
+- 结合节点和用户名归属旧版活动记录，并将桌面服务排除在任务跟踪之外。
+
+#### 调整
+
+- 展开的每日活动最多显示 10 条任务记录，Lab 版本继续隐藏节点进程详情入口。
+- 在临时源码副本中构建发布包，避免打包过程替换正在运行的源码部署所使用的前端资源。
+
+#### 兼容性
 
 - 保留五个发行包的布局，以及现有 Agent HTTP/WebSocket API。
-  Keeps the five distribution layout and existing agent HTTP/WebSocket APIs.
 - 要求 Python 3.10 或更高版本，保留现有监控数据库和 Lab 数据库。
-  Requires Python 3.10 or newer. Existing monitoring and Lab databases are retained.
 - 当前为待审核版本；正式发布和创建 Git 版本标签须经审核。
-  This is a prepared release; publication and a Git release tag require review.
 
 ## [0.1.4] - 2026-09-06
 
