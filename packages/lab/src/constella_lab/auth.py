@@ -171,7 +171,9 @@ class LabAuthMiddleware:
         user_id: str,
         expires_at: float,
     ) -> None:
-        deadline = min(time.monotonic() + 900, time.monotonic() + max(0, expires_at - time.time()))
+        lifetime = max(0, expires_at - time.time())
+        deadline = time.monotonic() + min(900, lifetime)
+        close_code = 4401 if lifetime <= 900 else 4000
         app_task = asyncio.create_task(
             self.app(scope, receive, protected_send), name="lab-authenticated-websocket"
         )
@@ -188,8 +190,13 @@ class LabAuthMiddleware:
                     return
                 latest_user = self.store.user_with_bindings(user_id)
                 if latest_user is None or latest_user["status"] != "active":
+                    close_code = 4403
                     break
-            await raw_send({"type": "websocket.close", "code": 4403})
+            # Stop the producer before closing: no sends may follow the close frame.
+            app_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect):
+                await app_task
+            await raw_send({"type": "websocket.close", "code": close_code})
         finally:
             app_task.cancel()
             with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect):

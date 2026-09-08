@@ -30,6 +30,8 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { createAnalyticsController, type Route } from "./analytics";
 import type { AppExtension, AppRoute } from "./app-extension";
 import { clusterRefreshInterval, findNode, sameInterval } from "./cluster-utils";
+import { connectLive } from "./live-connection";
+import { fetchJson, RequestError } from "./requests";
 import { Fabric, GpuGrid, Header, ProcessSection, Summary } from "./components";
 import { PerformancePage } from "./performance";
 import { applyDocumentTheme, readThemeMode } from "./theme";
@@ -86,6 +88,8 @@ export default function App({ extension }: { extension?: AppExtension }) {
   const overviewAnalyticsRef = useRef<HTMLElement>(null);
   const nodeHistoryRef = useRef<HTMLElement>(null);
   const jobCurvesRef = useRef<HTMLElement>(null);
+  const liveRef = useRef<ReturnType<typeof connectLive> | null>(null);
+  const snapshotRequest = useRef<AbortController | null>(null);
   const analyticsRef = useRef<AnalyticsController | null>(null);
 
   pausedRef.current = paused;
@@ -134,8 +138,11 @@ export default function App({ extension }: { extension?: AppExtension }) {
       nodeElement: nodeHistoryRef.current,
       jobElement: jobCurvesRef.current,
       currentRoute: () => coreRoute(routeRef.current),
+      requestHeaders: extension?.requestHeaders,
+      onAuthenticationRequired: extension?.onAuthenticationRequired,
       renderIcons: () => createIcons({ icons: iconSet }),
     });
+    return () => { analyticsRef.current?.dispose(); analyticsRef.current = null; };
   }, []);
 
   useEffect(() => {
@@ -156,7 +163,7 @@ export default function App({ extension }: { extension?: AppExtension }) {
     syncAnalyticsRoute(route);
   }, [route]);
 
-  function syncAnalyticsRoute(nextRoute: AppRoute) {
+  function syncAnalyticsRoute(nextRoute: AppRoute, force = false) {
     const controller = analyticsRef.current;
     if (!controller) {
       return;
@@ -164,7 +171,7 @@ export default function App({ extension }: { extension?: AppExtension }) {
     if (nextRoute.kind === "overview") {
       controller.renderOverview();
       createIcons({ icons: iconSet });
-      void controller.fetchOverview();
+      void controller.fetchOverview(force);
     } else if (nextRoute.kind === "node") {
       controller.renderNode(nextRoute);
       createIcons({ icons: iconSet });
@@ -178,72 +185,49 @@ export default function App({ extension }: { extension?: AppExtension }) {
   }
 
   useEffect(() => {
-    let socket: WebSocket | null = null;
-    let reconnectTimer = 0;
-    let stopped = false;
-
-    const connect = () => {
-      window.clearTimeout(reconnectTimer);
-      const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-      socket = new WebSocket(`${protocol}://${window.location.host}/ws/cluster`);
-      setLiveState("connecting");
-
-      socket.addEventListener("open", () => {
-        if (!stopped) {
-          setLiveState(pausedRef.current ? "paused" : "live");
-        }
-      });
-
-      socket.addEventListener("message", (event) => {
-        const nextSnapshot = JSON.parse(event.data) as ClusterSnapshot;
+    const connection = connectLive({
+      message: (data) => {
+        const nextSnapshot = JSON.parse(data) as ClusterSnapshot;
         latestSnapshotRef.current = nextSnapshot;
-        if (!pausedRef.current) {
-          setSnapshot(nextSnapshot);
-        }
-      });
-
-      socket.addEventListener("close", () => {
-        if (stopped) {
-          return;
-        }
-        setLiveState("offline");
-        reconnectTimer = window.setTimeout(connect, 1200);
-      });
-
-      socket.addEventListener("error", () => {
-        if (!stopped) {
-          setLiveState("offline");
-        }
-      });
-    };
-
-    connect();
-    return () => {
-      stopped = true;
-      window.clearTimeout(reconnectTimer);
-      socket?.close();
-    };
-  }, []);
-
-  useEffect(() => {
+        if (!pausedRef.current) setSnapshot(nextSnapshot);
+      },
+      state: setLiveState,
+      interval: () => settingsRef.current?.refresh_interval ?? 1,
+      recover: (manual) => {
+        void fetchSnapshot(manual);
+        const current = coreRoute(routeRef.current);
+        if (current.kind === "node") void analyticsRef.current?.fetchNode(current, true);
+        else syncAnalyticsRoute(routeRef.current, true);
+      },
+    });
+    liveRef.current = connection;
     void fetchSettings();
     void fetchSnapshot();
+    return () => { connection.dispose(); snapshotRequest.current?.abort(); };
   }, []);
 
-  async function fetchSnapshot() {
+  async function fetchSnapshot(manual = false) {
+    snapshotRequest.current?.abort();
+    const request = new AbortController();
+    snapshotRequest.current = request;
+    const previous = latestSnapshotRef.current;
     try {
-      const response = await fetch("/api/cluster/snapshot", {
-        cache: "no-store",
+      const nextSnapshot = await fetchJson<ClusterSnapshot>("/api/cluster/snapshot", {
         headers: extension?.requestHeaders,
+        signal: request.signal,
       });
-      if (response.status === 401) {
-        extension?.onAuthenticationRequired?.();
+      if (request.signal.aborted || snapshotRequest.current !== request) return;
+      if (latestSnapshotRef.current !== previous) {
+        if (manual) setSnapshot(latestSnapshotRef.current);
         return;
       }
-      const nextSnapshot = (await response.json()) as ClusterSnapshot;
       latestSnapshotRef.current = nextSnapshot;
-      setSnapshot(nextSnapshot);
-    } catch {
+      if (manual || !pausedRef.current) setSnapshot(nextSnapshot);
+    } catch (error) {
+      if (request.signal.aborted) return;
+      if (error instanceof RequestError && error.status === 401) {
+        extension?.onAuthenticationRequired?.();
+      }
       setLiveState("offline");
     }
   }
@@ -396,7 +380,7 @@ export default function App({ extension }: { extension?: AppExtension }) {
         onRefreshInterval={setRefreshInterval}
         onTheme={cycleThemeMode}
         onPause={() => setPaused((value) => !value)}
-        onRefresh={fetchSnapshot}
+        onRefresh={() => liveRef.current?.recover()}
         extraNavigation={extension?.renderNavigation(route)}
         extraActions={extension?.renderHeaderActions()}
       />

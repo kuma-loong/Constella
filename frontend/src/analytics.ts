@@ -11,6 +11,7 @@ import {
   formatTime,
 } from "./format";
 import uPlot from "uplot";
+import { fetchJson, RequestError } from "./requests";
 import "uplot/dist/uPlot.min.css";
 
 export type Route =
@@ -239,6 +240,8 @@ type AnalyticsControllerOptions = {
   jobElement: HTMLElement;
   currentRoute: () => Route;
   renderIcons: () => void;
+  requestHeaders?: HeadersInit;
+  onAuthenticationRequired?: () => void;
 };
 
 const OVERVIEW_RANGES = ["24h", "7d", "30d"];
@@ -285,20 +288,28 @@ export function createAnalyticsController({
   jobElement,
   currentRoute,
   renderIcons,
+  requestHeaders,
+  onAuthenticationRequired,
 }: AnalyticsControllerOptions) {
   let overviewRange = "7d";
   let overviewPayload: OverviewAnalytics | null = null;
   let overviewKey = "";
   let overviewLoading = false;
+  let overviewError = "";
+  let overviewRequest: AbortController | null = null;
+  let overviewLoadedAt = 0;
   let nodeRange = "24h";
   let nodeMetric: NodeMetric = "avg_gpu_utilization";
   const selectedGpuUuids = new Set<string>();
   let nodePayload: NodeAnalytics | null = null;
   let nodeHeatmapPayload: NodeAnalytics | null = null;
   let nodeKey = "";
-  let nodeHeatmapKey = "";
   let nodeLoading = false;
   let nodeHeatmapLoading = false;
+  let nodeError = "";
+  let nodeHeatmapError = "";
+  let nodeRequest: AbortController | null = null;
+  let nodeLoadedAt = 0;
   let nodeChart: uPlot | null = null;
   let nodeChartResize: ResizeObserver | null = null;
   let jobQuery = "";
@@ -399,8 +410,7 @@ export function createAnalyticsController({
       return true;
     }
     if (action === "node-refresh") {
-      nodeKey = "";
-      void fetchNode(currentRoute());
+      void fetchNode(currentRoute(), true);
       return true;
     }
     return false;
@@ -482,97 +492,77 @@ export function createAnalyticsController({
     jobCurveKey = "";
   }
 
-  async function fetchOverview() {
+  async function fetchOverview(force = false) {
     const key = overviewRange;
-    if (overviewLoading || overviewKey === key) {
-      return;
-    }
+    if (!force && overviewKey === key && Date.now() - overviewLoadedAt < 60_000) return;
+    overviewRequest?.abort();
+    const request = new AbortController();
+    overviewRequest = request;
+    overviewKey = "";
     overviewLoading = true;
+    overviewError = "";
     renderOverview();
     try {
-      const response = await fetch(`/api/analytics/overview?range=${encodeURIComponent(overviewRange)}`, {
-        cache: "no-store",
-      });
-      if (!response.ok) {
-        throw new Error(`overview analytics failed: ${response.status}`);
-      }
-      overviewPayload = (await response.json()) as OverviewAnalytics;
+      const payload = await fetchJson<OverviewAnalytics>(
+        `/api/analytics/overview?range=${encodeURIComponent(overviewRange)}`,
+        { signal: request.signal, headers: requestHeaders },
+      );
+      if (overviewRequest !== request) return;
+      overviewPayload = payload;
       overviewKey = key;
-    } catch {
-      overviewPayload = { enabled: false };
-      overviewKey = key;
+      overviewLoadedAt = Date.now();
+    } catch (error) {
+      if (overviewRequest !== request || request.signal.aborted) return;
+      if (error instanceof RequestError && error.status === 401) onAuthenticationRequired?.();
+      overviewError = "History could not be loaded. Retry with Refresh analytics.";
     } finally {
-      overviewLoading = false;
-      renderOverview();
-      renderIcons();
+      if (overviewRequest === request) {
+        overviewLoading = false;
+        renderOverview();
+        renderIcons();
+      }
     }
   }
 
-  async function fetchNode(route: Route) {
-    if (route.kind !== "node") {
-      return;
-    }
+  async function fetchNode(route: Route, force = false) {
+    if (route.kind !== "node") return;
     const key = `${route.nodeId}:${nodeRange}`;
-    if (nodeLoading || nodeKey === key) {
-      return;
-    }
-    if (nodeKey !== key) {
+    if (!force && nodeKey === key && Date.now() - nodeLoadedAt < 60_000) return;
+    nodeRequest?.abort();
+    const request = new AbortController();
+    nodeRequest = request;
+    nodeKey = "";
+    if (nodePayload?.node_id !== route.nodeId) {
       nodePayload = null;
+      nodeHeatmapPayload = null;
       selectedGpuUuids.clear();
     }
-    if (!nodeHeatmapKey.startsWith(`${route.nodeId}:`)) {
-      nodeHeatmapPayload = null;
-      nodeHeatmapKey = "";
-    }
-    nodeLoading = true;
+    nodeError = nodeHeatmapError = "";
+    nodeLoading = nodeHeatmapLoading = true;
     renderNode(route);
-    void fetchNodeHeatmap(route);
-    try {
-      const response = await fetch(
-        `/api/analytics/node/${encodeURIComponent(route.nodeId)}?range=${encodeURIComponent(nodeRange)}`,
-        { cache: "no-store" },
-      );
-      if (!response.ok) {
-        throw new Error(`node analytics failed: ${response.status}`);
-      }
-      nodePayload = (await response.json()) as NodeAnalytics;
-      nodeKey = key;
-    } catch {
-      nodePayload = { enabled: false };
-      nodeKey = key;
-    } finally {
-      nodeLoading = false;
-      renderNode(route);
-      renderIcons();
-    }
-  }
-
-  async function fetchNodeHeatmap(route: Route) {
-    if (route.kind !== "node") {
-      return;
-    }
-    const key = `${route.nodeId}:${HEATMAP_RANGE}`;
-    if (nodeHeatmapLoading || nodeHeatmapKey === key) {
-      return;
-    }
-    nodeHeatmapLoading = true;
-    renderNode(route);
-    try {
-      const response = await fetch(
-        `/api/analytics/node/${encodeURIComponent(route.nodeId)}?range=${encodeURIComponent(HEATMAP_RANGE)}`,
-        { cache: "no-store" },
-      );
-      if (!response.ok) {
-        throw new Error(`node heatmap failed: ${response.status}`);
-      }
-      nodeHeatmapPayload = (await response.json()) as NodeAnalytics;
-      nodeHeatmapKey = key;
-    } catch {
-      nodeHeatmapPayload = { enabled: false };
-      nodeHeatmapKey = key;
-    } finally {
-      nodeHeatmapLoading = false;
-      renderNode(route);
+    const requests = new Map<string, Promise<NodeAnalytics>>();
+    const read = (range: string) => {
+      if (!requests.has(range)) requests.set(range, fetchJson<NodeAnalytics>(
+        `/api/analytics/node/${encodeURIComponent(route.nodeId)}?range=${encodeURIComponent(range)}`,
+        { signal: request.signal, headers: requestHeaders },
+      ));
+      return requests.get(range)!;
+    };
+    const [history, heatmap] = await Promise.allSettled([read(nodeRange), read(HEATMAP_RANGE)]);
+    if (nodeRequest !== request || request.signal.aborted) return;
+    if ([history, heatmap].some(result => result.status === "rejected" &&
+        result.reason instanceof RequestError && result.reason.status === 401)) onAuthenticationRequired?.();
+    nodeRequest = null;
+    nodeLoading = nodeHeatmapLoading = false;
+    if (history.status === "fulfilled") nodePayload = history.value;
+    else nodeError = "History could not be loaded. Showing any previously loaded data. Retry with Refresh history.";
+    if (heatmap.status === "fulfilled") nodeHeatmapPayload = heatmap.value;
+    else nodeHeatmapError = "Heatmap could not be loaded. Showing any previously loaded data. Retry with Refresh history.";
+    nodeKey = history.status === "fulfilled" && heatmap.status === "fulfilled" ? key : "";
+    nodeLoadedAt = Date.now();
+    const current = currentRoute();
+    if (current.kind === "node" && current.nodeId === route.nodeId) {
+      renderNode(current);
       renderIcons();
     }
   }
@@ -680,6 +670,7 @@ export function createAnalyticsController({
           </button>
         </div>
       </div>
+      ${overviewError ? `<div role="alert">${escapeHtml(overviewError)}</div>` : ""}
       ${
         disabled
           ? disabledAnalytics("Enable DB_PATH to show historical usage without changing the realtime path.")
@@ -714,6 +705,8 @@ export function createAnalyticsController({
           </button>
         </div>
       </div>
+      ${nodeError ? `<div role="alert">${escapeHtml(nodeError)}</div>` : ""}
+      ${nodeHeatmapError ? `<div role="alert">${escapeHtml(nodeHeatmapError)}</div>` : ""}
       ${
         disabled
           ? disabledAnalytics("Enable DB_PATH to show node rollups and heatmaps.")
@@ -722,7 +715,7 @@ export function createAnalyticsController({
             : nodeBody(payload, nodeHeatmapPayload, nodeHeatmapLoading)
       }
     `;
-    if (!disabled && !nodeLoading && payload?.series?.some((item) => item.points.length)) {
+    if (!disabled && payload?.series?.some((item) => item.points.length)) {
       mountNodeChart(payload.series, nodeMetric);
     }
   }
@@ -869,7 +862,7 @@ export function createAnalyticsController({
           ${
             series.some((item) => item.points.length)
               ? lineChart(series, nodeMetric)
-            : emptyInline("no rollup points in this range")
+            : emptyInline(nodeError ? "History unavailable — retry loading" : "no rollup points in this range")
           }
         </article>
         <article class="analytics-card span-12 heatmap-card">
@@ -882,7 +875,7 @@ export function createAnalyticsController({
               ? emptyInline("loading GPU heatmap")
               : hasHeatmap
               ? heatmapChart(heatmap, heatmapPayload)
-              : emptyInline("No GPU history for the past 12 hours")
+              : emptyInline(nodeHeatmapError ? "Heatmap unavailable — retry loading" : "No GPU history for the past 12 hours")
           }
         </article>
       </div>
@@ -1188,6 +1181,7 @@ export function createAnalyticsController({
   }
 
   return {
+    dispose: () => { nodeRequest?.abort(); overviewRequest?.abort(); },
     handleClick,
     handleChange,
     handleKeyDown,

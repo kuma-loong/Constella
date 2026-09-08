@@ -103,6 +103,13 @@ class SQLiteStore:
         self.connection.execute("PRAGMA foreign_keys=ON")
         self.initialize()
 
+    def open_readonly(self) -> None:
+        self.connection = sqlite3.connect(
+            self.path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2.0,
+        )
+        self.connection.row_factory = sqlite3.Row
+        self.connection.execute("PRAGMA query_only=ON")
+
     def close(self) -> None:
         if self.connection is not None:
             self.connection.close()
@@ -877,6 +884,8 @@ class AsyncDBSink:
         )
         self._task: asyncio.Task[None] | None = None
         self._last_raw_at = 0.0
+        self._maintenance_retry_at = 0.0
+        self._maintenance_failures = 0
         self._last_20s_flush_at = 0.0
         self._last_2m_rollup_at = 0.0
         self._last_1h_rollup_at = 0.0
@@ -908,10 +917,10 @@ class AsyncDBSink:
         if self._task:
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(self.queue.join(), timeout=5.0)
-            self.flush_rollups(now=time.time())
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
+            await self._in_thread(self.flush_rollups, now=time.time())
         self.store.close()
 
     def submit_node_snapshot(self, snapshot: NodeSnapshot) -> bool:
@@ -989,30 +998,60 @@ class AsyncDBSink:
             "last_error": self.last_error,
         }
 
+    async def _in_thread(self, function, *args, **kwargs):
+        # Cancellation must not close the SQLite connection while a worker still uses it.
+        task = asyncio.create_task(asyncio.to_thread(function, *args, **kwargs))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            await task
+            raise
+
     async def _worker(self) -> None:
         while True:
             try:
                 snapshot, write_raw = await asyncio.wait_for(self.queue.get(), timeout=10.0)
             except asyncio.TimeoutError:
-                try:
-                    self._run_scheduled_maintenance(now=time.time())
-                    self._record_success()
-                except Exception as exc:
-                    self._record_error("idle_maintenance", exc)
+                await self._in_thread(self._idle_maintenance)
                 continue
-            operation = "accumulate_snapshot"
             try:
-                self._accumulate_snapshot(snapshot)
-                operation = "write_node_snapshot"
-                self.store.write_node_snapshot(snapshot, write_raw=write_raw)
-                self.last_write_at = time.time()
-                operation = "scheduled_maintenance"
-                self._run_scheduled_maintenance(now=max(time.time(), snapshot.sampled_at))
-                self._record_success()
-            except Exception as exc:
-                self._record_error(operation, exc)
+                await self._in_thread(self._write_snapshot, snapshot, write_raw)
             finally:
                 self.queue.task_done()
+
+    def _idle_maintenance(self) -> None:
+        try:
+            if self._maintain(now=time.time()):
+                self._record_success()
+        except Exception as exc:
+            self._record_error("idle_maintenance", exc)
+
+    def _write_snapshot(self, snapshot: NodeSnapshot, write_raw: bool) -> None:
+        operation = "accumulate_snapshot"
+        try:
+            self._accumulate_snapshot(snapshot)
+            operation = "write_node_snapshot"
+            self.store.write_node_snapshot(snapshot, write_raw=write_raw)
+            self.last_write_at = time.time()
+            operation = "scheduled_maintenance"
+            if self._maintain(now=max(time.time(), snapshot.sampled_at)):
+                self._record_success()
+        except Exception as exc:
+            self._record_error(operation, exc)
+
+    def _maintain(self, *, now: float) -> bool:
+        if time.monotonic() < self._maintenance_retry_at:
+            return False
+        try:
+            self._run_scheduled_maintenance(now=now)
+        except Exception:
+            self._maintenance_failures += 1
+            delay = min(300.0, 10.0 * 2 ** min(self._maintenance_failures - 1, 5))
+            self._maintenance_retry_at = time.monotonic() + delay
+            raise
+        self._maintenance_failures = 0
+        self._maintenance_retry_at = 0.0
+        return True
 
     def _record_success(self) -> None:
         now = time.time()

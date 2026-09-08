@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -19,7 +19,8 @@ from .agent_rpc import AgentRpcBroker
 from .analytics import node_analytics, overview_analytics
 from .cluster import ClusterState, parse_agent_hello
 from .collector import ALLOWED_REFRESH_INTERVALS, validate_refresh_interval
-from .db import AsyncDBSink, SQLiteSinkConfig
+from .db import AsyncDBSink, SQLiteSinkConfig, SQLiteStore
+from .history_reader import HistoryReader
 from .highres import (
     HIGHRES_JOB_LOOKBACK_SECONDS,
     JOB_MAX_LOOKBACK_SECONDS,
@@ -185,6 +186,7 @@ def create_app(
     resolved_frontend_dist = resolve_frontend_dist(frontend_dist)
     agent_queues: set[asyncio.Queue[dict[str, object]]] = set()
     agent_rpc = AgentRpcBroker()
+    history_reader = HistoryReader(db_sink.store.path) if db_sink else None
 
     def broadcast_config() -> None:
         for queue in list(agent_queues):
@@ -252,6 +254,17 @@ def create_app(
     async def cluster_snapshot() -> dict[str, object]:
         return cluster_state.snapshot().to_dict()
 
+    async def read_database():
+        if db_sink is None:
+            yield None
+            return
+        store = SQLiteStore(db_sink.store.path)
+        store.open_readonly()
+        try:
+            yield store
+        finally:
+            store.close()
+
     @app.get("/api/history/gpu")
     async def gpu_history(
         node_id: str | None = None,
@@ -259,12 +272,13 @@ def create_app(
         since: float | None = None,
         until: float | None = None,
         limit: int = 1000,
+        read_store: SQLiteStore = Depends(read_database),
     ) -> dict[str, object]:
         if db_sink is None:
             return {"enabled": False, "items": []}
         return {
             "enabled": True,
-            "items": db_sink.store.query_gpu_history(
+            "items": read_store.query_gpu_history(
                 node_id=node_id,
                 gpu_uuid=gpu_uuid,
                 since=since,
@@ -278,19 +292,20 @@ def create_app(
         user: str | None = None,
         status: str | None = None,
         limit: int = 200,
+        read_store: SQLiteStore = Depends(read_database),
     ) -> dict[str, object]:
         if db_sink is None:
             return {"enabled": False, "items": []}
         return {
             "enabled": True,
-            "items": db_sink.store.query_tasks(user=user, status=status, limit=max(1, min(limit, 1000))),
+            "items": read_store.query_tasks(user=user, status=status, limit=max(1, min(limit, 1000))),
         }
 
     @app.get("/api/users")
-    async def users() -> dict[str, object]:
+    async def users(read_store: SQLiteStore = Depends(read_database)) -> dict[str, object]:
         if db_sink is None:
             return {"enabled": False, "items": []}
-        return {"enabled": True, "items": db_sink.store.query_users()}
+        return {"enabled": True, "items": read_store.query_users()}
 
     @app.get("/api/highres/status")
     async def highres_status() -> dict[str, object]:
@@ -329,13 +344,14 @@ def create_app(
         max_duration_seconds: float | None = None,
         recent_seconds: float = HIGHRES_JOB_LOOKBACK_SECONDS,
         limit: int = 100,
+        read_store: SQLiteStore = Depends(read_database),
     ) -> dict[str, object]:
         if db_sink is None:
             return {"enabled": False, "items": []}
         return {
             "enabled": True,
             "items": query_jobs(
-                db_sink.store,
+                read_store,
                 q=q,
                 user=user,
                 pid=pid,
@@ -358,11 +374,12 @@ def create_app(
         job_key: str,
         padding_seconds: float = 20.0,
         resolution: str = "auto",
+        read_store: SQLiteStore = Depends(read_database),
     ) -> dict[str, object]:
         if db_sink is None:
             return {"enabled": False, "series": []}
         payload = job_curve(
-            db_sink.store,
+            read_store,
             app.state.highres_cache,
             key=job_key,
             padding_seconds=padding_seconds,
@@ -378,11 +395,12 @@ def create_app(
         metrics: str | None = None,
         padding_seconds: float = 20.0,
         resolution: str = "auto",
+        read_store: SQLiteStore = Depends(read_database),
     ) -> dict[str, object]:
         if db_sink is None:
             return {"enabled": False, "series": []}
         payload = job_performance_curve(
-            db_sink.store,
+            read_store,
             app.state.highres_cache,
             key=job_key,
             metrics=csv_values(metrics),
@@ -394,10 +412,12 @@ def create_app(
         return payload
 
     @app.get("/api/highres/jobs/{job_key:path}")
-    async def highres_job(job_key: str) -> dict[str, object]:
+    async def highres_job(
+        job_key: str, read_store: SQLiteStore = Depends(read_database),
+    ) -> dict[str, object]:
         if db_sink is None:
             return {"enabled": False}
-        job = get_job(db_sink.store, job_key)
+        job = get_job(read_store, job_key)
         if job is None:
             raise HTTPException(status_code=404, detail="job not found")
         return {"enabled": True, "item": job}
@@ -406,14 +426,16 @@ def create_app(
     async def analytics_overview(range: str = "7d") -> dict[str, object]:
         if db_sink is None:
             return {"enabled": False}
-        return overview_analytics(db_sink.store, range_name=range,
-                                  user_resolver=getattr(app.state, "user_usage_resolver", None))
+        return await history_reader.query(
+            overview_analytics, range_name=range,
+            user_resolver=getattr(app.state, "user_usage_resolver", None),
+        )
 
     @app.get("/api/analytics/node/{node_id}")
     async def analytics_node(node_id: str, range: str = "24h") -> dict[str, object]:
         if db_sink is None:
             return {"enabled": False}
-        return node_analytics(db_sink.store, node_id=node_id, range_name=range)
+        return await history_reader.query(node_analytics, node_id=node_id, range_name=range)
 
     @app.get("/api/settings")
     async def settings_endpoint() -> dict[str, object]:
@@ -433,11 +455,14 @@ def create_app(
         await websocket.accept()
         last_seq = -1
         last_sent_at = 0.0
+        update_task = None
         disconnect_task = asyncio.create_task(
             websocket.receive(), name="cluster-ws-disconnect"
         )
         try:
             while True:
+                if disconnect_task.done():
+                    return
                 current = cluster_state.snapshot()
                 if current.seq != last_seq:
                     last_seq = current.seq
@@ -463,6 +488,10 @@ def create_app(
         except WebSocketDisconnect:
             return
         finally:
+            if update_task is not None:
+                update_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await update_task
             disconnect_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await disconnect_task
