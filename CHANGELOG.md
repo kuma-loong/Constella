@@ -7,66 +7,54 @@ distribution versions follow PEP 440; Git tags use a hyphenated equivalent.
 
 ### English
 
-#### Added
+#### Constella Lab: monitoring with a user system
 
-- Added a personal Lab activity dashboard with daily workload history, GPU-hour
-  attribution, filters, linked job details, and up to thirty days of history.
-- Added read-only onboarding for users who do not need to bind a Linux account.
+Constella Lab brings identity, user management, and personal workload history to
+shared GPU clusters. It is available as the optional `constella-gpu-lab` package;
+the standard monitoring editions remain independent of the Lab user system.
 
-#### Fixed
+- **Cloudflare Access sign-in:** connect Lab to Cloudflare Access for authenticated
+  access, including email one-time PIN when configured in Access. Lab validates
+  signed identities and requires a valid session for protected pages and APIs.
+- **Users, roles, and administration:** manage read-only users, members, and
+  administrators, with account enable/disable controls, binding management, and
+  audit records for administrative changes.
+- **Self-service account binding:** link a Lab identity to Linux accounts on one
+  or more cluster nodes to attribute workloads to their owner. Users who only
+  need to view monitoring can choose read-only access without binding an account.
+- **Personal activity dashboard:** review daily workloads and GPU-hour usage,
+  filter activity, and open linked job details across up to 30 days of history.
 
-- Recover live monitoring after browser sleep, lock-screen suspension, or network
-  interruption, and discard messages from retired WebSocket connections.
-- Refresh Node history and heatmaps together, deduplicate matching requests, and
-  allow failed or stalled requests to be retried without hiding existing data.
-- Distinguish temporary history errors from empty history and disabled storage;
-  time out frontend history, snapshot, and Lab identity requests.
-- Stop WebSocket producers before closing connections and avoid sending after a
-  client disconnects during the refresh interval.
-- Run telemetry database writes outside the manager event loop, use independent
-  read-only history connections, and back off failed maintenance operations.
-- Attribute legacy activity using both node and username, and exclude desktop
-  services from workload tracking.
+#### Monitoring and usability
 
-#### Changed
-
-- Limit expanded activity days to ten workload rows and keep node process-detail
-  entry points hidden in the Lab edition.
-- Build release packages in a temporary source copy so packaging cannot replace
-  the frontend assets used by a running source deployment.
-
-#### Compatibility
-
-- Keeps the five distribution layout and existing agent HTTP/WebSocket APIs.
-- Requires Python 3.10 or newer. Existing monitoring and Lab databases are retained.
-- This is a prepared release; publication and a Git release tag require review.
+- **Reliable recovery after sleep or network interruptions:** live monitoring
+  reconnects automatically, and manual refresh reloads both Node history and
+  heatmaps. Temporary request failures remain retryable without clearing
+  previously loaded history.
+- **More responsive historical queries:** database writes and history reads are
+  isolated to reduce interference with live monitoring, with improved recovery
+  from database maintenance failures.
+- **Clearer node diagnostics:** inspect process details and abnormal GPU memory
+  occupancy in the standard Web edition, with improved mobile Performance views
+  and page navigation.
 
 ### 中文
 
-#### 新增
+#### Constella Lab：带用户系统的集群监控版本
 
-- 新增 Lab 个人活动面板，支持每日任务历史、GPU 小时归属统计、筛选、关联任务详情及最长 30 天的历史记录。
-- 新增只读用户引导流程，无需绑定 Linux 账号。
+Constella Lab 面向多人共享 GPU 集群，在监控基础上提供身份认证、用户管理和个人任务历史。
+通过独立的可选发行包 `constella-gpu-lab` 安装，标准监控版本保持独立，不依赖 Lab 用户系统。
 
-#### 修复
+- **Cloudflare Access 登录：** 接入 Cloudflare Access 身份认证，支持在 Access 中配置邮箱一次性验证码登录。Lab 校验签名身份，受保护页面和 API 均要求有效会话。
+- **用户、角色与管理后台：** 提供只读用户、成员和管理员角色，支持账号启用与停用、绑定关系管理，以及管理操作的审计记录。
+- **自助绑定 Linux 账号：** 用户可将 Lab 身份绑定到一个或多个集群节点上的 Linux 账号，将任务归属到本人；仅需查看监控的用户可选择只读访问，无需绑定账号。
+- **个人活动面板：** 按天查看任务与 GPU 小时用量，筛选活动并进入关联任务详情，支持最长 30 天的历史记录。
 
-- 浏览器休眠、锁屏挂起或网络中断后自动恢复实时监控，并丢弃已停用 WebSocket 连接的消息。
-- 同步刷新节点历史曲线和热力图，合并重复请求；失败或卡住的请求可以重试，同时保留已显示的数据。
-- 区分历史数据临时请求错误、无历史数据和存储未启用三种状态；为前端历史、快照及 Lab 身份请求增加超时限制。
-- 关闭 WebSocket 连接前先停止数据推送任务，避免客户端在刷新间隔内断开后仍向其发送数据。
-- 将监控数据库写入移出管理器事件循环，历史查询使用独立只读连接，维护操作失败后按退避策略重试。
-- 结合节点和用户名归属旧版活动记录，并将桌面服务排除在任务跟踪之外。
+#### 监控体验与稳定性
 
-#### 调整
-
-- 展开的每日活动最多显示 10 条任务记录，Lab 版本继续隐藏节点进程详情入口。
-- 在临时源码副本中构建发布包，避免打包过程替换正在运行的源码部署所使用的前端资源。
-
-#### 兼容性
-
-- 保留五个发行包的布局，以及现有 Agent HTTP/WebSocket API。
-- 要求 Python 3.10 或更高版本，保留现有监控数据库和 Lab 数据库。
-- 当前为待审核版本；正式发布和创建 Git 版本标签须经审核。
+- **休眠和断网后可靠恢复：** 浏览器恢复后自动重连实时监控，手动刷新同步更新节点历史曲线与热力图；临时请求失败后可以重试，并保留已加载的历史数据。
+- **历史查询更流畅：** 隔离数据库写入与历史读取，减少对实时监控的干扰，并改善数据库维护失败后的恢复能力。
+- **节点排障更直观：** 标准 Web 版本支持进程详情与异常 GPU 显存占用提示，并改善移动端 Performance 页面和页面导航体验。
 
 ## [0.1.4] - 2026-09-06
 
