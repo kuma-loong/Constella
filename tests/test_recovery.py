@@ -169,3 +169,41 @@ def test_cluster_disconnect_during_send_interval_does_not_send_again(monkeypatch
         assert len(sent) == 1
 
     asyncio.run(exercise())
+
+
+def test_idle_cluster_sends_keepalive_snapshot_without_new_samples(monkeypatch):
+    from constella.app import create_app
+
+    async def exercise():
+        now = [100.0]
+        disconnected = asyncio.Event()
+        sent = []
+
+        class State:
+            def snapshot(self):
+                return SimpleNamespace(seq=7, to_dict=lambda: {"seq": 7})
+
+            async def wait_for_update(self, *args, **kwargs):
+                now[0] += 1.0
+                return 7
+
+        class Socket:
+            async def accept(self):
+                pass
+
+            async def receive(self):
+                await disconnected.wait()
+                return {"type": "websocket.disconnect"}
+
+            async def send_json(self, data):
+                sent.append((now[0], data))
+                if len(sent) == 2:
+                    disconnected.set()
+
+        app = create_app(cluster_state=State())
+        endpoint = next(route.endpoint for route in app.routes if route.path == "/ws/cluster")
+        monkeypatch.setattr("constella.app.time", SimpleNamespace(monotonic=lambda: now[0]))
+        await asyncio.wait_for(endpoint(Socket()), timeout=1)
+        assert sent == [(100.0, {"seq": 7}), (105.0, {"seq": 7})]
+
+    asyncio.run(exercise())

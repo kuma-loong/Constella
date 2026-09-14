@@ -464,7 +464,7 @@ def create_app(
                 if disconnect_task.done():
                     return
                 current = cluster_state.snapshot()
-                if current.seq != last_seq:
+                if current.seq != last_seq or time.monotonic() - last_sent_at >= 5.0:
                     last_seq = current.seq
                     await websocket.send_json(current.to_dict())
                     last_sent_at = time.monotonic()

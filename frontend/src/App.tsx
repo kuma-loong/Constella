@@ -102,7 +102,8 @@ export default function App({ extension }: { extension?: AppExtension }) {
   );
 
   const selectedRefreshInterval = clusterRefreshInterval(snapshot) ?? currentRefreshInterval;
-  const displayedLiveState = paused ? "paused" : liveState;
+  const displayedLiveState = paused ? "paused"
+    : liveState === "live" && snapshot && !snapshot.ok && snapshot.totals.node_count ? "error" : liveState;
 
   useEffect(() => {
     if (window.location.pathname === "/") {
@@ -150,9 +151,6 @@ export default function App({ extension }: { extension?: AppExtension }) {
     if (typeof interval === "number" && Number.isFinite(interval)) {
       setCurrentRefreshInterval((previous) => (sameInterval(previous, interval) ? previous : interval));
     }
-    if (snapshot) {
-      setLiveState(snapshot.ok ? "live" : snapshot.totals.node_count ? "error" : "connecting");
-    }
   }, [snapshot]);
 
   useEffect(() => {
@@ -193,8 +191,8 @@ export default function App({ extension }: { extension?: AppExtension }) {
       },
       state: setLiveState,
       interval: () => settingsRef.current?.refresh_interval ?? 1,
-      recover: (manual) => {
-        void fetchSnapshot(manual);
+      recover: fetchSnapshot,
+      refresh: () => {
         const current = coreRoute(routeRef.current);
         if (current.kind === "node") void analyticsRef.current?.fetchNode(current, true);
         else syncAnalyticsRoute(routeRef.current, true);
@@ -202,11 +200,11 @@ export default function App({ extension }: { extension?: AppExtension }) {
     });
     liveRef.current = connection;
     void fetchSettings();
-    void fetchSnapshot();
+    void fetchSnapshot().catch(() => {});
     return () => { connection.dispose(); snapshotRequest.current?.abort(); };
   }, []);
 
-  async function fetchSnapshot(manual = false) {
+  async function fetchSnapshot(manual = false): Promise<boolean> {
     snapshotRequest.current?.abort();
     const request = new AbortController();
     snapshotRequest.current = request;
@@ -216,39 +214,33 @@ export default function App({ extension }: { extension?: AppExtension }) {
         headers: extension?.requestHeaders,
         signal: request.signal,
       });
-      if (request.signal.aborted || snapshotRequest.current !== request) return;
+      if (request.signal.aborted || snapshotRequest.current !== request) return true;
       if (latestSnapshotRef.current !== previous) {
         if (manual) setSnapshot(latestSnapshotRef.current);
-        return;
+        return true;
       }
       latestSnapshotRef.current = nextSnapshot;
       if (manual || !pausedRef.current) setSnapshot(nextSnapshot);
+      return true;
     } catch (error) {
-      if (request.signal.aborted) return;
+      if (request.signal.aborted) return true;
       if (error instanceof RequestError && error.status === 401) {
         extension?.onAuthenticationRequired?.();
+        return false;
       }
-      setLiveState("offline");
+      throw error;
     }
   }
 
   async function fetchSettings() {
     try {
-      const response = await fetch("/api/settings", {
-        cache: "no-store",
+      const nextSettings = await fetchJson<Settings>("/api/settings", {
         headers: extension?.requestHeaders,
       });
-      if (response.status === 401) {
-        extension?.onAuthenticationRequired?.();
-        return;
-      }
-      if (!response.ok) {
-        throw new Error(`settings request failed: ${response.status}`);
-      }
-      const nextSettings = (await response.json()) as Settings;
       setSettings(nextSettings);
       setCurrentRefreshInterval(nextSettings.refresh_interval);
-    } catch {
+    } catch (error) {
+      if (error instanceof RequestError && error.status === 401) extension?.onAuthenticationRequired?.();
       setCurrentRefreshInterval(clusterRefreshInterval(latestSnapshotRef.current) ?? currentRefreshInterval);
     }
   }
@@ -265,7 +257,7 @@ export default function App({ extension }: { extension?: AppExtension }) {
     setRefreshPending(true);
     setCurrentRefreshInterval(interval);
     try {
-      const response = await fetch("/api/settings", {
+      const nextSettings = await fetchJson<Settings>("/api/settings", {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -274,13 +266,10 @@ export default function App({ extension }: { extension?: AppExtension }) {
         },
         body: JSON.stringify({ refresh_interval: interval }),
       });
-      if (!response.ok) {
-        throw new Error(`settings update failed: ${response.status}`);
-      }
-      const nextSettings = (await response.json()) as Settings;
       setSettings(nextSettings);
       setCurrentRefreshInterval(nextSettings.refresh_interval);
-    } catch {
+    } catch (error) {
+      if (error instanceof RequestError && error.status === 401) extension?.onAuthenticationRequired?.();
       setCurrentRefreshInterval(
         clusterRefreshInterval(latestSnapshotRef.current) ?? settingsRef.current?.refresh_interval ?? previous,
       );

@@ -592,19 +592,16 @@ export function createAnalyticsController({
       params.set("since", String(jobFilters.since));
     }
     try {
-      const response = await fetch(`/api/highres/jobs?${params.toString()}`, { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error(`job search failed: ${response.status}`);
-      }
-      jobPayload = (await response.json()) as { enabled: boolean; items?: JobItem[] };
+      jobPayload = await fetchJson<{ enabled: boolean; items?: JobItem[] }>(`/api/highres/jobs?${params.toString()}`, { headers: requestHeaders });
       jobKey = key;
       if (!selectedJobKey && jobPayload.items?.length) {
         selectedJobKey = jobPayload.items[0].job_key;
       }
       if (selectedJobKey) void fetchJobCurve(selectedJobKey);
-    } catch {
+    } catch (error) {
+      if (error instanceof RequestError && error.status === 401) onAuthenticationRequired?.();
       jobPayload = { enabled: false };
-      jobKey = key;
+      jobKey = "";
     } finally {
       jobsLoading = false;
       renderJobs();
@@ -627,22 +624,19 @@ export function createAnalyticsController({
         params.set("metrics", PERFORMANCE_METRICS.map((item) => item.key).join(","));
       }
       const endpoint = performance ? "performance" : "gpu";
-      const response = await fetch(`/api/highres/jobs/${encodeURIComponent(key)}/${endpoint}?${params.toString()}`, {
-        cache: "no-store",
+      const nextPayload = await fetchJson<JobCurve | PerformanceJobCurve>(`/api/highres/jobs/${encodeURIComponent(key)}/${endpoint}?${params.toString()}`, {
+        headers: requestHeaders,
       });
-      if (!response.ok) {
-        throw new Error(`job curve failed: ${response.status}`);
-      }
-      const nextPayload = (await response.json()) as JobCurve | PerformanceJobCurve;
       if (request === jobCurveRequest) {
         jobCurvePayload = performance ? normalizePerformanceJobCurve(nextPayload as PerformanceJobCurve) : nextPayload as JobCurve;
         jobCurveKey = curveKey;
         if (nextPayload.resolution_mode === "1h") jobResolution = "1h";
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof RequestError && error.status === 401) onAuthenticationRequired?.();
       if (request === jobCurveRequest) {
         jobCurvePayload = { enabled: false, series: [] };
-        jobCurveKey = curveKey;
+        jobCurveKey = "";
       }
     } finally {
       if (request === jobCurveRequest) {

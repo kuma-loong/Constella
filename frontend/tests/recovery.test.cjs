@@ -13,6 +13,7 @@ function environment(overrides = {}) {
     return {
       addEventListener: (type, fn) => { if (!listeners.has(type)) listeners.set(type, new Set()); listeners.get(type).add(fn); },
       removeEventListener: (type, fn) => listeners.get(type)?.delete(fn),
+      dispatchEvent(event) { this.emit(event.type, event); },
       emit: (type, value = {}) => { for (const fn of listeners.get(type) || []) fn(value); },
     };
   };
@@ -23,7 +24,7 @@ function environment(overrides = {}) {
     constructor() { Object.assign(this, events()); sockets.push(this); }
     close() { this.closed = true; this.emit('close', { code: 1000 }); }
   }
-  const globals = { console, URLSearchParams, AbortController, Date, Intl, window, document, navigator: { onLine: true }, location: { protocol: 'http:', host: 'test' }, WebSocket, ...overrides };
+  const globals = { console, URLSearchParams, AbortController, Headers, Event, Date, Intl, window, document, navigator: { onLine: true }, location: { protocol: 'http:', host: 'test' }, WebSocket, ...overrides };
   function load(name) {
     if (modules.has(name)) return modules.get(name);
     const exports = {};
@@ -114,7 +115,7 @@ test('timeout releases loading and manual refresh cancels a hung request', async
   assert.match(node.innerHTML, /heatmap-scroll/);
 });
 
-test('visibility recovery retires old sockets and obtains fresh data', () => {
+test('visibility recovery retires old sockets and obtains fresh data', async () => {
   const env = environment();
   const messages = []; let recoveries = 0;
   const connection = env.load('live-connection').connectLive({ message: data => messages.push(data), state: () => {}, recover: () => recoveries++, interval: () => 1 });
@@ -125,6 +126,7 @@ test('visibility recovery retires old sockets and obtains fresh data', () => {
   env.document.hidden = false;
   env.document.emit('visibilitychange');
   assert.equal(env.sockets.length, 2);
+  await tick();
   assert.equal(recoveries, 1);
   env.sockets[0].emit('message', { data: 'stale' });
   env.sockets[1].emit('message', { data: 'latest' });
@@ -143,12 +145,16 @@ test('authorization close cooldown is not bypassed by the watchdog', () => {
   connection.dispose();
 });
 
-test('manual recovery is distinct from automatic wake recovery', () => {
-  const env = environment();
+test('manual recovery is distinct from automatic wake recovery', async () => {
+  let now = 0;
+  const env = environment({ Date: { now: () => now } });
   const modes = [];
   const connection = env.load('live-connection').connectLive({ message: () => {}, state: () => {}, recover: manual => modes.push(manual), interval: () => 1 });
   connection.recover();
+  await tick();
+  now = 2000;
   env.window.emit('online');
+  await tick();
   assert.deepEqual(modes, [true, false]);
   connection.dispose();
 });
@@ -188,4 +194,107 @@ test('non-24h history refresh retries the separate heatmap request', async () =>
   assert.equal(calls.length, 5);
   assert.match(node.innerHTML, /heatmap-scroll/);
   assert.doesNotMatch(node.innerHTML, /Heatmap could not be loaded/);
+});
+
+test('wake event burst starts one connection and one slow HTTP recovery', async () => {
+  let now = 0, probes = 0, refreshes = 0, release;
+  const env = environment({ Date: { now: () => now } });
+  const connection = env.load('live-connection').connectLive({
+    message: () => {}, state: () => {}, interval: () => 1,
+    refresh: () => refreshes++, recover: () => { probes++; return new Promise(resolve => { release = resolve; }); },
+  });
+  now = 60_000;
+  env.document.emit('visibilitychange');
+  env.window.emit('focus');
+  env.window.emit('pageshow');
+  env.window.emit('online');
+  await tick();
+  assert.equal(env.sockets.length, 2);
+  assert.equal(probes, 1);
+  assert.equal(refreshes, 1);
+  release(true);
+  await tick();
+  assert.equal(env.sockets.length, 2);
+  connection.dispose();
+});
+
+test('slow handshake survives telemetry watchdog and manual refresh', async () => {
+  let now = 0;
+  const env = environment({ Date: { now: () => now } });
+  const connection = env.load('live-connection').connectLive({ message: () => {}, state: () => {}, interval: () => 1, recover: () => true });
+  const check = [...env.timers.values()].find(timer => timer.ms === 3000).fn;
+  for (now = 3000; now <= 24_000; now += 3000) check();
+  connection.recover();
+  await tick();
+  assert.equal(env.sockets.length, 1);
+  assert.notEqual(env.sockets[0].closed, true);
+  env.sockets[0].emit('message', { data: 'current' });
+  connection.dispose();
+});
+
+test('opaque handshake failures probe HTTP auth and do not reload history', async () => {
+  const env = environment();
+  let probes = 0, refreshes = 0;
+  const connection = env.load('live-connection').connectLive({
+    message: () => {}, state: () => {}, interval: () => 1,
+    recover: () => { probes++; return false; }, refresh: () => refreshes++,
+  });
+  env.sockets[0].emit('close', { code: 1006 });
+  const [id, timer] = [...env.timers.entries()].find(([, t]) => t.ms === 1200);
+  env.timers.delete(id);
+  timer.fn();
+  await tick();
+  for (const t of env.timers.values()) t.fn();
+  env.window.emit('online');
+  assert.equal(probes, 1);
+  assert.equal(refreshes, 0);
+  assert.equal(env.sockets.length, 1);
+  connection.dispose();
+});
+
+test('failed HTTP probe backs off and eventual recovery opens one socket', async () => {
+  const env = environment();
+  let failing = true;
+  const connection = env.load('live-connection').connectLive({ message: () => {}, state: () => {}, interval: () => 1,
+    recover: async () => { if (failing) throw new Error('offline'); return true; },
+  });
+  const fire = ms => { const [id, timer] = [...env.timers.entries()].find(([, t]) => t.ms === ms); env.timers.delete(id); timer.fn(); };
+  env.sockets[0].emit('error');
+  fire(1200);
+  await tick();
+  assert.equal(env.sockets.length, 1);
+  failing = false;
+  fire(2400);
+  await tick();
+  assert.equal(env.sockets.length, 2);
+  connection.dispose();
+});
+
+test('Access AJAX header preserves caller headers and expired session emits action without reload', async () => {
+  let init, notified = 0;
+  const env = environment({ fetch: async (_url, options) => { init = options; return new Response('', { status: 401 }); } });
+  const requests = env.load('requests');
+  env.window.addEventListener(requests.AUTHENTICATION_REQUIRED, () => notified++);
+  await assert.rejects(requests.fetchJson('/api/lab/me', { headers: new Headers({ 'X-Test': 'retained' }) }), error => error.status === 401);
+  assert.equal(init.headers.get('X-Requested-With'), 'XMLHttpRequest');
+  assert.equal(init.headers.get('X-Test'), 'retained');
+  assert.equal(init.credentials, 'same-origin');
+  assert.equal(notified, 1);
+  assert.equal(env.timers.size, 0);
+});
+
+test('disposing during an HTTP recovery cannot reopen a connection', async () => {
+  const env = environment();
+  let release;
+  const connection = env.load('live-connection').connectLive({ message: () => {}, state: () => {}, interval: () => 1,
+    recover: () => new Promise(resolve => { release = resolve; }),
+  });
+  connection.recover();
+  await tick();
+  connection.dispose();
+  release(true);
+  await tick();
+  assert.equal(env.sockets.length, 1);
+  assert.equal(env.sockets[0].closed, true);
+  assert.equal(env.timers.size, 0);
 });

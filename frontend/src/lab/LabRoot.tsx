@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import App from "../App";
+import { AUTHENTICATION_REQUIRED, requestAuthentication } from "../requests";
 import type { AppExtension, AppRoute, ExtensionRoute } from "../app-extension";
 import { Icon } from "../components";
 import { LAB_HEADERS, LabApiError, labRequest } from "./api";
@@ -10,13 +11,17 @@ import { OnboardingDialog } from "./OnboardingDialog";
 import { labRoleLabel, type LabUser } from "./types";
 
 export function LabRoot() {
+  const [authenticationRequired, setAuthenticationRequired] = useState(false);
   const [user, setUser] = useState<LabUser | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     document.documentElement.dataset.edition = "lab";
+    const expired = () => setAuthenticationRequired(true);
+    window.addEventListener(AUTHENTICATION_REQUIRED, expired);
     void loadUser();
     return () => {
+      window.removeEventListener(AUTHENTICATION_REQUIRED, expired);
       delete document.documentElement.dataset.edition;
     };
   }, []);
@@ -55,9 +60,18 @@ export function LabRoot() {
       canManageSettings: canManageLab,
       showNodeProcessDetails: false,
       requestHeaders: LAB_HEADERS,
-      onAuthenticationRequired: () => window.location.reload(),
+      onAuthenticationRequired: requestAuthentication,
     };
   }, [user]);
+
+  if (authenticationRequired) {
+    return <main class="lab-auth-state" id="mainContent">
+      <p class="lab-eyebrow">Constella Lab</p>
+      <h1>Sign in again</h1>
+      <p>Your session needs verification. Reconnect to continue.</p>
+      <button class="lab-button is-primary" type="button" onClick={() => window.location.reload()}>Reconnect</button>
+    </main>;
+  }
 
   if (!user) {
     return <main class="lab-auth-state" id="mainContent">

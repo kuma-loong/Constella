@@ -31,7 +31,6 @@ export async function labRequest<T>(path: string, options: RequestInit = {}): Pr
     });
   } catch (error) {
     if (error instanceof RequestError) {
-      if (error.status === 401) window.location.reload();
       throw new LabApiError(error.status, error.payload, error.requestId);
     }
     throw error;
