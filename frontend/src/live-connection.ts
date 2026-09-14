@@ -33,6 +33,7 @@ export function connectLive(options: {
     const delay = code === 4403 ? 30_000 : Math.min(30_000, 1200 * 2 ** Math.min(failures++, 5));
     reconnectTimer = window.setTimeout(() => {
       reconnectTimer = 0;
+      connect();
       void probe(false);
     }, delay);
   }
@@ -65,28 +66,34 @@ export function connectLive(options: {
     });
   }
   function probe(manual: boolean) {
-    if (recovery) return recovery;
-    // Single flight across visibility, online, focus and watchdog callbacks.
-    recovery = Promise.resolve().then(() => options.recover(manual)).then(result => {
-      if (stopped) return;
+    if (recovery && !manual) return recovery;
+    // Automatic probes share work; manual refresh replaces the pending HTTP request.
+    const current = Promise.resolve().then(() => {
+      if (stopped || recovery !== current) return;
+      return options.recover(manual);
+    }).then(result => {
+      if (stopped || recovery !== current) return;
       if (result === false) {
         blocked = true;
         retire();
         options.state("offline");
-      } else connect();
+      }
     }).catch(() => {
-      if (!stopped && !socket) schedule();
-    }).finally(() => { recovery = null; });
+      // HTTP transport errors must not gate the independent WebSocket retry loop.
+    }).finally(() => { if (recovery === current) recovery = null; });
+    recovery = current;
     return recovery;
   }
   function resume(manual: boolean) {
     if (manual) blocked = false;
-    if (!available() || recovery) return;
+    if (!available()) return;
     const now = Date.now();
     if (!manual && now - lastResume < 1000) return;
     lastResume = lastCheck = now;
     // A manual data refresh must not interrupt a healthy socket/slow handshake.
     if (!manual) retire();
+    window.clearTimeout(reconnectTimer);
+    reconnectTimer = 0;
     connect();
     options.refresh?.();
     void probe(manual);
@@ -104,13 +111,13 @@ export function connectLive(options: {
     const now = Date.now();
     const slept = now - lastCheck > 10_000;
     lastCheck = now;
-    if (!available() || recovery) return;
+    if (!available()) return;
     if (slept) { recover(); return; }
     if (reconnectTimer) return;
     // A tunnel handshake has its own deadline, independent of telemetry cadence.
     const timeout = received ? Math.max(15_000, options.interval() * 3000) : 30_000;
     if (socket && now - lastMessage > timeout) schedule();
-    else if (!socket) void probe(false);
+    else if (!socket) schedule();
   }
   const timer = window.setInterval(check, 3000);
   document.addEventListener("visibilitychange", visibility);

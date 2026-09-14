@@ -248,11 +248,12 @@ test('opaque handshake failures probe HTTP auth and do not reload history', asyn
   env.window.emit('online');
   assert.equal(probes, 1);
   assert.equal(refreshes, 0);
-  assert.equal(env.sockets.length, 1);
+  assert.equal(env.sockets.length, 2);
+  assert.equal(env.sockets[1].closed, true);
   connection.dispose();
 });
 
-test('failed HTTP probe backs off and eventual recovery opens one socket', async () => {
+test('HTTP failure cannot prevent a usable WebSocket from reconnecting', async () => {
   const env = environment();
   let failing = true;
   const connection = env.load('live-connection').connectLive({ message: () => {}, state: () => {}, interval: () => 1,
@@ -262,11 +263,55 @@ test('failed HTTP probe backs off and eventual recovery opens one socket', async
   env.sockets[0].emit('error');
   fire(1200);
   await tick();
-  assert.equal(env.sockets.length, 1);
+  assert.equal(env.sockets.length, 2);
+  env.sockets[1].emit('error');
   failing = false;
   fire(2400);
   await tick();
+  assert.equal(env.sockets.length, 3);
+  connection.dispose();
+});
+
+test('manual refresh replaces a pending probe and ignores its late authentication result', async () => {
+  const env = environment();
+  const pending = [], modes = [];
+  const connection = env.load('live-connection').connectLive({
+    message: () => {}, state: () => {}, interval: () => 1,
+    recover: manual => { modes.push(manual); return new Promise(resolve => pending.push(resolve)); },
+  });
+  env.window.emit('online');
+  await tick();
+  connection.recover();
+  await tick();
+  assert.deepEqual(modes, [false, true]);
+  pending[0](false);
+  await tick();
+  assert.notEqual(env.sockets.at(-1).closed, true);
+  pending[1](true);
+  await tick();
+  connection.dispose();
+});
+
+test('a hanging HTTP probe does not disable the socket watchdog or retry', async () => {
+  let now = 0, probes = 0;
+  const env = environment({ Date: { now: () => now } });
+  const connection = env.load('live-connection').connectLive({
+    message: () => {}, state: () => {}, interval: () => 1,
+    recover: () => { probes++; return new Promise(() => {}); },
+  });
+  connection.recover();
+  await tick();
+  const check = [...env.timers.values()].find(t => t.ms === 3000).fn;
+  for (now = 3000; now <= 33_000; now += 3000) check();
+  assert.equal(env.sockets[0].closed, true);
+  const [id, timer] = [...env.timers.entries()].find(([, t]) => t.ms === 1200);
+  env.timers.delete(id);
+  timer.fn();
+  await tick();
   assert.equal(env.sockets.length, 2);
+  assert.equal(probes, 1);
+  env.sockets[1].emit('message', { data: 'fresh' });
+  assert.notEqual(env.sockets[1].closed, true);
   connection.dispose();
 });
 
