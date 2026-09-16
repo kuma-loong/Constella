@@ -21,6 +21,7 @@ from .collector import SnapshotCollector, validate_device_type, validate_refresh
 from .dcmi import sample_hardware_inventory as sample_dcmi_hardware_inventory
 from .nvml import sample_hardware_inventory as sample_nvml_hardware_inventory
 from .performance import performance_profiles
+from .telemetry import telemetry_json
 from .schema import NodeHardware, Snapshot, local_node_id
 
 logger = logging.getLogger(__name__)
@@ -307,7 +308,7 @@ async def _sender_loop(
 
 async def _send_json(websocket: Any, payload: dict[str, Any], lock: asyncio.Lock) -> None:
     async with lock:
-        await websocket.send(json.dumps(payload))
+        await websocket.send(telemetry_json(payload))
 
 
 def lookup_linux_account(username: str) -> dict[str, Any]:

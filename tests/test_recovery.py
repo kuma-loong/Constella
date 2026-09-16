@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 import time
 from types import SimpleNamespace
@@ -154,7 +155,8 @@ def test_cluster_disconnect_during_send_interval_does_not_send_again(monkeypatch
                 await disconnected.wait()
                 return {"type": "websocket.disconnect"}
 
-            async def send_json(self, data):
+            async def send_text(self, raw):
+                data = json.loads(raw)
                 assert not disconnected.is_set(), "sent after client disconnected"
                 sent.append(data)
 
@@ -195,7 +197,8 @@ def test_idle_cluster_sends_keepalive_snapshot_without_new_samples(monkeypatch):
                 await disconnected.wait()
                 return {"type": "websocket.disconnect"}
 
-            async def send_json(self, data):
+            async def send_text(self, raw):
+                data = json.loads(raw)
                 sent.append((now[0], data))
                 if len(sent) == 2:
                     disconnected.set()

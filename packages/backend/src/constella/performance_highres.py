@@ -5,7 +5,7 @@ from array import array
 from dataclasses import dataclass, field
 from typing import Any
 
-from .performance import NVIDIA_GPM_METRICS, NVIDIA_GPM_PROFILE
+from .performance import NVIDIA_GPM_METRICS, NVIDIA_GPM_PROFILE, NVIDIA_GPM_RULES
 
 VALID_MASK_BYTES = array("H").itemsize
 
@@ -35,7 +35,7 @@ class NvidiaGpmSampleRing:
         if performance.get("status") == "available":
             for bit, metric in enumerate(NVIDIA_GPM_METRICS):
                 value = metrics.get(metric)
-                if isinstance(value, (int, float)) and math.isfinite(float(value)):
+                if NVIDIA_GPM_RULES[metric].accepts(value):
                     self.values[metric][index] = float(value)
                     mask |= 1 << bit
         self.valid_masks[index] = mask

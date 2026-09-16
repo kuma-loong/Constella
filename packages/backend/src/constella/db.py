@@ -1091,15 +1091,16 @@ class AsyncDBSink:
         bucket_start = float(int(snapshot.sampled_at // ROLLUP_20S) * ROLLUP_20S)
         for gpu in snapshot.gpus:
             key = (bucket_start, snapshot.node_id, gpu.uuid)
-            bucket = self._rollup_20s.get(key)
-            if bucket is None:
-                bucket = RollupBucket(
-                    bucket_start=bucket_start,
-                    node_id=snapshot.node_id,
-                    gpu_uuid=gpu.uuid,
-                )
-                self._rollup_20s[key] = bucket
-            bucket.add_gpu(gpu)
+            if gpu.basic_metrics_valid:
+                bucket = self._rollup_20s.get(key)
+                if bucket is None:
+                    bucket = RollupBucket(
+                        bucket_start=bucket_start,
+                        node_id=snapshot.node_id,
+                        gpu_uuid=gpu.uuid,
+                    )
+                    self._rollup_20s[key] = bucket
+                bucket.add_gpu(gpu)
             performance = gpu.performance
             if (
                 not self.performance_rollups_enabled

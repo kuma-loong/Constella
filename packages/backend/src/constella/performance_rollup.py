@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .performance import NVIDIA_GPM_PROFILE
+from .performance import NVIDIA_GPM_PROFILE, NVIDIA_GPM_RULES
 from .schema import AcceleratorPerformance
 
 NVIDIA_GPM_ROLLUP_METRICS = {
@@ -39,7 +39,7 @@ class NvidiaGpmRollupBucket:
             return
         for metric, value in performance.metrics.items():
             stem = NVIDIA_GPM_ROLLUP_METRICS.get(metric)
-            if stem is None:
+            if stem is None or not NVIDIA_GPM_RULES[metric].accepts(value):
                 continue
             numeric = float(value)
             self.sums[stem] = self.sums.get(stem, 0.0) + numeric

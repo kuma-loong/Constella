@@ -31,6 +31,7 @@ import { createAnalyticsController, type Route } from "./analytics";
 import type { AppExtension, AppRoute } from "./app-extension";
 import { clusterRefreshInterval, findNode, sameInterval } from "./cluster-utils";
 import { connectLive } from "./live-connection";
+import { TelemetryNotice } from "./telemetry-health";
 import { fetchJson, RequestError } from "./requests";
 import { Fabric, GpuGrid, Header, ProcessSection, Summary } from "./components";
 import { PerformancePage } from "./performance";
@@ -102,8 +103,7 @@ export default function App({ extension }: { extension?: AppExtension }) {
   );
 
   const selectedRefreshInterval = clusterRefreshInterval(snapshot) ?? currentRefreshInterval;
-  const displayedLiveState = paused ? "paused"
-    : liveState === "live" && snapshot && !snapshot.ok && snapshot.totals.node_count ? "error" : liveState;
+  const displayedLiveState = paused ? "paused" : liveState;
 
   useEffect(() => {
     if (window.location.pathname === "/") {
@@ -375,6 +375,10 @@ export default function App({ extension }: { extension?: AppExtension }) {
       />
 
       <main class="shell" id="mainContent">
+        {liveState === "error" && !paused ? (
+          <div class="telemetry-notice" role="status">Live data could not be read. Showing the last valid snapshot while waiting for a valid update.</div>
+        ) : null}
+        <TelemetryNotice snapshot={snapshot} />
         <section class="summary-grid" hidden={route.kind === "performance" || route.kind === "extension"}>
           <Summary snapshot={snapshot} route={coreRoute(route)} selectedNode={selectedNode} />
         </section>

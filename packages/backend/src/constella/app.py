@@ -35,6 +35,7 @@ from .highres import (
 )
 from .paths import resolve_frontend_dist
 from .schema import local_node_id
+from .telemetry import COUNT, telemetry_json
 
 
 class SettingsUpdate(BaseModel):
@@ -247,6 +248,17 @@ def create_app(
             "node_count": snapshot.totals.node_count,
             "online_node_count": snapshot.totals.online_node_count,
             "gpu_count": snapshot.totals.gpu_count,
+            "telemetry": {
+                "degraded_gpu_count": sum(
+                    bool(gpu.error or gpu.telemetry_errors or (
+                        gpu.performance and (gpu.performance.invalid_metrics or gpu.performance.error)
+                    )) for node in snapshot.nodes for gpu in node.gpus
+                ),
+                "invalid_metric_count": sum(
+                    len(gpu.performance.invalid_metrics) if gpu.performance else 0
+                    for node in snapshot.nodes for gpu in node.gpus
+                ),
+            },
             "database": database,
         }
 
@@ -466,7 +478,7 @@ def create_app(
                 current = cluster_state.snapshot()
                 if current.seq != last_seq or time.monotonic() - last_sent_at >= 5.0:
                     last_seq = current.seq
-                    await websocket.send_json(current.to_dict())
+                    await websocket.send_text(telemetry_json(current.to_dict()))
                     last_sent_at = time.monotonic()
                 interval = max(app.state.settings.refresh_interval, 0.5)
                 update_task = asyncio.create_task(
@@ -509,7 +521,7 @@ def create_app(
 
         async def sender() -> None:
             while True:
-                await websocket.send_json(await send_queue.get())
+                await websocket.send_text(telemetry_json(await send_queue.get()))
 
         sender_task = asyncio.create_task(sender(), name="agent-ws-sender")
         agent_queues.add(send_queue)
@@ -526,10 +538,27 @@ def create_app(
             send_queue.put_nowait(app.state.settings.config_message())
 
             while True:
-                message = await websocket.receive_json()
+                try:
+                    message = await websocket.receive_json()
+                except ValueError:
+                    cluster_state.reject_sample(node_id, connection_id=connection_id)
+                    send_queue.put_nowait({"type": "ack", "accepted": False, "error": "invalid_json"})
+                    continue
+                if not isinstance(message, dict):
+                    cluster_state.reject_sample(node_id, connection_id=connection_id)
+                    send_queue.put_nowait({"type": "ack", "accepted": False, "error": "invalid_sample"})
+                    continue
                 message_type = message.get("type")
                 if message_type == "sample":
-                    accepted = cluster_state.ingest_sample(message, connection_id=connection_id)
+                    try:
+                        accepted = cluster_state.ingest_sample(message, connection_id=connection_id)
+                    except (ValueError, TypeError, OverflowError):
+                        cluster_state.reject_sample(node_id, connection_id=connection_id)
+                        send_queue.put_nowait({
+                            "type": "ack", "seq": message.get("seq"), "accepted": False,
+                            "error": "invalid_sample",
+                        })
+                        continue
                     if accepted:
                         runtime = cluster_state.latest_by_node.get(str(message.get("node_id") or ""))
                         if runtime is not None:
@@ -541,6 +570,10 @@ def create_app(
                         {"type": "ack", "seq": message.get("seq"), "accepted": accepted}
                     )
                 elif message_type == "heartbeat":
+                    if not COUNT.accepts(message.get("seq", 0)):
+                        cluster_state.reject_sample(node_id, connection_id=connection_id)
+                        send_queue.put_nowait({"type": "ack", "accepted": False, "error": "invalid_heartbeat"})
+                        continue
                     heartbeat_node_id = str(message.get("node_id") or node_id or "")
                     if heartbeat_node_id:
                         cluster_state.ingest_heartbeat(
@@ -578,7 +611,7 @@ def create_app(
                 {"type": "hello", **app.state.highres_broadcaster.status()}
             )
             while True:
-                await websocket.send_json(await queue.get())
+                await websocket.send_text(telemetry_json(await queue.get()))
         except WebSocketDisconnect:
             return
         finally:

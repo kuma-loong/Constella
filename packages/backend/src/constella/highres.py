@@ -9,10 +9,12 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .analytics import job_key
+from .cluster import gpu_from_telemetry
 from .db import ROLLUP_1H, ROLLUP_2M, ROLLUP_20S, SQLiteStore
 from .performance import NVIDIA_GPM_METRICS, NVIDIA_GPM_PROFILE, nvidia_gpm_highres_enabled
 from .performance_highres import NvidiaGpmHighresCache
 from .schema import GpuInfo, NodeSnapshot
+from .telemetry import SAMPLE_TIME
 
 HIGHRES_RETENTION_SECONDS = 2 * 60 * 60
 HIGHRES_MAX_JOB_SECONDS = 60 * 60
@@ -51,6 +53,8 @@ class GpuSampleRing:
         self.temperature_c = array("f", [0.0]) * self.capacity
 
     def append(self, *, sampled_at: float, gpu: GpuInfo) -> None:
+        if not gpu.basic_metrics_valid:
+            return
         index = self.write_index
         self.timestamps[index] = sampled_at
         self.gpu_utilization[index] = float(gpu.utilization_gpu)
@@ -156,23 +160,13 @@ class HighresGpuCache:
 
     def add_sample_message(self, message: dict[str, Any]) -> None:
         node_id = str(message.get("node_id") or "")
-        sampled_at = float(message.get("sampled_at") or 0.0)
-        if not node_id or sampled_at <= 0:
+        sampled_at = message.get("sampled_at", 0.0)
+        raw_gpus = message.get("gpus", [])
+        if not node_id or not SAMPLE_TIME.accepts(sampled_at) or not isinstance(raw_gpus, list):
             self.dropped_samples += 1
             return
-        for raw_gpu in message.get("gpus") or []:
-            gpu = GpuInfo(
-                index=int(raw_gpu.get("gpu_index") or raw_gpu.get("index") or 0),
-                node_id=node_id,
-                uuid=str(raw_gpu.get("uuid") or "unknown"),
-                name=str(raw_gpu.get("name") or "unknown"),
-                utilization_gpu=int(raw_gpu.get("utilization_gpu") or 0),
-                utilization_mem=int(raw_gpu.get("utilization_mem") or 0),
-                memory_total_mb=int(raw_gpu.get("memory_total_mb") or 0),
-                memory_used_mb=int(raw_gpu.get("memory_used_mb") or 0),
-                power_watts=float(raw_gpu.get("power_watts") or 0.0),
-                temperature_c=int(raw_gpu.get("temperature_c") or 0),
-            )
+        for index, raw_gpu in enumerate(raw_gpus):
+            gpu = gpu_from_telemetry(node_id, raw_gpu, index)
             key = (node_id, gpu.uuid)
             ring = self.rings.get(key)
             if ring is None:
@@ -185,9 +179,7 @@ class HighresGpuCache:
                 gpu_index=gpu.index,
                 name=gpu.name,
                 sampled_at=sampled_at,
-                performance=raw_gpu.get("performance")
-                if isinstance(raw_gpu.get("performance"), dict)
-                else None,
+                performance=gpu.performance.to_dict() if gpu.performance is not None else None,
             )
             self.sample_count += 1
         self.last_sample_at = sampled_at
@@ -924,6 +916,8 @@ def gpu_sample_message(snapshot: NodeSnapshot) -> dict[str, Any]:
                 "memory_total_mb": gpu.memory_total_mb,
                 "power_watts": gpu.power_watts,
                 "temperature_c": gpu.temperature_c,
+                **({"telemetry_errors": gpu.telemetry_errors} if gpu.telemetry_errors else {}),
+                **({"error": gpu.error} if gpu.error else {}),
                 **(
                     {"performance": gpu.performance.to_dict()}
                     if gpu.performance is not None

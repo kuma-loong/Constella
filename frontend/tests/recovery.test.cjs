@@ -343,3 +343,24 @@ test('disposing during an HTTP recovery cannot reopen a connection', async () =>
   assert.equal(env.sockets[0].closed, true);
   assert.equal(env.timers.size, 0);
 });
+
+test('invalid data reports an error without closing a working transport', async () => {
+  const env = environment();
+  const states = [];
+  let probes = 0;
+  const connection = env.load('live-connection').connectLive({
+    message: data => JSON.parse(data), state: state => states.push(state),
+    recover: () => { probes++; return true; }, interval: () => 1,
+  });
+  env.sockets[0].emit('message', { data: '{"metric": NaN}' });
+  await tick();
+  assert.equal(states.at(-1), 'error');
+  assert.notEqual(env.sockets[0].closed, true);
+  env.sockets[0].emit('message', { data: '{"metric": NaN}' });
+  await tick();
+  assert.equal(probes, 1);
+  env.sockets[0].emit('message', { data: '{"metric": 42}' });
+  assert.equal(states.at(-1), 'live');
+  assert.equal(env.sockets.length, 1);
+  connection.dispose();
+});

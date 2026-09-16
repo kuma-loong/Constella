@@ -15,6 +15,15 @@ from .procfs import (
     username_for_uid,
 )
 from .schema import GpuInfo, GpuProcess, Snapshot, cmdline_fingerprint, infer_task_name
+from .telemetry import GPU_METRIC_RULES
+
+GPU_NUMERIC_FIELDS = {
+    "utilization_gpu": "utilization.gpu", "utilization_mem": "utilization.memory",
+    "memory_total_mb": "memory.total", "memory_used_mb": "memory.used",
+    "memory_free_mb": "memory.free", "temperature_c": "temperature.gpu",
+    "power_watts": "power.draw", "power_limit_watts": "power.limit",
+    "clock_sm_mhz": "clocks.sm", "clock_mem_mhz": "clocks.mem",
+}
 
 GPU_QUERY_FIELDS = [
     "index",
@@ -53,7 +62,7 @@ def _to_int(value: str | None, default: int = 0) -> int:
         return default
     try:
         return int(float(value))
-    except ValueError:
+    except (ValueError, OverflowError):
         return default
 
 
@@ -98,6 +107,17 @@ def parse_gpu_query_csv(output: str) -> tuple[list[GpuInfo], str | None]:
                 mig_mode=_clean(values.get("mig.mode.current")),
             )
         )
+
+        gpu = gpus[-1]
+        for name, query in GPU_NUMERIC_FIELDS.items():
+            raw = _clean(values.get(query))
+            try:
+                numeric = float(raw) if raw is not None else None
+            except ValueError:
+                numeric = None
+            if not GPU_METRIC_RULES[name].accepts(numeric):
+                gpu.telemetry_errors[name] = "nvidia-smi reading unavailable"
+                setattr(gpu, name, None if GPU_METRIC_RULES[name].optional else 0)
 
     return gpus, driver_version
 

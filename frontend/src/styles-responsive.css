@@ -406,3 +406,8 @@
     transform: translateY(0);
   }
 }
+
+@media (max-width: 759px) {
+  .telemetry-notice summary span,
+  .telemetry-notice li span { display: block; margin-top: 4px; }
+}

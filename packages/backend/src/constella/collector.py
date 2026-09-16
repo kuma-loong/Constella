@@ -217,7 +217,11 @@ class SnapshotCollector:
         snapshot.seq = self._seq
         snapshot.refresh_interval = self.refresh_interval
         for gpu in snapshot.gpus:
+            gpu.validate_readings()
             key = str(gpu.index)
+            if not gpu.basic_metrics_valid:
+                self._history.pop(key, None)
+                continue
             self._history[key]["gpu"].append(float(gpu.utilization_gpu))
             self._history[key]["memory"].append(float(gpu.memory_percent))
             self._history[key]["power"].append(float(gpu.power_percent))

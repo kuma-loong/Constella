@@ -1,7 +1,7 @@
 // Each connection owns its listeners; retired sockets can never publish stale data.
 export function connectLive(options: {
   message: (data: string) => void;
-  state: (state: "connecting" | "live" | "offline") => void;
+  state: (state: "connecting" | "live" | "offline" | "error") => void;
   // HTTP can distinguish an expired Access session from an opaque WS handshake failure.
   recover: (manual: boolean) => Promise<boolean | void> | boolean | void;
   refresh?: () => void;
@@ -17,6 +17,7 @@ export function connectLive(options: {
   let lastResume = -Infinity;
   let received = false;
   let recovery: Promise<void> | null = null;
+  let invalidMessage = false;
   const available = () => !stopped && !blocked && !document.hidden && navigator.onLine;
 
   function retire() {
@@ -41,6 +42,7 @@ export function connectLive(options: {
     if (!available() || socket) return;
     lastMessage = Date.now();
     received = false;
+    invalidMessage = false;
     const protocol = location.protocol === "https:" ? "wss" : "ws";
     const current = new WebSocket(`${protocol}://${location.host}/ws/cluster`);
     socket = current;
@@ -48,14 +50,17 @@ export function connectLive(options: {
     options.state("connecting");
     current.addEventListener("message", event => {
       if (!active() || !available()) return;
+      lastMessage = Date.now();
+      received = true;
       try {
         options.message(event.data);
-        lastMessage = Date.now();
-        received = true;
+        invalidMessage = false;
         failures = 0;
         options.state("live");
       } catch {
-        schedule();
+        options.state("error");
+        if (!invalidMessage) void probe(false);
+        invalidMessage = true;
       }
     });
     current.addEventListener("close", event => {

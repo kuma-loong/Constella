@@ -20,6 +20,7 @@ import {
 import { fmtDuration, fmtGiB, fmtPct } from "./format";
 import { buildProcessView, type ProcessDetail } from "./process-details";
 import { ProcessDrawer } from "./ProcessDrawer";
+import { metricAvailable, reportingCount, telemetryIssues } from "./telemetry-health";
 import type { ClusterSnapshot, GpuInfo, LiveState, NodeSnapshot, ThemeMode } from "./types";
 
 export type HeaderProps = {
@@ -225,6 +226,8 @@ export function Summary({
     return <NodeSummary nodeId={route.nodeId} node={selectedNode} />;
   }
   const totals = snapshot.totals;
+  const gpus = snapshot.nodes.filter(node => node.status !== "offline").flatMap(node => node.gpus);
+  const reporting = reportingCount(gpus, "utilization_gpu");
   return (
     <>
       <MetricCard
@@ -238,12 +241,12 @@ export function Summary({
       <MetricCard
         iconName="activity"
         label={snapshot.nodes.some(isNpuNode) ? "Accelerator Avg" : "GPU Avg"}
-        value={fmtPct(totals.avg_gpu_utilization)}
-        meta={clusterAcceleratorMeta(snapshot)}
+        value={reporting ? fmtPct(totals.avg_gpu_utilization) : "n/a"}
+        meta={reporting < gpus.length ? `${reporting}/${gpus.length} reporting` : clusterAcceleratorMeta(snapshot)}
         percent={totals.avg_gpu_utilization}
         tone="cyan"
       />
-      <ResourceMetricCards totals={totals} />
+      <ResourceMetricCards totals={totals} gpus={gpus} />
     </>
   );
 }
@@ -261,6 +264,7 @@ export function NodeSummary({ nodeId, node }: { nodeId: string; node: NodeSnapsh
     );
   }
   const totals = node.totals;
+  const reporting = reportingCount(node.gpus, "utilization_gpu");
   const accelerator = node.source === "dcmi" || node.source === "npu-smi" ? "NPU" : "GPU";
   return (
     <>
@@ -275,17 +279,19 @@ export function NodeSummary({ nodeId, node }: { nodeId: string; node: NodeSnapsh
       <MetricCard
         iconName="activity"
         label={`${accelerator} Avg`}
-        value={fmtPct(totals.avg_gpu_utilization)}
-        meta={nodeAcceleratorMeta(node)}
+        value={reporting ? fmtPct(totals.avg_gpu_utilization) : "n/a"}
+        meta={reporting < node.gpus.length ? `${reporting}/${node.gpus.length} reporting` : nodeAcceleratorMeta(node)}
         percent={totals.avg_gpu_utilization}
         tone="cyan"
       />
-      <ResourceMetricCards totals={totals} />
+      <ResourceMetricCards totals={totals} gpus={node.gpus} />
     </>
   );
 }
 
-function ResourceMetricCards({ totals }: { totals: NodeSnapshot["totals"] }) {
+function ResourceMetricCards({ totals, gpus }: { totals: NodeSnapshot["totals"]; gpus: GpuInfo[] }) {
+  const memoryReporting = reportingCount(gpus, "memory_used_mb", "memory_total_mb");
+  const powerReporting = reportingCount(gpus, "power_watts", "power_limit_watts");
   const powerPercent = totals.power_limit_watts
     ? (totals.power_watts / totals.power_limit_watts) * 100
     : 0;
@@ -294,16 +300,16 @@ function ResourceMetricCards({ totals }: { totals: NodeSnapshot["totals"] }) {
       <MetricCard
         iconName="database"
         label="Memory Used"
-        value={`${fmtGiB(totals.memory_used_mb)} / ${fmtGiB(totals.memory_total_mb)}`}
-        meta={fmtPct(totals.avg_memory_utilization)}
+        value={memoryReporting ? `${fmtGiB(totals.memory_used_mb)} / ${fmtGiB(totals.memory_total_mb)}` : "n/a"}
+        meta={memoryReporting < gpus.length ? `${memoryReporting}/${gpus.length} reporting` : fmtPct(totals.avg_memory_utilization)}
         percent={totals.avg_memory_utilization}
         tone="violet"
       />
       <MetricCard
         iconName="zap"
         label="Power"
-        value={`${totals.power_watts.toFixed(0)} W / ${totals.power_limit_watts.toFixed(0)} W`}
-        meta={totals.power_limit_watts ? fmtPct(powerPercent) : "n/a"}
+        value={powerReporting ? `${totals.power_watts.toFixed(0)} W / ${totals.power_limit_watts.toFixed(0)} W` : "n/a"}
+        meta={powerReporting < gpus.length ? `${powerReporting}/${gpus.length} reporting` : totals.power_limit_watts ? fmtPct(powerPercent) : "n/a"}
         percent={powerPercent}
         tone="amber"
       />
@@ -424,7 +430,7 @@ export function FabricNodeCard({ node }: { node: NodeSnapshot }) {
           <span>{node.node_id}</span>
           <strong>{node.hostname}</strong>
         </div>
-        <em>{node.status}</em>
+        <em>{node.status}{node.gpus.some(gpu => telemetryIssues(gpu).length) ? " · degraded" : ""}</em>
       </div>
       <div class="fabric-node-meta">
         {nodeAcceleratorMeta(node)} / {fmtPct(node.totals.avg_gpu_utilization)} avg / {fmtLatency(node)}
@@ -434,8 +440,8 @@ export function FabricNodeCard({ node }: { node: NodeSnapshot }) {
           node.gpus.map((gpu) => (
             <div class={`fabric-chip ${statusClass(gpu.utilization_gpu)}`} title={`${node.node_id} GPU${gpu.index}`} key={gpu.uuid}>
               <span>{deviceLabel(node, gpu)}</span>
-              <strong>{Math.round(gpu.utilization_gpu)}%</strong>
-              <small>{fmtGiB(gpu.memory_used_mb)}</small>
+              <strong>{metricAvailable(gpu, "utilization_gpu") ? `${Math.round(gpu.utilization_gpu)}%` : "n/a"}</strong>
+              <small>{metricAvailable(gpu, "memory_used_mb") ? fmtGiB(gpu.memory_used_mb) : "n/a"}</small>
             </div>
           ))
         ) : (
@@ -473,6 +479,10 @@ export function GpuCard({
   const cardPower = cardDevices.reduce((sum, item) => sum + item.power_watts, 0);
   const cardPowerLimit = cardDevices.reduce((sum, item) => sum + item.power_limit_watts, 0);
   const cardPowerPercent = cardPowerLimit ? (cardPower / cardPowerLimit) * 100 : 0;
+  const issues = telemetryIssues(gpu);
+  const utilizationAvailable = metricAvailable(gpu, "utilization_gpu");
+  const memoryAvailable = metricAvailable(gpu, "memory_used_mb", "memory_total_mb");
+  const powerAvailable = cardDevices.every(item => metricAvailable(item, "power_watts", "power_limit_watts"));
   const subtitle = [
     node.node_id,
     gpu.pci_bus_id,
@@ -500,25 +510,27 @@ export function GpuCard({
           <h3>{compactGpuName(gpu.name)}</h3>
           <p>{subtitle || gpu.uuid}</p>
         </div>
-        <div class={`temp-badge ${tempClass(gpu.temperature_c)}`}>{gpu.temperature_c}°C</div>
+        <div class={`temp-badge ${tempClass(gpu.temperature_c)}`}>{metricAvailable(gpu, "temperature_c") ? `${gpu.temperature_c}°C` : "n/a"}</div>
       </div>
 
+      {issues.length ? <div class="gpu-telemetry-warning">{issues.join("; ")}</div> : null}
+
       <div class="spark-wrap">
-        <Sparkline values={history.gpu || []} color="var(--telemetry)" max={100} />
+        <Sparkline values={utilizationAvailable ? history.gpu || [] : []} color="var(--telemetry)" max={100} />
       </div>
 
       <div class="bar-stack">
-        <Bar label={accelerator} value={gpu.utilization_gpu} meta={fmtPct(gpu.utilization_gpu)} tone="green" />
+        <Bar label={accelerator} value={utilizationAvailable ? gpu.utilization_gpu : 0} meta={utilizationAvailable ? fmtPct(gpu.utilization_gpu) : "n/a"} tone="green" />
         <Bar
           label="Memory"
-          value={gpu.memory_percent}
-          meta={`${fmtGiB(gpu.memory_used_mb)} / ${fmtGiB(gpu.memory_total_mb)}`}
+          value={memoryAvailable ? gpu.memory_percent : 0}
+          meta={memoryAvailable ? `${fmtGiB(gpu.memory_used_mb)} / ${fmtGiB(gpu.memory_total_mb)}` : "n/a"}
           tone="cyan"
         />
         <Bar
           label={isDualDie ? "Card Power" : "Power"}
-          value={isDualDie ? cardPowerPercent : gpu.power_percent}
-          meta={`${(isDualDie ? cardPower : gpu.power_watts).toFixed(0)} / ${(isDualDie ? cardPowerLimit : gpu.power_limit_watts).toFixed(0)} W`}
+          value={powerAvailable ? (isDualDie ? cardPowerPercent : gpu.power_percent) : 0}
+          meta={powerAvailable ? `${(isDualDie ? cardPower : gpu.power_watts).toFixed(0)} / ${(isDualDie ? cardPowerLimit : gpu.power_limit_watts).toFixed(0)} W` : "n/a"}
           tone="amber"
         />
       </div>
@@ -538,7 +550,7 @@ export function GpuCard({
         <div class="mini-stats">
           <span>
             <Icon name="gauge" />
-            {fmtPct(gpu.utilization_mem)} mem util
+            {metricAvailable(gpu, "utilization_mem") ? fmtPct(gpu.utilization_mem) : "n/a"} mem util
           </span>
           <span>
             <Icon name="clock-3" />
@@ -562,7 +574,7 @@ function PerformanceStat({ label, value, status }: { label: string; value?: numb
   return (
     <span>
       <small>{label}</small>
-      <strong>{status === "available" && Number.isFinite(value) ? fmtPct(value || 0) : status}</strong>
+      <strong>{status === "available" ? (Number.isFinite(value) ? fmtPct(value || 0) : "n/a") : status}</strong>
     </span>
   );
 }

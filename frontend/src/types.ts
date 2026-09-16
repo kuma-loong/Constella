@@ -43,6 +43,7 @@ export type AcceleratorPerformance = {
   metrics: Record<string, number>;
   supported_metrics?: string[];
   error?: string | null;
+  invalid_metrics?: string[];
 };
 
 export type GpuInfo = {
@@ -77,6 +78,7 @@ export type GpuInfo = {
   processes: GpuProcess[];
   other_users: OtherUserMemory[];
   error?: string | null;
+  telemetry_errors?: Record<string, string>;
 };
 
 export type NodeTotals = {
@@ -106,6 +108,7 @@ export type NodeSnapshot = {
   gpus: GpuInfo[];
   totals: NodeTotals;
   error?: string | null;
+  telemetry_errors?: Record<string, string>;
   agent_version?: string | null;
   driver_version?: string | null;
   cuda_driver_version?: string | null;

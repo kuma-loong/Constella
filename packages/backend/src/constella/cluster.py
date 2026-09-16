@@ -7,6 +7,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .process_filter import filter_gpu_processes
+from .telemetry import (
+    COUNT, GPU_METRIC_RULES, INTERVAL, NONNEGATIVE, OWNER_METRIC_RULES,
+    PROCESS_METRIC_RULES, SAMPLE_TIME, numeric_issues,
+)
 from .schema import (
     AcceleratorPerformance,
     ClusterSnapshot,
@@ -58,6 +62,9 @@ class HistoryAccumulator:
         for gpu in snapshot.gpus:
             gpu_id = gpu.gpu_id or gpu_global_id(snapshot.node_id, gpu)
             gpu.gpu_id = gpu_id
+            if not gpu.basic_metrics_valid:
+                self._history.pop(gpu_id, None)
+                continue
             series = self._series_for(gpu_id)
             series["gpu"].append(float(gpu.utilization_gpu))
             series["memory"].append(float(gpu.memory_percent))
@@ -177,7 +184,10 @@ class ClusterState:
         node_id = str(message.get("node_id") or "")
         if not node_id:
             raise ValueError("agent sample is missing node_id")
-        seq = int(message.get("seq") or 0)
+        raw_seq = message.get("seq", 0)
+        if not COUNT.accepts(raw_seq):
+            raise ValueError("invalid sample sequence")
+        seq = int(raw_seq)
         runtime = self.latest_by_node.get(node_id)
         if runtime and not self._connection_matches(runtime, connection_id):
             return False
@@ -234,6 +244,15 @@ class ClusterState:
         if seq is not None:
             runtime.last_seq = max(runtime.last_seq, seq)
         self._bump()
+
+    def reject_sample(self, node_id: str, *, connection_id: object) -> None:
+        runtime = self.latest_by_node.get(node_id)
+        if runtime is None or not self._connection_matches(runtime, connection_id):
+            return
+        error = "Invalid sample metadata; showing last valid readings"
+        if runtime.snapshot.error != error:
+            runtime.snapshot.error = error
+            self._bump()
 
     def disconnect(
         self,
@@ -329,21 +348,24 @@ def node_snapshot_from_agent_sample(
     previous_gpus = {
         (gpu.uuid, gpu.index): gpu for gpu in previous_snapshot.gpus
     } if previous_snapshot is not None else {}
-    gpus = [
-        _gpu_from_dict(
-            node_id,
-            item,
-            previous=previous_gpus.get(
-                (str(item.get("uuid") or "unknown"), int(item.get("index") or 0))
-            ),
-        )
-        for item in payload.get("gpus", [])
-        if isinstance(item, dict)
-    ]
+    raw_gpus = payload.get("gpus", [])
+    if not isinstance(raw_gpus, list):
+        raise ValueError("agent sample gpus must be a list")
+    gpus = [gpu_from_telemetry(node_id, item, index, previous_gpus)
+            for index, item in enumerate(raw_gpus)]
     gpus = [filter_gpu_processes(gpu) for gpu in gpus]
-    sampled_at = float(message.get("sampled_at") or payload.get("timestamp") or received_at)
-    refresh_interval = float(message.get("refresh_interval") or payload.get("refresh_interval") or 1.0)
-    process_interval = float(message.get("process_interval") or payload.get("process_interval") or 5.0)
+    sampled_at = message.get("sampled_at", payload.get("timestamp", received_at))
+    refresh_interval = message.get("refresh_interval", payload.get("refresh_interval", 1.0))
+    process_interval = message.get("process_interval", payload.get("process_interval", 5.0))
+    if (not SAMPLE_TIME.accepts(sampled_at)
+            or not all(INTERVAL.accepts(value)
+                       for value in (refresh_interval, process_interval))):
+        raise ValueError("invalid sample timestamp or interval")
+    elapsed_ms = payload.get("elapsed_ms", 0.0)
+    errors = {}
+    if not NONNEGATIVE.accepts(elapsed_ms):
+        elapsed_ms = 0.0
+        errors["elapsed_ms"] = "Invalid collection latency; reading omitted"
     return NodeSnapshot(
         node_id=node_id,
         hostname=str(payload.get("hostname") or hostname or node_id),
@@ -361,7 +383,8 @@ def node_snapshot_from_agent_sample(
         driver_version=payload.get("driver_version"),
         cuda_driver_version=payload.get("cuda_driver_version"),
         nvml_version=payload.get("nvml_version"),
-        elapsed_ms=float(payload.get("elapsed_ms") or 0.0),
+        elapsed_ms=float(elapsed_ms),
+        telemetry_errors=errors,
         hardware=hardware,
         performance_profiles=list(performance_profiles or []),
     )
@@ -383,25 +406,78 @@ def _hardware_from_dict(payload: Any) -> NodeHardware | None:
     return NodeHardware(gpus=gpus) if gpus else None
 
 
+def gpu_from_telemetry(
+    node_id: str,
+    data: Any,
+    fallback_index: int,
+    previous_gpus: dict[tuple[str, int], GpuInfo] | None = None,
+) -> GpuInfo:
+    """A corrupt GPU must not discard its healthy siblings or the agent session."""
+    if not isinstance(data, dict):
+        return GpuInfo(index=fallback_index, node_id=node_id, error="Invalid GPU snapshot")
+    errors = data.get("telemetry_errors")
+    errors = {str(k): str(v) for k, v in errors.items()} if isinstance(errors, dict) else {}
+    issues = numeric_issues(data, GPU_METRIC_RULES)
+    if issues:
+        data = dict(data)
+        for name in issues:
+            data[name] = None
+        errors.update(issues)
+    try:
+        raw_index = data.get("index", data.get("gpu_index", fallback_index))
+        if not COUNT.accepts(raw_index):
+            raise ValueError("invalid GPU index")
+        if data.get("die_id") is not None and not COUNT.accepts(data["die_id"]):
+            raise ValueError("invalid die index")
+        index = int(raw_index)
+        previous = (previous_gpus or {}).get((str(data.get("uuid") or "unknown"), index))
+        gpu = _gpu_from_dict(node_id, data, previous=previous, errors=errors)
+        gpu.index = index
+        if gpu.memory_total_mb > 0 and gpu.memory_used_mb > gpu.memory_total_mb:
+            gpu.telemetry_errors["memory_used_mb"] = "Memory usage exceeds capacity; sample omitted"
+            gpu.memory_used_mb = 0
+        return gpu
+    except (ValueError, TypeError, OverflowError):
+        return GpuInfo(
+            index=fallback_index, node_id=node_id, uuid=str(data.get("uuid") or "unknown"),
+            name=str(data.get("name") or "unknown"), error="Invalid GPU snapshot; sample isolated",
+        )
+
+
 def _gpu_from_dict(
     node_id: str,
     data: dict[str, Any],
     *,
     previous: GpuInfo | None = None,
+    errors: dict[str, str] | None = None,
 ) -> GpuInfo:
-    processes = [
-        _process_from_dict(item) for item in data.get("processes", []) if isinstance(item, dict)
-    ]
-    other_users = [
-        OtherUserMemory(
+    errors = errors if errors is not None else {}
+    processes = []
+    raw_processes = data.get("processes", [])
+    if not isinstance(raw_processes, list):
+        errors["processes"] = "Invalid process list; entries omitted"
+        raw_processes = []
+    for item in raw_processes:
+        if (not isinstance(item, dict) or not PROCESS_METRIC_RULES["pid"].accepts(item.get("pid"))
+                or numeric_issues(item, PROCESS_METRIC_RULES)):
+            errors["processes"] = "Invalid process reading; affected entries omitted"
+            continue
+        processes.append(_process_from_dict(item))
+    other_users = []
+    raw_owners = data.get("other_users", [])
+    if not isinstance(raw_owners, list):
+        errors["other_users"] = "Invalid process owner list; entries omitted"
+        raw_owners = []
+    for item in raw_owners:
+        if not isinstance(item, dict) or numeric_issues(item, OWNER_METRIC_RULES):
+            errors["other_users"] = "Invalid process owner reading; affected entries omitted"
+            continue
+        other_users.append(OtherUserMemory(
             user=str(item.get("user") or "?"),
             process_count=int(item.get("process_count") or 0),
             total_memory_mb=int(item.get("total_memory_mb") or 0),
             runtime_seconds=item.get("runtime_seconds"),
-        )
-        for item in data.get("other_users", [])
-        if isinstance(item, dict)
-    ]
+        ))
     performance = _performance_from_dict(data.get("performance"))
     raw_performance = data.get("performance")
     if (
@@ -442,6 +518,7 @@ def _gpu_from_dict(
         processes=processes,
         other_users=other_users,
         error=data.get("error"),
+        telemetry_errors=errors,
     )
     gpu.gpu_id = gpu_global_id(node_id, gpu)
     return gpu
@@ -456,9 +533,8 @@ def _performance_from_dict(payload: Any) -> AcceleratorPerformance | None:
         return None
     raw_metrics = payload.get("metrics")
     metrics = {
-        str(key): float(value)
+        str(key): value
         for key, value in (raw_metrics.items() if isinstance(raw_metrics, dict) else [])
-        if isinstance(value, (int, float))
     }
     raw_supported_metrics = payload.get("supported_metrics")
     supported_metrics = (
@@ -483,9 +559,14 @@ def _performance_from_dict(payload: Any) -> AcceleratorPerformance | None:
             metrics=metrics,
             supported_metrics=supported_metrics,
             error=str(payload["error"]) if payload.get("error") else None,
+            invalid_metrics=[str(key) for key in payload.get("invalid_metrics", [])]
+            if isinstance(payload.get("invalid_metrics", []), list) else [],
         )
-    except (TypeError, ValueError):
-        return None
+    except (TypeError, ValueError, OverflowError):
+        return AcceleratorPerformance(
+            profile=profile, status="error", sampled_at=0,
+            error="Invalid performance metadata; sample isolated",
+        )
 
 
 def _performance_profiles(capabilities: dict[str, Any] | None) -> list[str]:

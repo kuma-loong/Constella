@@ -157,3 +157,28 @@ def test_gpm_provider_without_symbols_is_isolated() -> None:
 
     assert provider.available is False
     assert result.status == "unsupported"
+
+
+def test_successful_driver_call_with_nan_is_reported_as_invalid_metric():
+    lib = FakeGpmLibrary()
+    original = lib.nvmlGpmMetricsGet.callback
+
+    def invalid_metric(ptr):
+        rc = original(ptr)
+        request = ctypes.cast(ptr, ctypes.POINTER(NvmlGpmMetricsGet)).contents
+        for index in range(request.numMetrics):
+            if request.metrics[index].metricId == 10:
+                request.metrics[index].value = float("nan")
+        return rc
+
+    lib.nvmlGpmMetricsGet.callback = invalid_metric
+    provider = NvidiaGpmProvider(lib)
+    try:
+        provider.sample(0, ctypes.c_void_p(1), sampled_at=10, monotonic_at=1)
+        result = provider.sample(0, ctypes.c_void_p(1), sampled_at=11, monotonic_at=2)
+        assert result.invalid_metrics == ["nvidia.gpm.dram_bw_active"]
+        assert "nvidia.gpm.dram_bw_active" not in result.metrics
+        assert result.status == "available"
+        assert result.metrics["nvidia.gpm.sm_active"] == 10
+    finally:
+        provider.close()

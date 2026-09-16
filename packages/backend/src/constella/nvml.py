@@ -423,21 +423,25 @@ class NVMLSampler:
         gpu = GpuInfo(index=index, name=static.name, uuid=static.uuid)
         self._fill_memory(gpu, handle)
         self._fill_utilization(gpu, handle)
-        gpu.temperature_c = self._uint_device_call(handle, "nvmlDeviceGetTemperature", NVML_TEMPERATURE_GPU)
+        gpu.temperature_c = self._gpu_uint_call(
+            gpu, "temperature_c", handle, "nvmlDeviceGetTemperature", NVML_TEMPERATURE_GPU
+        )
         gpu.power_watts = round(
-            self._uint_device_call(handle, "nvmlDeviceGetPowerUsage") / 1000.0,
+            self._gpu_uint_call(gpu, "power_watts", handle, "nvmlDeviceGetPowerUsage") / 1000.0,
             1,
         )
         gpu.power_limit_watts = static.power_limit_watts
-        gpu.clock_sm_mhz = self._optional_uint_device_call(
-            handle,
+        gpu.clock_sm_mhz = self._gpu_uint_call(
+            gpu, "clock_sm_mhz", handle,
             "nvmlDeviceGetClockInfo",
             NVML_CLOCK_SM,
+            optional=True,
         )
-        gpu.clock_mem_mhz = self._optional_uint_device_call(
-            handle,
+        gpu.clock_mem_mhz = self._gpu_uint_call(
+            gpu, "clock_mem_mhz", handle,
             "nvmlDeviceGetClockInfo",
             NVML_CLOCK_MEM,
+            optional=True,
         )
         gpu.max_clock_sm_mhz = static.max_clock_sm_mhz
         gpu.max_clock_mem_mhz = static.max_clock_mem_mhz
@@ -545,6 +549,26 @@ class NVMLSampler:
         raw = self._optional_uint_device_call(handle, "nvmlDeviceGetArchitecture")
         return architecture_label(raw)
 
+    @staticmethod
+    def _record_metric_error(gpu: GpuInfo, fields: tuple[str, ...], rc: int) -> None:
+        reason = "GPU requires reset" if rc == 16 else f"NVML query unavailable (code {rc})"
+        gpu.telemetry_errors.update({name: reason for name in fields})
+        if rc == 16:
+            gpu.error = reason
+
+    def _gpu_uint_call(
+        self, gpu: GpuInfo, field: str, handle: ctypes.c_void_p, func_name: str,
+        arg: int | None = None, *, optional: bool = False,
+    ) -> int | None:
+        value = ctypes.c_uint(0)
+        func = getattr(self._lib, func_name)
+        rc = func(handle, ctypes.byref(value)) if arg is None else func(handle, arg, ctypes.byref(value))
+        if rc != NVML_SUCCESS:
+            if not optional or rc != 3:
+                self._record_metric_error(gpu, (field,), rc)
+            return None if optional else 0
+        return int(value.value)
+
     def _uint_device_call(
         self,
         handle: ctypes.c_void_p,
@@ -585,6 +609,7 @@ class NVMLSampler:
             mem = NvmlMemory()
             rc = self._lib.nvmlDeviceGetMemoryInfo(handle, ctypes.byref(mem))
             if rc != NVML_SUCCESS:
+                self._record_metric_error(gpu, ("memory_total_mb", "memory_used_mb", "memory_free_mb"), rc)
                 return
             total_mb = int(mem.total // (1024 * 1024))
             free_mb = int(mem.free // (1024 * 1024))
@@ -639,6 +664,7 @@ class NVMLSampler:
         util = NvmlUtilization()
         rc = self._lib.nvmlDeviceGetUtilizationRates(handle, ctypes.byref(util))
         if rc != NVML_SUCCESS:
+            self._record_metric_error(gpu, ("utilization_gpu", "utilization_mem"), rc)
             return
         gpu.utilization_gpu = int(util.gpu)
         gpu.utilization_mem = int(util.memory)

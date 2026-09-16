@@ -116,6 +116,7 @@ class NvidiaGpmProvider:
                 error="GPM retry pending",
             )
 
+        invalid_metrics: list[str] = []
         try:
             if state.supported is None:
                 state.supported = self._query_support(handle)
@@ -145,7 +146,7 @@ class NvidiaGpmProvider:
                     interval_ms=round(interval_ms, 1),
                     supported_metrics=list(state.supported_metrics or ()),
                 )
-            metrics, supported_metrics = self._metrics(
+            metrics, supported_metrics, invalid_metrics = self._metrics(
                 previous,
                 target,
                 state.supported_metrics or NVIDIA_GPM_METRICS,
@@ -162,6 +163,7 @@ class NvidiaGpmProvider:
                 sampled_at=sampled_at,
                 interval_ms=round(interval_ms, 1),
                 metrics=metrics,
+                invalid_metrics=invalid_metrics,
                 supported_metrics=list(state.supported_metrics),
             )
         except Exception as exc:
@@ -175,6 +177,7 @@ class NvidiaGpmProvider:
                 sampled_at=sampled_at,
                 supported_metrics=list(state.supported_metrics or ()),
                 error=str(exc),
+                invalid_metrics=invalid_metrics,
             )
 
     def _setup_functions(self) -> bool:
@@ -239,7 +242,7 @@ class NvidiaGpmProvider:
         first: ctypes.c_void_p,
         second: ctypes.c_void_p,
         requested_metrics: tuple[str, ...],
-    ) -> tuple[dict[str, float], tuple[str, ...]]:
+    ) -> tuple[dict[str, float], tuple[str, ...], list[str]]:
         request = NvmlGpmMetricsGet(
             version=NVML_GPM_METRICS_GET_VERSION,
             numMetrics=len(requested_metrics),
@@ -261,7 +264,9 @@ class NvidiaGpmProvider:
             for index, metric in enumerate(requested_metrics)
             if request.metrics[index].nvmlReturn != NVML_ERROR_NOT_SUPPORTED
         )
-        return values, supported
+        invalid = [metric for index, metric in enumerate(requested_metrics)
+                   if request.metrics[index].nvmlReturn not in (NVML_SUCCESS, NVML_ERROR_NOT_SUPPORTED)]
+        return values, supported, invalid
 
     @staticmethod
     def _result(
@@ -272,6 +277,7 @@ class NvidiaGpmProvider:
         metrics: dict[str, float] | None = None,
         supported_metrics: list[str] | None = None,
         error: str | None = None,
+        invalid_metrics: list[str] | None = None,
     ) -> AcceleratorPerformance:
         return AcceleratorPerformance(
             profile=NVIDIA_GPM_PROFILE,
@@ -281,4 +287,5 @@ class NvidiaGpmProvider:
             metrics=metrics or {},
             supported_metrics=supported_metrics or [],
             error=error,
+            invalid_metrics=invalid_metrics or [],
         )

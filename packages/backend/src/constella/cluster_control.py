@@ -26,6 +26,7 @@ AGENT_RUNTIME_MODULES = (
     "performance.py",
     "procfs.py",
     "schema.py",
+    "telemetry.py",
 )
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from .telemetry import NumericRule, PERCENT
 
 NVIDIA_GPM_PROFILE = "nvidia.gpm.v1"
 
@@ -19,6 +20,11 @@ NVIDIA_GPM_METRICS = (
 )
 
 PERFORMANCE_STATUSES = frozenset({"warming", "available", "unsupported", "error"})
+
+NVIDIA_GPM_RULES = {
+    metric: NumericRule(maximum=3.4028234663852886e38) if metric.endswith("_per_second") else PERCENT
+    for metric in NVIDIA_GPM_METRICS
+}
 
 
 def performance_profiles(device_type: str) -> list[str]:

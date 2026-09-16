@@ -9,7 +9,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .performance import PERFORMANCE_STATUSES
+from .performance import NVIDIA_GPM_PROFILE, NVIDIA_GPM_RULES, PERFORMANCE_STATUSES
+from .telemetry import BASIC_METRICS, GPU_METRIC_RULES, filter_readings, finite_number, numeric_issues
 
 
 @dataclass(slots=True)
@@ -68,13 +69,31 @@ class AcceleratorPerformance:
     metrics: dict[str, float] = field(default_factory=dict)
     supported_metrics: list[str] = field(default_factory=list)
     error: str | None = None
+    invalid_metrics: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.status not in PERFORMANCE_STATUSES:
             raise ValueError(f"invalid accelerator performance status: {self.status}")
+        self.metrics, invalid = filter_readings(
+            self.metrics, NVIDIA_GPM_RULES if self.profile == NVIDIA_GPM_PROFILE else None,
+        )
+        self.invalid_metrics = list(dict.fromkeys([*self.invalid_metrics, *invalid]))
+        if self.invalid_metrics and not self.metrics and self.status == "available":
+            self.status = "error"
+        if not finite_number(self.sampled_at):
+            raise ValueError("invalid performance sample timestamp")
+        if self.interval_ms is not None and not finite_number(self.interval_ms):
+            self.interval_ms = None
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        # These fields are flat scalars/collections; avoid recursive dataclass
+        # copying on every high-resolution sample while retaining owned output.
+        return {
+            "profile": self.profile, "status": self.status,
+            "sampled_at": self.sampled_at, "interval_ms": self.interval_ms,
+            "metrics": dict(self.metrics), "supported_metrics": list(self.supported_metrics),
+            "error": self.error, "invalid_metrics": list(self.invalid_metrics),
+        }
 
 
 @dataclass(slots=True)
@@ -108,6 +127,21 @@ class GpuInfo:
     processes: list[GpuProcess] = field(default_factory=list)
     other_users: list[OtherUserMemory] = field(default_factory=list)
     error: str | None = None
+    telemetry_errors: dict[str, str] = field(default_factory=dict)
+
+    def validate_readings(self) -> None:
+        values = {name: getattr(self, name) for name in GPU_METRIC_RULES}
+        issues = numeric_issues(values, GPU_METRIC_RULES)
+        if (not issues.keys() & {"memory_used_mb", "memory_total_mb"}
+                and self.memory_total_mb > 0 and self.memory_used_mb > self.memory_total_mb):
+            issues["memory_used_mb"] = "Memory usage exceeds capacity; sample omitted"
+        self.telemetry_errors.update(issues)
+        for name in issues:
+            setattr(self, name, None if GPU_METRIC_RULES[name].optional else 0)
+
+    @property
+    def basic_metrics_valid(self) -> bool:
+        return not self.error and not self.telemetry_errors.keys() & BASIC_METRICS
 
     @property
     def memory_percent(self) -> float:
@@ -206,6 +240,7 @@ class NodeSnapshot:
     history: dict[str, dict[str, list[float]]] = field(default_factory=dict)
     hardware: NodeHardware | None = None
     performance_profiles: list[str] = field(default_factory=list)
+    telemetry_errors: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -228,6 +263,7 @@ class NodeSnapshot:
             "elapsed_ms": self.elapsed_ms,
             "history": self.history,
             "performance_profiles": self.performance_profiles,
+            **({"telemetry_errors": self.telemetry_errors} if self.telemetry_errors else {}),
         }
 
 
@@ -337,10 +373,14 @@ def node_totals_from_gpus(gpus: list[GpuInfo]) -> NodeTotals:
             for gpu in gpus
         }
     )
-    memory_total = sum(gpu.memory_total_mb for gpu in gpus)
-    memory_used = sum(gpu.memory_used_mb for gpu in gpus)
-    power_limit = sum(gpu.power_limit_watts for gpu in gpus)
-    power_used = sum(gpu.power_watts for gpu in gpus)
+    memory_gpus = [gpu for gpu in gpus if not gpu.error
+                   and not {"memory_used_mb", "memory_total_mb"}.intersection(gpu.telemetry_errors)]
+    power_gpus = [gpu for gpu in gpus if not gpu.error
+                  and not {"power_watts", "power_limit_watts"}.intersection(gpu.telemetry_errors)]
+    memory_total = sum(gpu.memory_total_mb for gpu in memory_gpus)
+    memory_used = sum(gpu.memory_used_mb for gpu in memory_gpus)
+    power_limit = sum(gpu.power_limit_watts for gpu in power_gpus)
+    power_used = sum(gpu.power_watts for gpu in power_gpus)
     active_processes = len(
         {
             (gpu.node_id, process.pid)
@@ -349,13 +389,15 @@ def node_totals_from_gpus(gpus: list[GpuInfo]) -> NodeTotals:
         }
     )
     active_processes += sum(other.process_count for gpu in gpus for other in gpu.other_users)
+    valid_utilization = [gpu.utilization_gpu for gpu in gpus
+                         if not gpu.error and "utilization_gpu" not in gpu.telemetry_errors]
     return NodeTotals(
         gpu_count=gpu_count,
         accelerator_count=gpu_count,
         card_count=card_count,
         active_processes=active_processes,
-        avg_gpu_utilization=round(sum(gpu.utilization_gpu for gpu in gpus) / gpu_count, 1)
-        if gpu_count
+        avg_gpu_utilization=round(sum(valid_utilization) / len(valid_utilization), 1)
+        if valid_utilization
         else 0.0,
         avg_memory_utilization=round((memory_used / memory_total) * 100.0, 1)
         if memory_total
