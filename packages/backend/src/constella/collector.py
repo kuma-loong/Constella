@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 ALLOWED_REFRESH_INTERVALS = (0.5, 1.0, 2.0, 5.0)
 DEVICE_TYPES = ("nvidia", "ascend")
+PREFERRED_RETRY_SECONDS = 120.0
 
 
 def validate_refresh_interval(seconds: float) -> float:
@@ -61,6 +62,9 @@ class SnapshotCollector:
         )
         self._sampler: NVMLSampler | DCMISampler | None = None
         self._npu_smi_sampler: NPUSampler | None = None
+        # One deadline covers fallback probes and rebuilding a degraded sampler.
+        self._preferred_retry_at = 0.0
+        self._preferred_error: str | None = None
         self._next_fallback_process_at = 0.0
         self._fallback_processes_by_uuid: dict[str, list[GpuProcess]] = {}
 
@@ -110,9 +114,9 @@ class SnapshotCollector:
         self.close()
 
     def close(self) -> None:
-        if self._sampler:
-            self._sampler.close()
-            self._sampler = None
+        self._close_preferred()
+        self._preferred_retry_at = 0.0
+        self._preferred_error = None
         self._npu_smi_sampler = None
 
     def sample_once(self) -> Snapshot:
@@ -149,55 +153,67 @@ class SnapshotCollector:
                 except asyncio.TimeoutError:
                     pass
 
+    def _close_preferred(self) -> None:
+        sampler, self._sampler = self._sampler, None
+        if sampler is not None:
+            try:
+                sampler.close()
+            except Exception:
+                logger.warning("Sampler cleanup failed", exc_info=True)
+
     def _sample_once(self) -> Snapshot:
-        if self.device_type == "ascend":
-            return self._sample_ascend()
-        return self._sample_nvidia()
-
-    def _sample_nvidia(self) -> Snapshot:
-        try:
-            if self._sampler is None:
-                self._sampler = NVMLSampler(process_interval=self.process_interval)
-            else:
-                self._sampler.set_process_interval(self.process_interval)
-            return self._sampler.sample()
-        except Exception as exc:
-            logger.warning("NVML sample failed, falling back to nvidia-smi: %s", exc)
-            if self._sampler is not None:
-                self._sampler.close()
-                self._sampler = None
+        factory = DCMISampler if self.device_type == "ascend" else NVMLSampler
+        now = time.monotonic()
+        if self._preferred_retry_at and now >= self._preferred_retry_at:
+            # Drop stale driver handles, static data and performance sample buffers.
+            self._close_preferred()
+        if self._sampler is not None or now >= self._preferred_retry_at:
             try:
-                snapshot = self._sample_with_nvidia_smi()
-                if not snapshot.gpus:
-                    raise RuntimeError("nvidia-smi returned no devices")
-                return snapshot
-            except Exception as fallback_exc:
-                return nvidia_smi.error_snapshot(
-                    f"NVML failed: {exc}; nvidia-smi failed: {fallback_exc}",
-                    source="none",
+                if self._sampler is None:
+                    self._sampler = factory(process_interval=self.process_interval)
+                else:
+                    self._sampler.set_process_interval(self.process_interval)
+                snapshot = self._sampler.sample()
+                if not snapshot.ok or not snapshot.gpus:
+                    raise RuntimeError(snapshot.error or "preferred sampler returned no devices")
+                degraded = any(
+                    gpu.error or gpu.telemetry_errors or (
+                        gpu.performance and (
+                            gpu.performance.status == "error" or gpu.performance.invalid_metrics
+                        )
+                    ) for gpu in snapshot.gpus
                 )
-
-    def _sample_ascend(self) -> Snapshot:
+                if degraded:
+                    if not self._preferred_retry_at or now >= self._preferred_retry_at:
+                        self._preferred_retry_at = time.monotonic() + PREFERRED_RETRY_SECONDS
+                else:
+                    if self._preferred_error or self._preferred_retry_at:
+                        logger.info("%s sampling recovered", snapshot.source)
+                    self._preferred_retry_at = 0.0
+                self._preferred_error = None
+                return snapshot
+            except Exception as exc:
+                self._preferred_error = str(exc)
+                self._preferred_retry_at = time.monotonic() + PREFERRED_RETRY_SECONDS
+                self._close_preferred()
+                logger.warning(
+                    "%s sampling failed; using fallback, retry in %ss: %s",
+                    self.device_type, PREFERRED_RETRY_SECONDS, exc,
+                )
         try:
-            if self._sampler is None:
-                self._sampler = DCMISampler(process_interval=self.process_interval)
-            else:
-                self._sampler.set_process_interval(self.process_interval)
-            return self._sampler.sample()
-        except Exception as exc:
-            logger.warning("DCMI sample failed, falling back to npu-smi: %s", exc)
-            if self._sampler is not None:
-                self._sampler.close()
-                self._sampler = None
-            try:
+            if self.device_type == "ascend":
                 if self._npu_smi_sampler is None:
                     self._npu_smi_sampler = NPUSampler()
                 return self._npu_smi_sampler.sample()
-            except Exception as fallback_exc:
-                return nvidia_smi.error_snapshot(
-                    f"DCMI failed: {exc}; npu-smi failed: {fallback_exc}",
-                    source="none",
-                )
+            snapshot = self._sample_with_nvidia_smi()
+            if not snapshot.gpus:
+                raise RuntimeError("nvidia-smi returned no devices")
+            return snapshot
+        except Exception as exc:
+            return nvidia_smi.error_snapshot(
+                f"{self.device_type} preferred sampler failed: {self._preferred_error}; "
+                f"fallback failed: {exc}", source="none",
+            )
 
     def _sample_with_nvidia_smi(self) -> Snapshot:
         now = time.monotonic()
