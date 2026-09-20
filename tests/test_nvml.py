@@ -4,8 +4,41 @@ import ctypes
 import os
 from types import SimpleNamespace
 
+import pytest
+
 from constella.nvml import NVMLSampler, architecture_label
-from constella.schema import GpuInfo
+from constella.schema import GpuInfo, GpuProcess
+
+
+@pytest.mark.parametrize("mode", ["all", "names", "aggregate"])
+@pytest.mark.parametrize("fallback", [False, True])
+def test_compute_graphics_overlap_counts_memory_once(monkeypatch, mode, fallback) -> None:
+    monkeypatch.setattr("constella.nvml._process_detail_mode", lambda: mode)
+    sampler = object.__new__(NVMLSampler)
+    sampler.own_user = "owner"
+    compute = GpuProcess(pid=123, name="python", user="other", gpu_memory_mb=8870)
+    graphics = GpuProcess(
+        pid=123, name="python", user="other", gpu_memory_mb=9330, kind="graphics"
+    )
+    graphics_only = GpuProcess(
+        pid=456, name="renderer", user="other", gpu_memory_mb=100, kind="graphics"
+    )
+    sampler._running_processes = lambda _handle, _fn, kind: (
+        (None if fallback else [compute]) if kind == "compute" else [graphics, graphics_only]
+    )
+    filled = []
+    sampler._fill_process_detail = lambda p, **_kwargs: filled.append(p.pid)
+    processes, others = sampler._processes(ctypes.c_void_p(1), "gpu", [{"gpu": [compute]}])
+    assert filled == [123, 456]
+    if mode == "aggregate":
+        assert processes == []
+        assert others[0].process_count == 2
+        assert others[0].total_memory_mb == 9430
+    else:
+        assert others == []
+        assert [(p.pid, p.gpu_memory_mb, p.kind) for p in processes] == [
+            (123, 9330, "compute"), (456, 100, "graphics")
+        ]
 
 
 def test_architecture_label_maps_known_nvml_values() -> None:

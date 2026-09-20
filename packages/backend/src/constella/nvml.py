@@ -714,7 +714,18 @@ class NVMLSampler:
 
         graphics = self._running_processes(handle, "nvmlDeviceGetGraphicsRunningProcesses", "graphics")
         if graphics:
-            raw.extend(graphics)
+            raw = [*raw, *graphics]
+
+        # NVML reports C+G processes in both lists with the same device memory.
+        # Keep compute first for compatibility and count each PID only once.
+        unique: dict[int, GpuProcess] = {}
+        for process in raw:
+            if process.pid in unique:
+                existing = unique[process.pid]
+                existing.gpu_memory_mb = max(existing.gpu_memory_mb, process.gpu_memory_mb)
+            else:
+                unique[process.pid] = process
+        raw = list(unique.values())
 
         mode = _process_detail_mode()
         if mode != "aggregate":
