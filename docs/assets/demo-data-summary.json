@@ -1,63 +1,35 @@
 {
-  "dataset": "synthetic Constella promo demo",
+  "dataset": "Synthetic README demo with anonymized real performance samples",
+  "demo_time": "2026-09-21T06:30:00Z",
   "privacy": {
-    "real_users": false,
+    "real_identity_data": false,
     "real_hostnames": false,
-    "real_gpu_models": false,
-    "real_commands": false
+    "real_commands": false,
+    "real_process_ids": false,
+    "public_hardware_model_names": true,
+    "real_performance_values": true,
+    "performance_timestamps_shifted": true
   },
   "cluster": {
-    "node_count": 3,
-    "online_node_count": 3,
-    "gpu_count": 10,
-    "active_processes": 10,
-    "nodes": [
-      "node-a",
-      "node-b",
-      "node-c"
-    ],
-    "gpu_models": [
-      "GPU Type 1 Accelerator",
-      "GPU Type 2 Accelerator",
-      "GPU Type 3 Accelerator"
-    ]
+    "node_count": 4,
+    "accelerator_count": 16,
+    "nodes": ["demo-train-01", "demo-train-02", "demo-infer-01", "demo-npu-01"],
+    "models": ["NVIDIA H100 80GB HBM3", "NVIDIA A100-SXM4-80GB", "NVIDIA L40S", "Ascend 910B"]
   },
-  "history": {
-    "node": "node-a",
-    "range": "24h",
-    "bucket_seconds": 160,
-    "series_points_per_gpu": {
-      "GPU-DEMO-a-0": 539,
-      "GPU-DEMO-a-1": 539,
-      "GPU-DEMO-a-2": 539,
-      "GPU-DEMO-a-3": 539
-    },
-    "heatmap_buckets_per_gpu": {
-      "GPU-DEMO-a-0": 25,
-      "GPU-DEMO-a-1": 25,
-      "GPU-DEMO-a-2": 25,
-      "GPU-DEMO-a-3": 25
-    }
+  "performance": {
+    "source": "User-authorized read-only production API capture",
+    "fixture": "performance-samples.json.gz",
+    "gpu_count": 4,
+    "window_seconds": 900,
+    "values_modified": false,
+    "identity_fields_replaced": true
   },
-  "users": [
-    "user1",
-    "user2",
-    "user3",
-    "user4"
-  ],
-  "tasks": [
-    "batch_infer.py",
-    "evaluate.py",
-    "interactive_tune.py",
-    "train_model.py"
-  ],
-  "features_shown": [
-    "realtime cluster status",
-    "GPU utilization, memory, power, and thermals",
-    "process and user attribution",
-    "full-range 24h node history curves",
-    "GPU utilization heatmap",
-    "job search and high-resolution job curves",
-    "dark and light theme promotional variants"
-  ]
+  "jobs": {
+    "source": "synthetic",
+    "search": "train",
+    "results": 5,
+    "selected_task": "train_transformer.py",
+    "selected_task_gpu_count": 4,
+    "resolution_seconds": 20
+  }
 }

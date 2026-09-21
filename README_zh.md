@@ -22,12 +22,6 @@
 
 <p align="center"><a href="README.md">English</a> | 简体中文</p>
 
-<div align="center">
-  <blockquote>
-    <em>如同星座中的群星，<strong>Constella</strong> 将独立的加速器节点汇聚成一个可观测的集群。</em>
-  </blockquote>
-</div>
-
 Constella 是一个面向实验室、AI 团队和个人计算服务器的轻量级加速器监控平台，
 原生支持多种硬件组成的异构集群；0.1.4 版本支持 NVIDIA GPU 与 Ascend NPU。
 
@@ -35,24 +29,30 @@ Constella 是一个面向实验室、AI 团队和个人计算服务器的轻量�
 方便在训练或推理结束后回看曲线。它支持单机和小型异构集群，不需要先部署
 一整套 Prometheus/Grafana 监控系统。
 
-## 截图
+## 预览
 
 <table>
   <tr>
-    <th>集群总览</th>
-    <th>GPU 与进程详情</th>
+    <td width="50%" valign="top">
+      <strong>集群概览 · 异构加速器分布与实时资源使用</strong><br>
+      <a href="docs/assets/01-cluster-overview.png"><img src="docs/assets/01-cluster-overview.png" alt="四个演示节点及 GPU/NPU 使用情况" width="100%"></a>
+    </td>
+    <td width="50%" valign="top">
+      <strong>节点详情 · GPU 指标与进程归属</strong><br>
+      <a href="docs/assets/02-node-detail.png"><img src="docs/assets/02-node-detail.png" alt="节点 GPU 指标及当前加速器任务" width="100%"></a>
+    </td>
   </tr>
   <tr>
-    <td><img src="docs/assets/01-overview-realtime-cluster.png" alt="Constella 集群总览"></td>
-    <td><img src="docs/assets/02-node-gpu-process-detail.png" alt="Constella GPU 进程详情"></td>
+    <td width="50%" valign="top">
+      <strong>Performance · 多卡真实 SM 活跃度对比</strong><br>
+      <a href="docs/assets/03-performance.png"><img src="docs/assets/03-performance.png" alt="GPU 选择、SM 活跃度曲线与区间统计" width="100%"></a>
+    </td>
+    <td width="50%" valign="top">
+      <strong>任务查询 · 已完成任务与多卡历史曲线</strong><br>
+      <a href="docs/assets/04-job-search.png"><img src="docs/assets/04-job-search.png" alt="任务搜索结果及所选任务的四卡利用率曲线" width="100%"></a>
+    </td>
   </tr>
 </table>
-
-**任务曲线**
-
-<p align="center">
-  <img src="docs/assets/05-job-curve-interaction.gif" alt="Constella 任务曲线交互">
-</p>
 
 ## 功能
 

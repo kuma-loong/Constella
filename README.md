@@ -22,12 +22,6 @@
 
 <p align="center">English | <a href="README_zh.md">简体中文</a></p>
 
-<div align="center">
-  <blockquote>
-    <em>Like stars in a constellation, <strong>Constella</strong> gathers independent accelerator nodes into one observable cluster.</em>
-  </blockquote>
-</div>
-
 Constella is a lightweight accelerator monitoring platform for labs, AI teams,
 and personal compute servers. It natively supports heterogeneous clusters;
 version 0.1.4 supports NVIDIA GPUs and Ascend NPUs.
@@ -37,24 +31,30 @@ records accelerator workload history, making it easy to review completed
 training and inference jobs. It supports standalone servers and small clusters
 without requiring a heavyweight Prometheus/Grafana stack.
 
-## Screenshots
+## Preview
 
 <table>
   <tr>
-    <th>Cluster Overview</th>
-    <th>GPU & Process Detail</th>
+    <td width="50%" valign="top">
+      <strong>Cluster overview · heterogeneous accelerator inventory and live resource usage</strong><br>
+      <a href="docs/assets/01-cluster-overview.png"><img src="docs/assets/01-cluster-overview.png" alt="Cluster overview with four demo nodes and GPU/NPU utilization" width="100%"></a>
+    </td>
+    <td width="50%" valign="top">
+      <strong>Node detail · GPU telemetry and process ownership</strong><br>
+      <a href="docs/assets/02-node-detail.png"><img src="docs/assets/02-node-detail.png" alt="Node GPU metrics and active accelerator tasks" width="100%"></a>
+    </td>
   </tr>
   <tr>
-    <td><img src="docs/assets/01-overview-realtime-cluster.png" alt="Constella cluster overview"></td>
-    <td><img src="docs/assets/02-node-gpu-process-detail.png" alt="Constella GPU process detail"></td>
+    <td width="50%" valign="top">
+      <strong>Performance · real SM activity samples compared across GPUs</strong><br>
+      <a href="docs/assets/03-performance.png"><img src="docs/assets/03-performance.png" alt="Performance GPU selection, SM activity curves, and summary statistics" width="100%"></a>
+    </td>
+    <td width="50%" valign="top">
+      <strong>Job search · completed workloads and multi-GPU history</strong><br>
+      <a href="docs/assets/04-job-search.png"><img src="docs/assets/04-job-search.png" alt="Task search results and a selected workload’s four-GPU utilization curves" width="100%"></a>
+    </td>
   </tr>
 </table>
-
-**Workload Curves**
-
-<p align="center">
-  <img src="docs/assets/05-job-curve-interaction.gif" alt="Constella workload curve interaction">
-</p>
 
 ## Features
 

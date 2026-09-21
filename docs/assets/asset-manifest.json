@@ -1,48 +1,33 @@
 {
-  "generated_at": "2026-07-06T12:57:05.909Z",
-  "base_url": "http://127.0.0.1:8876",
-  "viewport_css_px": "1920x1400",
+  "dataset_time": "2026-09-21T06:30:00.000Z",
+  "base_url": "http://127.0.0.1:8875",
+  "viewport_css_px": "1440x1100 (expanded vertically for crop when needed)",
   "device_scale_factor": 2,
+  "theme": "light",
   "files": [
     {
-      "file": "01-overview-realtime-cluster.png",
-      "bytes": 892724
+      "file": "01-cluster-overview.png",
+      "width": 2808,
+      "height": 1384,
+      "bytes": 420020
     },
     {
-      "file": "02-node-gpu-process-detail.png",
-      "bytes": 1132406
+      "file": "02-node-detail.png",
+      "width": 2808,
+      "height": 1598,
+      "bytes": 334653
     },
     {
-      "file": "03-node-history-curves.png",
-      "bytes": 1121035
+      "file": "03-performance.png",
+      "width": 2808,
+      "height": 1516,
+      "bytes": 443982
     },
     {
-      "file": "04-highres-job-curves.png",
-      "bytes": 692234
-    },
-    {
-      "file": "05-job-curve-interaction.gif",
-      "bytes": 1169330
-    },
-    {
-      "file": "light-01-overview-realtime-cluster.png",
-      "bytes": 909607
-    },
-    {
-      "file": "light-02-node-gpu-process-detail.png",
-      "bytes": 1094695
-    },
-    {
-      "file": "light-03-node-history-curves.png",
-      "bytes": 1112300
-    },
-    {
-      "file": "light-04-highres-job-curves.png",
-      "bytes": 720209
-    },
-    {
-      "file": "light-05-job-curve-interaction.gif",
-      "bytes": 1178702
+      "file": "04-job-search.png",
+      "width": 2808,
+      "height": 1606,
+      "bytes": 520661
     }
   ]
 }

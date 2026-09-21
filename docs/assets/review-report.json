@@ -1,77 +1,95 @@
 {
   "ok": true,
-  "missing": [],
-  "forbidden_text_hits": [],
+  "checks": [
+    {
+      "page": "01-cluster-overview",
+      "theme": "light",
+      "overflow": false
+    },
+    {
+      "page": "02-node-detail",
+      "theme": "light",
+      "overflow": false
+    },
+    {
+      "page": "03-performance",
+      "theme": "light",
+      "overflow": false
+    },
+    {
+      "page": "04-job-search",
+      "theme": "light",
+      "overflow": false
+    },
+    {
+      "page": "01-cluster-overview",
+      "theme": "dark",
+      "overflow": false
+    },
+    {
+      "page": "02-node-detail",
+      "theme": "dark",
+      "overflow": false
+    },
+    {
+      "page": "03-performance",
+      "theme": "dark",
+      "overflow": false
+    },
+    {
+      "page": "04-job-search",
+      "theme": "dark",
+      "overflow": false
+    },
+    {
+      "page": "01-cluster-overview",
+      "theme": "mobile",
+      "overflow": false
+    },
+    {
+      "page": "02-node-detail",
+      "theme": "mobile",
+      "overflow": false
+    },
+    {
+      "page": "03-performance",
+      "theme": "mobile",
+      "overflow": false
+    },
+    {
+      "page": "04-job-search",
+      "theme": "mobile",
+      "overflow": false
+    }
+  ],
+  "errors": [],
   "assets": [
     {
-      "file": "01-overview-realtime-cluster.png",
-      "width": 3810,
-      "height": 3462,
-      "bytes": 892724,
-      "high_resolution": true
+      "file": "01-cluster-overview.png",
+      "width": 2808,
+      "height": 1384,
+      "bytes": 420020
     },
     {
-      "file": "02-node-gpu-process-detail.png",
-      "width": 3810,
-      "height": 4080,
-      "bytes": 1132406,
-      "high_resolution": true
+      "file": "02-node-detail.png",
+      "width": 2808,
+      "height": 1598,
+      "bytes": 334653
     },
     {
-      "file": "03-node-history-curves.png",
-      "width": 3840,
-      "height": 4080,
-      "bytes": 1121035,
-      "high_resolution": true
+      "file": "03-performance.png",
+      "width": 2808,
+      "height": 1516,
+      "bytes": 443982
     },
     {
-      "file": "04-highres-job-curves.png",
-      "width": 3840,
-      "height": 2800,
-      "bytes": 692234,
-      "high_resolution": true
-    },
-    {
-      "file": "05-job-curve-interaction.gif",
-      "width": 1920,
-      "height": 1400,
-      "bytes": 1169330,
-      "high_resolution": true
-    },
-    {
-      "file": "light-01-overview-realtime-cluster.png",
-      "width": 3810,
-      "height": 3462,
-      "bytes": 909607,
-      "high_resolution": true
-    },
-    {
-      "file": "light-02-node-gpu-process-detail.png",
-      "width": 3810,
-      "height": 4080,
-      "bytes": 1094695,
-      "high_resolution": true
-    },
-    {
-      "file": "light-03-node-history-curves.png",
-      "width": 3840,
-      "height": 4080,
-      "bytes": 1112300,
-      "high_resolution": true
-    },
-    {
-      "file": "light-04-highres-job-curves.png",
-      "width": 3840,
-      "height": 2800,
-      "bytes": 720209,
-      "high_resolution": true
-    },
-    {
-      "file": "light-05-job-curve-interaction.gif",
-      "width": 1920,
-      "height": 1400,
-      "bytes": 1178702,
-      "high_resolution": true
+      "file": "04-job-search.png",
+      "width": 2808,
+      "height": 1606,
+      "bytes": 520661
     }
-  ]
+  ],
+  "data_source": "scripts/dev/readme-demo-data.mjs",
+  "reproduction_production_access": false,
+  "performance_source": "Read-only production API capture, identifiers replaced and timestamps shifted; original numeric samples preserved"
 }
