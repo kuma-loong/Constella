@@ -95,7 +95,7 @@ def resolve_usage(
             binding = max(applicable, key=lambda item: item["valid_from"], default=None)
             owner = f"user:{binding['user_id']}" if binding else f"account:{account}"
             label = (
-                binding.get("user_display_name") or binding.get("user_email") or binding["user_id"]
+                binding.get("user_display_name") or row.get("user") or binding["user_id"]
                 if binding
                 else f"{row.get('user') or 'Unknown'} @ {row['node_id']}"
             )
