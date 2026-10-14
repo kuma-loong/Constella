@@ -276,6 +276,7 @@ a:focus-visible {
 }
 
 .nav-row {
+  --nav-scrollbar-thumb: var(--border-strong);
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -283,6 +284,34 @@ a:focus-visible {
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: thin;
+  scrollbar-color: var(--nav-scrollbar-thumb) transparent;
+}
+
+.nav-row:hover,
+.nav-row:focus-within {
+  --nav-scrollbar-thumb: var(--muted);
+}
+
+.nav-row:active {
+  --nav-scrollbar-thumb: var(--text-soft);
+}
+
+/* Fallback for browsers without standard scrollbar styling. */
+.nav-row::-webkit-scrollbar {
+  height: 6px;
+}
+
+.nav-row::-webkit-scrollbar-track,
+.nav-row::-webkit-scrollbar-corner {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.nav-row::-webkit-scrollbar-thumb {
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--nav-scrollbar-thumb);
 }
 
 .nav-row-primary {
