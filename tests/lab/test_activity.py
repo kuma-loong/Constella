@@ -134,6 +134,19 @@ def test_aggregation_precedes_top_twenty():
     assert stats[0]["owner_key"] == "user:kuma" and stats[0]["gpu_hours"] == 25
 
 
+def test_model_weights_preserve_raw_hours_and_default_for_unknown_models():
+    rows = [
+        row(card="pro6000", gpu_name="NVIDIA RTX PRO 6000", end=START + HOUR),
+        row(card="pro5000", gpu_name="NVIDIA RTX PRO 5000 Blackwell", end=START + HOUR),
+        row(card="pro5000", gpu_name="NVIDIA RTX PRO 5000 Blackwell", end=START + HOUR, pid=2),
+        row(card="unknown", gpu_name="Unknown GPU", end=START + HOUR),
+    ]
+    stats = user_statistics(rows, [binding()], START, START + 2 * HOUR)[0]
+    assert stats["gpu_hours"] == 3
+    assert stats["active_hours"] == 1
+    assert stats["weighted_gpu_hours"] == pytest.approx(0.9 + 0.8 + 1.0)
+
+
 def test_pagination_totals_filters_and_expired_cursor():
     rows = [row(pid=i) for i in range(51)]
     data = ActivityData(

@@ -15,6 +15,7 @@ TIMEZONE = "Asia/Shanghai"
 DEFAULT_GPU_WEIGHTS = {
     "H100": 1.0,
     "PRO 6000": 0.9,
+    "PRO 5000": 0.8,
     "DEFAULT": 1.0,
 }
 RANGES = {
