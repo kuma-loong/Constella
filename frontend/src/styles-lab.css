@@ -104,8 +104,23 @@
 }
 
 .lab-node-control-detail {
+  display: grid;
+  gap: 4px;
   flex: 1;
   min-width: 0;
+}
+
+.lab-node-sampling {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.lab-node-sampling code {
+  color: var(--text-soft);
 }
 
 .lab-node-control > .lab-button {

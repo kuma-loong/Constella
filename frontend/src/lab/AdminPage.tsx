@@ -1,11 +1,12 @@
 import { useEffect, useState } from "preact/hooks";
 import { LabApiError, labRequest } from "./api";
 import { AdminNodes } from "./AdminNodes";
+import type { ClusterSnapshot } from "../types";
 import type { AuditEvent, LabBinding, LabRole, LabUser, LabUserStatus } from "./types";
 
 type AdminData = { users: LabUser[]; bindings: LabBinding[]; events: AuditEvent[] };
 
-export function AdminPage({ currentUser, onUserChange }: { currentUser: LabUser; onUserChange: (user: LabUser) => void }) {
+export function AdminPage({ currentUser, onUserChange, snapshot }: { currentUser: LabUser; onUserChange: (user: LabUser) => void; snapshot: ClusterSnapshot | null }) {
   const [data, setData] = useState<AdminData | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState("");
@@ -106,7 +107,7 @@ export function AdminPage({ currentUser, onUserChange }: { currentUser: LabUser;
     <header class="lab-page-head"><div><p class="lab-eyebrow">Lab management</p><h2>People, access and agents</h2><p>Manage member access, node agents, and review security-sensitive changes.</p></div><button class="lab-button is-quiet" type="button" onClick={() => void load()}>Refresh</button></header>
     {message ? <div class="lab-notice" role="status">{message}</div> : null}
 
-    <AdminNodes />
+    <AdminNodes snapshot={snapshot} />
 
     <section class="lab-panel" aria-labelledby="labUsersTitle">
       <div class="lab-panel-head"><div><h3 id="labUsersTitle">Users</h3><p>{activeUsers.length} active / {pendingUsers.length} pending review</p></div></div>

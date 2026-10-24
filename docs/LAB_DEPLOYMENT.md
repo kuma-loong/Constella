@@ -112,6 +112,11 @@ cooldown, and records the request and acknowledgement in the audit log. The UI
 confirms recovery only after a new agent instance reconnects. GPU workloads and
 the manager continue running; this control does not reboot the Linux host.
 
+Each node also shows its sampling source and latest sample time from the existing
+cluster snapshot, without additional requests or telemetry fields. Offline or stale
+nodes label the retained source as the last source; nodes without samples show
+`Not sampled`. Sample times use Asia/Shanghai (UTC+8).
+
 Existing members can open **Profile → Connect node accounts**, or the same link in
 the user menu, to add Linux users on newly connected nodes. **Refresh nodes** checks
 the latest capabilities and invalidates a previous lookup. Saving rechecks all
@@ -128,6 +133,9 @@ Lab 管理员可在 **Lab management → Node agents** 重启在线 agent，包�
 本机的 agent。需要先升级 agent，使其声明 `agent_restart_v1`；旧版保持采集兼容，
 界面提示升级。重启需确认，每节点冷却 60 秒，请求和应答记录在审计日志中。
 只有新实例重连后界面才确认恢复；GPU 任务和 manager 保持运行，不会重启 Linux 主机。
+
+节点同时展示已有集群快照中的采样来源和最近采样时间，不增加请求或遥测字段。
+离线或陈旧节点标注上次采样来源，无采样时显示 `Not sampled`；时间使用 Asia/Shanghai（UTC+8）。
 
 已有成员可通过 **Profile → Connect node accounts** 或用户菜单中的同名入口，绑定
 新节点上的 Linux 用户。**Refresh nodes** 获取最新能力并作废旧预检；提交时重新查询

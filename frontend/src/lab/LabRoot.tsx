@@ -53,7 +53,7 @@ export function LabRoot() {
       renderNavigation: (route) => user.role === "viewer" ? null : <LabNavigation route={route} canManageLab={canManageLab} />,
       renderHeaderActions: () => <UserMenu user={user} />,
       renderPage: (route, snapshot) => route.key === "management" && canManageLab
-        ? <AdminPage currentUser={user} onUserChange={setUser} />
+        ? <AdminPage currentUser={user} onUserChange={setUser} snapshot={snapshot} />
         : user.role === "viewer" ? <p>Read-only access does not include a personal dashboard.</p>
         : route.key === "account" ? <AccountPage user={user} onUserChange={setUser} />
         : <ProfilePage user={user} snapshot={snapshot} />,

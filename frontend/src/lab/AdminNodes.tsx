@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { LabApiError, labRequest } from "./api";
+import { DISPLAY_TIME_ZONE } from "../format";
+import type { ClusterSnapshot, NodeSnapshot } from "../types";
+
+const SOURCE_LABELS: Record<string, string> = { nvml: "NVML", dcmi: "DCMI" };
+const SAMPLE_TIME = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: DISPLAY_TIME_ZONE, month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+});
 
 type ControlNode = {
   node_id: string; hostname: string; status: string; connected: boolean;
@@ -8,7 +16,7 @@ type ControlNode = {
 };
 type Restart = { instance: string | null; deadline: number; state: "sending" | "waiting" | "done" | "unconfirmed" | "failed" };
 
-export function AdminNodes() {
+export function AdminNodes({ snapshot }: { snapshot: ClusterSnapshot | null }) {
   const [nodes, setNodes] = useState<ControlNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -81,6 +89,7 @@ export function AdminNodes() {
     {error && <div class="lab-notice" role="alert">{error}</div>}
     <div class="lab-node-controls" aria-busy={loading}>
       {nodes.map(node => {
+        const sample = snapshot?.nodes.find(sample => sample.node_id === node.node_id);
         const state = restarts[node.node_id]?.state;
         const busy = state === "sending" || state === "waiting";
         const cooling = (cooldowns[node.node_id] || 0) > now;
@@ -89,11 +98,20 @@ export function AdminNodes() {
           <div class="lab-node-identity"><strong>{node.node_id}</strong><small>{node.hostname}</small></div>
           <span class="lab-status-label">{node.status}</span>
           {node.manager_host && <span class="lab-status-label">Manager host</span>}
-          <span class="lab-node-control-detail" role="status">{detail}</span>
+          <div class="lab-node-control-detail"><span role="status">{detail}</span><SamplingDetails sample={sample} /></div>
           <button class="lab-button" disabled={busy || cooling || !node.connected || !node.restart_supported} onClick={() => void restart(node)}>{busy ? "Restarting…" : cooling ? "Cooling down" : "Restart agent"}</button>
         </div>;
       })}
       {!nodes.length && <div class="lab-empty">{loading ? "Loading node agents…" : "No node agents have connected yet."}</div>}
     </div>
   </section>;
+}
+
+function SamplingDetails({ sample }: { sample?: NodeSnapshot }) {
+  const sampled = sample && sample.seq > 0 && sample.source !== "none" && Number.isFinite(sample.sampled_at) && sample.sampled_at > 0;
+  const previous = sample?.status === "offline" || sample?.status === "stale";
+  return <div class="lab-node-sampling">
+    <span>{previous ? "Last source" : "Source"}: <code>{sampled ? SOURCE_LABELS[sample.source] || sample.source : "Not sampled"}</code></span>
+    <span>Sampled: {sampled ? <time dateTime={new Date(sample.sampled_at * 1000).toISOString()} title="Asia/Shanghai (UTC+8)">{SAMPLE_TIME.format(sample.sampled_at * 1000)}</time> : "—"}</span>
+  </div>;
 }
