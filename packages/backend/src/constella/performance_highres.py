@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import math
 from array import array
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, field
+from operator import itemgetter
 from typing import Any
 
 from .performance import NVIDIA_GPM_METRICS, NVIDIA_GPM_PROFILE, NVIDIA_GPM_RULES
@@ -18,6 +20,7 @@ class NvidiaGpmSampleRing:
     valid_masks: array = field(init=False)
     write_index: int = 0
     count: int = 0
+    time_ordered: bool = True
 
     def __post_init__(self) -> None:
         self.timestamps = array("d", [0.0]) * self.capacity
@@ -27,6 +30,8 @@ class NvidiaGpmSampleRing:
         self.valid_masks = array("H", [0]) * self.capacity
 
     def append(self, *, sampled_at: float, performance: dict[str, Any]) -> None:
+        if self.count and sampled_at < self._time_at(self.count - 1):
+            self.time_ordered = False
         index = self.write_index
         self.timestamps[index] = sampled_at
         raw_metrics = performance.get("metrics")
@@ -59,27 +64,57 @@ class NvidiaGpmSampleRing:
         max_points: int,
         summary_only: bool,
     ) -> dict[str, Any]:
-        bit = 1 << NVIDIA_GPM_METRICS.index(metric)
-        timeline: list[tuple[float, float | None]] = []
-        values: list[float] = []
-        for offset in range(self.count):
-            index = self._index(offset)
-            sampled_at = float(self.timestamps[index])
-            if sampled_at < since:
-                continue
-            if sampled_at > until:
-                break
-            value = float(self.values[metric][index]) if self.valid_masks[index] & bit else None
-            timeline.append((sampled_at, value))
-            if value is not None:
-                values.append(value)
-        summary = _summary(values, expected_count=len(timeline))
-        return {
-            "summary": summary,
-            "points": []
-            if summary_only
-            else _downsample_minmax(timeline, max_points=max_points),
-        }
+        return self.metric_series_many(
+            [metric], since=since, until=until, max_points=max_points, summary_only=summary_only,
+        )[metric]
+
+    def metric_series_many(
+        self,
+        metrics: list[str],
+        *,
+        since: float,
+        until: float,
+        max_points: int,
+        summary_only: bool,
+    ) -> dict[str, Any]:
+        # Locate the time window once per GPU, then copy contiguous array slices in C.
+        arrays = [self.timestamps, self.valid_masks, *(self.values[metric] for metric in metrics)]
+        timestamps, masks, *readings = self._window(arrays, since=since, until=until)
+        result = {}
+        for metric, samples in zip(metrics, readings):
+            bit = 1 << NVIDIA_GPM_METRICS.index(metric)
+            values = [value for value, mask in zip(samples, masks) if mask & bit]
+            points = []
+            if not summary_only:
+                timeline = [(stamp, value if mask & bit else None)
+                            for stamp, value, mask in zip(timestamps, samples, masks)]
+                points = _downsample_minmax(timeline, max_points=max_points)
+            result[metric] = {
+                "summary": _summary(values, expected_count=len(timestamps)),
+                "points": points,
+            }
+        return result
+
+    def _window(self, arrays: list[array], *, since: float, until: float) -> list[array]:
+        if not self.time_ordered:
+            # Preserve the existing scan semantics after a backwards clock adjustment.
+            indices = []
+            for offset in range(self.count):
+                index = self._index(offset)
+                if self.timestamps[index] > until:
+                    break
+                if self.timestamps[index] >= since:
+                    indices.append(index)
+            return [array(values.typecode, (values[i] for i in indices)) for values in arrays]
+        offsets = range(self.count)
+        start = bisect_left(offsets, since, key=self._time_at)
+        end = bisect_right(offsets, until, lo=start, key=self._time_at)
+        if start == end:
+            return [array(values.typecode) for values in arrays]
+        first = self._index(start)
+        last = first + end - start
+        return [values[first:last] if last <= self.capacity
+                else values[first:] + values[:last - self.capacity] for values in arrays]
 
     def _time_at(self, offset: int) -> float:
         return float(self.timestamps[self._index(offset)])
@@ -155,16 +190,13 @@ class NvidiaGpmHighresCache:
             series.append(
                 {
                     **device,
-                    "metrics": {
-                        metric: ring.metric_series(
-                            metric,
-                            since=since,
-                            until=until,
-                            max_points=max_points,
-                            summary_only=summary_only,
-                        )
-                        for metric in selected_metrics
-                    },
+                    "metrics": ring.metric_series_many(
+                        selected_metrics,
+                        since=since,
+                        until=until,
+                        max_points=max_points,
+                        summary_only=summary_only,
+                    ),
                 }
             )
         series.sort(key=lambda item: (item["gpu_index"], item["gpu_uuid"]))
@@ -232,9 +264,9 @@ def _downsample_minmax(
         if not valid:
             points.append((bucket[-1][0], None))
             continue
-        low = min(valid, key=lambda item: float(item[1]))
-        high = max(valid, key=lambda item: float(item[1]))
-        points.extend(sorted({low, high}, key=lambda item: item[0]))
+        low = min(valid, key=itemgetter(1))
+        high = max(valid, key=itemgetter(1))
+        points.extend((low, high))
         if len(valid) != len(bucket):
             missing = next(item for item in bucket if item[1] is None)
             points.append(missing)

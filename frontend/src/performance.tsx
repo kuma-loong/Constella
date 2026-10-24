@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks"
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import { fmtMiBPerSecond, fmtPct } from "./format";
+import { fetchJson } from "./requests";
 import { GuideDrawer } from "./guides/GuideDrawer";
 import type { GuideLocale } from "./guides/types";
 import {
@@ -27,7 +28,8 @@ const COLORS = [
 const COLLAPSE_KEY = "constella.performance.collapsed";
 const GUIDE_LOCALE_KEY = "constella.guide.locale";
 const CHART_HEIGHT = 300;
-const POINTS_PER_SERIES = 1000;
+const MAX_POINTS_PER_SERIES = 1000;
+const POINTS_PER_CHART = 2400;
 type MetricSummary = {
   avg: number | null;
   min: number | null;
@@ -72,6 +74,7 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
   });
   const [rangeSeconds, setRangeSeconds] = useState(15 * 60);
   const [live, setLive] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [collapsed, setCollapsed] = useState<Set<string>>(readCollapsed);
   const [payload, setPayload] = useState<PerformancePayload | null>(null);
   const [selectionPayload, setSelectionPayload] = useState<PerformancePayload | null>(null);
@@ -228,20 +231,20 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
       metrics: metricQuery,
       since: String(until - rangeSeconds),
       until: String(until),
-      max_points: String(POINTS_PER_SERIES),
+      max_points: String(Math.min(MAX_POINTS_PER_SERIES, Math.max(100, Math.floor(POINTS_PER_CHART / gpuUuids.size)))),
     });
     setLoading(true);
     try {
       const nextPayload = await requestPerformance(params, signal);
-      if (request === requestRef.current) {
+      if (request === requestRef.current && !signal?.aborted) {
         setPayload(nextPayload);
         setError(null);
       }
     } catch (requestError) {
-      if ((requestError as Error).name !== "AbortError") {
-        if (request === requestRef.current) {
-          setError((requestError as Error).message);
-        }
+      if (request === requestRef.current && !signal?.aborted) {
+        setError((requestError as Error).name === "AbortError"
+          ? "Performance request timed out. Try refreshing."
+          : (requestError as Error).message);
       }
     } finally {
       if (request === requestRef.current) {
@@ -252,15 +255,19 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetchPerformance(controller.signal);
-    const timer = live && visible
-      ? window.setInterval(() => void fetchPerformance(controller.signal), liveRefreshMs)
-      : 0;
+    let timer = 0;
+    const refresh = async () => {
+      await fetchPerformance(controller.signal);
+      if (live && visible && !controller.signal.aborted) {
+        timer = window.setTimeout(() => void refresh(), liveRefreshMs);
+      }
+    };
+    void refresh();
     return () => {
       controller.abort();
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
     };
-  }, [fetchPerformance, live, liveRefreshMs, visible]);
+  }, [fetchPerformance, live, liveRefreshMs, refreshKey, visible]);
 
   useEffect(() => {
     if (!selection || !selectedNode || !gpuUuids.size || !metricQuery) {
@@ -311,7 +318,7 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
     setSelection(null);
     setSelectionPayload(null);
     setLive(true);
-    void fetchPerformance();
+    setRefreshKey((previous) => previous + 1);
   }
 
   function openGuide(metricId: PerformanceMetricId | null, trigger: HTMLElement) {
@@ -503,15 +510,34 @@ function PerformanceChart({
   const hoveredRef = useRef(false);
   const chartRef = useRef<uPlot | null>(null);
   const resizeRef = useRef<ResizeObserver | null>(null);
-  const aligned = useMemo(() => alignSeries(series, definition.id), [definition.id, series]);
-  const hasData = aligned.timestamps.length > 0;
+  const [plotVisible, setPlotVisible] = useState(false);
+  const hasData = series.some((item) => (item.metrics[definition.id]?.points.length || 0) > 0);
+  const aligned = useMemo<ReturnType<typeof alignSeries>>(
+    () => collapsed || !plotVisible
+      ? { timestamps: [], data: [[]] }
+      : alignSeries(series, definition.id),
+    [collapsed, plotVisible, definition.id, series],
+  );
   const alignedRef = useRef(aligned);
   const seriesRef = useRef(series);
   alignedRef.current = aligned;
   seriesRef.current = series;
 
   useEffect(() => {
-    if (collapsed || !targetRef.current || !hasData) {
+    const target = targetRef.current;
+    if (collapsed || !target || !hasData) {
+      setPlotVisible(false);
+      return;
+    }
+    const observer = new IntersectionObserver(([entry]) => setPlotVisible(entry.isIntersecting), {
+      rootMargin: "300px 0px",
+    });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [collapsed, hasData]);
+
+  useEffect(() => {
+    if (collapsed || !plotVisible || !targetRef.current || !hasData) {
       return;
     }
     const target = targetRef.current;
@@ -584,7 +610,10 @@ function PerformanceChart({
     );
     chartRef.current = chart;
     const resize = new ResizeObserver(([entry]) => {
-      chart.setSize({ width: Math.max(320, Math.floor(entry.contentRect.width)), height: CHART_HEIGHT });
+      const width = Math.max(320, Math.floor(entry.contentRect.width));
+      if (width !== chart.width) {
+        chart.setSize({ width, height: CHART_HEIGHT });
+      }
     });
     resize.observe(target);
     resizeRef.current = resize;
@@ -596,10 +625,13 @@ function PerformanceChart({
       chart.destroy();
       chartRef.current = null;
     };
-  }, [collapsed, definition.id, hasData, series.map((item) => item.gpu_uuid).join(",")]);
+  }, [collapsed, plotVisible, definition.id, hasData, series.map((item) => item.gpu_uuid).join(",")]);
 
   useEffect(() => {
-    chartRef.current?.setData(aligned.data);
+    const chart = chartRef.current;
+    if (chart && chart.data !== aligned.data) {
+      chart.setData(aligned.data);
+    }
   }, [aligned]);
 
   useEffect(() => {
@@ -614,7 +646,7 @@ function PerformanceChart({
     const left = chart.valToPos(selection.from, "x");
     const right = chart.valToPos(selection.to, "x");
     chart.setSelect({ left, top: 0, width: Math.max(0, right - left), height: chart.bbox.height }, false);
-  }, [selection]);
+  }, [selection, plotVisible, collapsed, hasData]);
 
   return (
     <article class={`performance-chart ${collapsed ? "is-collapsed" : ""}`}>
@@ -633,7 +665,7 @@ function PerformanceChart({
       </div>
       {!collapsed ? (
         <>
-          {aligned.timestamps.length ? (
+          {hasData ? (
             <>
               <div class="performance-plot-wrap">
                 <div
@@ -800,14 +832,16 @@ function formatTooltipTime(timestamp: number) {
   return formatPerformanceTime(timestamp, true);
 }
 
+const performanceTimeFormatters = [false, true].map((includeDate) => new Intl.DateTimeFormat("en-GB", {
+  ...(includeDate ? { month: "short", day: "2-digit" } as const : {}),
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+}));
+
 function formatPerformanceTime(timestamp: number, includeDate: boolean) {
-  return new Intl.DateTimeFormat("en-GB", {
-    ...(includeDate ? { month: "short", day: "2-digit" } as const : {}),
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).format(timestamp * 1000);
+  return performanceTimeFormatters[Number(includeDate)].format(timestamp * 1000);
 }
 
 function formatMetricValue(value: number | null | undefined, definition: MetricDefinition) {
@@ -822,14 +856,7 @@ function performanceYAxisSize(definition: MetricDefinition) {
 }
 
 async function requestPerformance(params: URLSearchParams, signal?: AbortSignal) {
-  const response = await fetch(`/api/highres/performance?${params.toString()}`, {
-    cache: "no-store",
-    signal,
-  });
-  if (!response.ok) {
-    throw new Error(`performance request failed: ${response.status}`);
-  }
-  return response.json() as Promise<PerformancePayload>;
+  return fetchJson<PerformancePayload>(`/api/highres/performance?${params.toString()}`, { signal });
 }
 
 function profileLabel(node: NodeSnapshot) {

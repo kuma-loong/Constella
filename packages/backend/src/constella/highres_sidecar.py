@@ -26,6 +26,7 @@ from .highres import (
     performance_curves,
     query_jobs,
 )
+from .highres_http import PerformanceGZipMiddleware
 
 
 @dataclass(slots=True)
@@ -163,6 +164,7 @@ def create_highres_sidecar_app(
         docs_url="/api/docs",
         redoc_url=None,
     )
+    app.add_middleware(PerformanceGZipMiddleware, minimum_size=1024, compresslevel=1)
     app.state.store = store
     app.state.highres_cache = cache
     app.state.stream_client = stream_client

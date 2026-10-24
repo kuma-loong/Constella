@@ -33,6 +33,7 @@ from .highres import (
     performance_curves,
     query_jobs,
 )
+from .highres_http import PerformanceGZipMiddleware
 from .paths import resolve_frontend_dist
 from .schema import local_node_id
 from .telemetry import COUNT, telemetry_json
@@ -228,6 +229,7 @@ def create_app(
         docs_url="/api/docs",
         redoc_url=None,
     )
+    app.add_middleware(PerformanceGZipMiddleware, minimum_size=1024, compresslevel=1)
     app.state.cluster_state = cluster_state
     app.state.settings = manager_settings
     app.state.db_sink = db_sink
