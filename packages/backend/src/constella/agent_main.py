@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import asyncio
-
-from .agent import AgentConfig, run_agent
+from .agent import AgentConfig, run_agent_service
 
 
 def main() -> None:
-    asyncio.run(run_agent(AgentConfig.from_env()))
+    run_agent_service(AgentConfig.from_env())
 
 
 if __name__ == "__main__":

@@ -142,7 +142,13 @@ class SnapshotCollector:
     async def _run(self) -> None:
         while True:
             started = asyncio.get_running_loop().time()
-            snapshot = await asyncio.to_thread(self._sample_once)
+            sample_task = asyncio.create_task(asyncio.to_thread(self._sample_once))
+            try:
+                snapshot = await asyncio.shield(sample_task)
+            except asyncio.CancelledError:
+                # stop() must not close driver handles while a sample uses them.
+                await sample_task
+                raise
             self._publish(snapshot)
             elapsed = asyncio.get_running_loop().time() - started
             sleep_for = max(0.0, self.refresh_interval - elapsed)

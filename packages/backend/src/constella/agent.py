@@ -8,7 +8,9 @@ import os
 import pwd
 import random
 import socket
+import sys
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -27,6 +29,20 @@ from .schema import NodeHardware, Snapshot, local_node_id
 logger = logging.getLogger(__name__)
 
 RECONNECT_DELAYS = (1.0, 2.0, 5.0, 15.0, 30.0)
+AGENT_INSTANCE_ID = uuid.uuid4().hex
+
+
+class AgentRestartRequested(Exception):
+    """An acknowledged restart must unwind the collector and event loop first."""
+
+
+def run_agent_service(config: AgentConfig) -> None:
+    try:
+        asyncio.run(run_agent(config))
+    except AgentRestartRequested:
+        # Re-exec preserves PID files, supervisor ownership, arguments and environment.
+        # orig_argv preserves both console scripts and `python -m constella.agent_main`.
+        os.execv(sys.executable, [sys.executable, *sys.orig_argv[1:]])
 
 
 @dataclass(slots=True)
@@ -159,11 +175,12 @@ async def run_agent(config: AgentConfig, *, collector: SnapshotCollector | None 
         if config.device_type == "ascend"
         else sample_nvml_hardware_inventory
     )
-    hardware = await asyncio.to_thread(inventory_sampler)
-    await collector.start()
     try:
+        hardware = await asyncio.to_thread(inventory_sampler)
+        await collector.start()
         await _connection_loop(config, collector, status, hardware)
     finally:
+        status.status = "stopped"
         writer_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await writer_task
@@ -183,7 +200,7 @@ async def _connection_loop(
         try:
             await _run_connection(config, collector, status, hardware)
             attempt = 0
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, AgentRestartRequested):
             raise
         except Exception as exc:
             status.status = "offline"
@@ -227,17 +244,19 @@ async def _run_connection(
             ),
             name="agent-ws-sender",
         )
-        done, pending = await asyncio.wait(
-            {receiver, sender},
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        for task in pending:
-            task.cancel()
-        for task in pending:
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
-        for task in done:
-            task.result()
+        try:
+            done, _ = await asyncio.wait(
+                {receiver, sender}, return_when=asyncio.FIRST_COMPLETED,
+            )
+            # An acknowledged restart wins if a concurrent send also fails.
+            if receiver in done:
+                receiver.result()
+            if sender in done:
+                sender.result()
+        finally:
+            for task in (receiver, sender):
+                task.cancel()
+            await asyncio.gather(receiver, sender, return_exceptions=True)
 
 
 async def _receiver_loop(
@@ -253,6 +272,19 @@ async def _receiver_loop(
         except json.JSONDecodeError:
             continue
         message_type = message.get("type")
+        if message_type == "agent_restart_request":
+            valid = (
+                isinstance(message.get("request_id"), str)
+                and bool(message["request_id"])
+                and message.get("node_id") == config.node_id
+            )
+            await _send_json(websocket, {
+                "type": "agent_restart_response", "request_id": message.get("request_id"),
+                "node_id": config.node_id, "ok": valid,
+            }, send_lock)
+            if valid:
+                raise AgentRestartRequested()
+            continue
         if message_type == "account_lookup_request":
             response = await handle_account_lookup_request(message, node_id=config.node_id)
             await _send_json(websocket, response, send_lock)
@@ -382,6 +414,8 @@ def agent_hello(config: AgentConfig, *, hardware: NodeHardware | None = None) ->
             "nvidia_smi_fallback": config.device_type == "nvidia",
             "process_cmdline": True,
             "account_lookup_v1": True,
+            "agent_restart_v1": True,
+            "agent_instance_id": AGENT_INSTANCE_ID,
             "performance_profiles": performance_profiles(config.device_type),
         },
     }

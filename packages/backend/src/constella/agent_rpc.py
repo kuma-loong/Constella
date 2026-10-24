@@ -34,7 +34,7 @@ class AgentRpcBroker:
 
     def __init__(self) -> None:
         self._connections: dict[str, AgentConnection] = {}
-        self._pending: dict[tuple[str, str], asyncio.Future[dict[str, Any]]] = {}
+        self._pending: dict[tuple[str, str, str], asyncio.Future[dict[str, Any]]] = {}
 
     def register(
         self,
@@ -78,23 +78,38 @@ class AgentRpcBroker:
         *,
         timeout: float = 5.0,
     ) -> dict[str, Any]:
+        return await self._request(
+            node_id, capability="account_lookup_v1", request_type="account_lookup_request",
+            response_type="account_lookup_response", payload={"username": username}, timeout=timeout,
+        )
+
+    async def restart(self, node_id: str, *, timeout: float = 5.0) -> dict[str, Any]:
+        return await self._request(
+            node_id, capability="agent_restart_v1", request_type="agent_restart_request",
+            response_type="agent_restart_response", payload={}, timeout=timeout,
+        )
+
+    async def _request(
+        self, node_id: str, *, capability: str, request_type: str, response_type: str,
+        payload: dict[str, Any], timeout: float,
+    ) -> dict[str, Any]:
         connection = self._connections.get(node_id)
         if connection is None:
             raise AgentUnavailableError(f"node {node_id!r} is not connected")
-        if connection.capabilities.get("account_lookup_v1") is not True:
-            raise AgentCapabilityError(f"node {node_id!r} does not support account lookup")
+        if connection.capabilities.get(capability) is not True:
+            raise AgentCapabilityError(f"node {node_id!r} does not support {capability}")
 
         request_id = uuid.uuid4().hex
         future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
-        key = (node_id, request_id)
+        key = (node_id, request_id, response_type)
         self._pending[key] = future
         try:
             connection.send_queue.put_nowait(
                 {
-                    "type": "account_lookup_request",
+                    "type": request_type,
                     "request_id": request_id,
                     "node_id": node_id,
-                    "username": username,
+                    **payload,
                 }
             )
         except asyncio.QueueFull as exc:
@@ -104,7 +119,7 @@ class AgentRpcBroker:
         try:
             return await asyncio.wait_for(future, timeout=timeout)
         except asyncio.TimeoutError as exc:
-            raise AgentRpcTimeoutError(f"node {node_id!r} account lookup timed out") from exc
+            raise AgentRpcTimeoutError(f"node {node_id!r} {request_type} timed out") from exc
         finally:
             self._pending.pop(key, None)
 
@@ -114,6 +129,16 @@ class AgentRpcBroker:
         *,
         connection_id: object,
     ) -> bool:
+        if message.get("type") != "account_lookup_response":
+            return False
+        return self._resolve_response(message, connection_id=connection_id)
+
+    def resolve_restart(self, message: dict[str, Any], *, connection_id: object) -> bool:
+        if message.get("type") != "agent_restart_response":
+            return False
+        return self._resolve_response(message, connection_id=connection_id)
+
+    def _resolve_response(self, message: dict[str, Any], *, connection_id: object) -> bool:
         node_id = str(message.get("node_id") or "")
         request_id = str(message.get("request_id") or "")
         connection = self._connections.get(node_id)
@@ -124,13 +149,13 @@ class AgentRpcBroker:
             or connection.connection_id is not connection_id
         ):
             return False
-        future = self._pending.get((node_id, request_id))
+        future = self._pending.get((node_id, request_id, str(message.get("type") or "")))
         if future is None or future.done():
             return False
         future.set_result(dict(message))
         return True
 
     def _fail_pending(self, node_id: str, error: AgentRpcError) -> None:
-        for (pending_node_id, _request_id), future in list(self._pending.items()):
+        for (pending_node_id, _request_id, _response_type), future in list(self._pending.items()):
             if pending_node_id == node_id and not future.done():
                 future.set_exception(error)

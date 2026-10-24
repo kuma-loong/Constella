@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import importlib.util
 import json
 import math
@@ -13,7 +12,7 @@ from pathlib import Path
 import uvicorn
 
 from . import __version__
-from .agent import AgentConfig, run_agent
+from .agent import AgentConfig, run_agent_service
 from .cluster_control import ClusterController, format_results, load_cluster_config
 from .collector import DEVICE_TYPES, SnapshotCollector, validate_refresh_interval
 from .db import RAW_SNAPSHOT_RETENTION_SECONDS, SQLiteStore
@@ -272,7 +271,7 @@ def main(argv: list[str] | None = None) -> None:
             )
         except (OSError, ValueError) as exc:
             parser.error(str(exc))
-        asyncio.run(run_agent(config))
+        run_agent_service(config)
         return
 
     if args.command == "cluster":

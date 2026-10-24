@@ -119,6 +119,6 @@ function UserMenu({ user }: { user: LabUser }) {
   const label = user.display_name || user.email.split("@")[0];
   return <details class="lab-user-menu">
     <summary aria-label={`Signed in as ${user.email}`} title={user.email}><span class="lab-user-avatar">{label.slice(0, 2).toUpperCase()}</span><span class="lab-user-summary"><strong>{label}</strong><small>{labRoleLabel(user.role)}</small></span></summary>
-    <div class="lab-user-popover"><strong>{user.display_name || user.email}</strong>{user.display_name ? <span>{user.email}</span> : null}<span class="lab-status-label">{labRoleLabel(user.role)}</span>{user.role !== "viewer" && <a href="/profile">Profile</a>}{user.role === "admin" ? <a href="/management">Lab management</a> : null}<a href="/cdn-cgi/access/logout">Sign out</a></div>
+    <div class="lab-user-popover"><strong>{user.display_name || user.email}</strong>{user.display_name ? <span>{user.email}</span> : null}<span class="lab-status-label">{labRoleLabel(user.role)}</span>{user.role !== "viewer" && <><a href="/profile">Profile</a><a href="/profile/settings#connect-node-accounts">Connect node accounts</a><a href="/profile/settings">Account settings</a></>}{user.role === "admin" ? <a href="/management">Lab management</a> : null}<a href="/cdn-cgi/access/logout">Sign out</a></div>
   </details>;
 }

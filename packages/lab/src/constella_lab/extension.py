@@ -7,6 +7,7 @@ from .activity import build_activity_router
 from .activity_usage import user_statistics
 from .auth import CloudflareAccessVerifier, IdentityVerifier, LabAuthMiddleware
 from .config import LabConfig
+from .node_control import build_node_control_router
 from .store import LabStore
 
 
@@ -38,6 +39,7 @@ class LabExtension:
             verifier=self.verifier,
         )
         app.include_router(build_lab_router(config=self.config, store=self.store))
+        app.include_router(build_node_control_router(self.store))
 
     async def start(self, app: FastAPI) -> None:
         self.store.open()

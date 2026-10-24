@@ -1,8 +1,8 @@
-import { ArrowDown, ArrowUpRight, Check, ChevronRight, Info, RefreshCw, Settings2, X } from "lucide";
+import { ArrowDown, ArrowUpRight, Check, ChevronRight, Info, Plus, RefreshCw, Settings2, X } from "lucide";
 import { h } from "preact";
 
 const icons = { "arrow-down": ArrowDown, "arrow-up-right": ArrowUpRight, check: Check,
-  "chevron-right": ChevronRight, info: Info, "refresh-cw": RefreshCw, "settings-2": Settings2, x: X };
+  "chevron-right": ChevronRight, info: Info, plus: Plus, "refresh-cw": RefreshCw, "settings-2": Settings2, x: X };
 
 // Render the existing Lucide nodes declaratively so local updates do not depend on a cluster refresh.
 export function Icon({ name }: { name: keyof typeof icons }) {

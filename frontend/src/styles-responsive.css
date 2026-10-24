@@ -411,3 +411,68 @@
   .telemetry-notice summary span,
   .telemetry-notice li span { display: block; margin-top: 4px; }
 }
+
+@media (max-width: 759px) {
+  :root[data-edition="lab"] .lab-node-control {
+    flex-wrap: wrap;
+  }
+
+  :root[data-edition="lab"] .lab-node-identity {
+    flex-basis: 100%;
+  }
+
+  :root[data-edition="lab"] .lab-node-control-detail {
+    flex-basis: 100%;
+  }
+
+  :root[data-edition="lab"] .lab-node-control > .lab-button {
+    flex-basis: 100%;
+  }
+
+  :root[data-edition="lab"] .lab-binding-table,
+  :root[data-edition="lab"] .lab-binding-table tbody {
+    display: block;
+  }
+
+  :root[data-edition="lab"] .lab-binding-table thead {
+    display: none;
+  }
+
+  :root[data-edition="lab"] .lab-binding-table tr {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
+    gap: 8px 12px;
+    padding: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  :root[data-edition="lab"] .lab-binding-table td,
+  :root[data-edition="lab"] .lab-binding-table td:first-child {
+    width: auto;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+
+  :root[data-edition="lab"] .lab-binding-table td:not(:first-child) {
+    grid-column: 2;
+  }
+
+  :root[data-edition="lab"] .lab-binding-table label {
+    position: static;
+    display: block;
+    width: auto;
+    height: auto;
+    margin: 0 0 5px;
+    clip: auto;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 759px) {
+  :root[data-edition="lab"] .profile-page .page-heading .heading-actions {
+    flex-wrap: wrap;
+  }
+}

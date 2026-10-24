@@ -20,6 +20,7 @@ export function AccountBindingForm({ user, onUserChange, mode = "profile" }: Acc
   const [results, setResults] = useState<AccountResult[] | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "previewing" | "binding" | "error">("loading");
   const [message, setMessage] = useState("");
+  const busy = state === "loading" || state === "previewing" || state === "binding";
 
   useEffect(() => {
     if (canBind) {
@@ -34,20 +35,21 @@ export function AccountBindingForm({ user, onUserChange, mode = "profile" }: Acc
     [user.bindings],
   );
   const selectedAccounts = nodes
-    .filter((node) => drafts[node.node_id]?.selected)
+    .filter((node) => drafts[node.node_id]?.selected && node.connected && node.binding_supported && !activeNodeIds.has(node.node_id))
     .map((node) => ({ node_id: node.node_id, username: drafts[node.node_id]?.username.trim() || "" }));
 
   async function loadNodes() {
     setState("loading");
+    setResults(null);
+    setMessage("");
     try {
       const payload = await labRequest<{ nodes: BindingNode[] }>("/api/lab/account-binding-nodes");
       setNodes(payload.nodes);
       setDrafts((previous) => {
-        const next = { ...previous };
-        for (const node of payload.nodes) {
-          next[node.node_id] ||= { selected: false, username: "" };
-        }
-        return next;
+        return Object.fromEntries(payload.nodes.map(node => {
+          const draft = previous[node.node_id] || { selected: false, username: "" };
+          return [node.node_id, { ...draft, selected: draft.selected && node.connected && node.binding_supported && !activeNodeIds.has(node.node_id) }];
+        }));
       });
       setState("ready");
     } catch (error) {
@@ -113,6 +115,7 @@ export function AccountBindingForm({ user, onUserChange, mode = "profile" }: Acc
       });
       const payload = await labRequest<{ user: LabUser }>("/api/lab/me");
       onUserChange(payload.user);
+      setDrafts(previous => Object.fromEntries(Object.entries(previous).map(([id, draft]) => [id, { ...draft, selected: false }])));
       setResults(null);
       setMessage("Node accounts connected.");
       setState("ready");
@@ -127,13 +130,13 @@ export function AccountBindingForm({ user, onUserChange, mode = "profile" }: Acc
     <div class="lab-empty">Ask a Lab administrator to grant member access before claiming a node account.</div>
   </> : <>
     <div class="lab-panel-head">
-      <div><h3 id={titleId}>Connect node accounts</h3><p>Constella checks every selected node before connecting the accounts together.</p></div>
-      <button class="lab-button is-quiet" type="button" onClick={() => void loadNodes()} disabled={state === "loading"}>Refresh nodes</button>
+      <div><h3 id={titleId}>Connect node accounts</h3><p>Add Linux accounts on newly available nodes. Existing connections stay in place.</p></div>
+      <button class="lab-button is-quiet" type="button" onClick={() => void loadNodes()} disabled={busy}>Refresh nodes</button>
     </div>
 
     <div class="lab-fill-row">
-      <label><span>Username</span><input value={sharedUsername} onInput={(event) => setSharedUsername(event.currentTarget.value)} placeholder="alice" autoComplete="off" /></label>
-      <button class="lab-button is-quiet" type="button" onClick={fillSelected}>Fill selected</button>
+      <label><span>Username</span><input disabled={busy} value={sharedUsername} onInput={(event) => setSharedUsername(event.currentTarget.value)} placeholder="alice" autoComplete="off" /></label>
+      <button class="lab-button is-quiet" type="button" disabled={busy || !sharedUsername.trim() || !selectedAccounts.length} onClick={fillSelected}>Fill selected</button>
     </div>
 
     {state === "loading" ? <div class="lab-empty">Loading node capabilities...</div> : nodes.length ? (
@@ -144,10 +147,10 @@ export function AccountBindingForm({ user, onUserChange, mode = "profile" }: Acc
             const unavailable = !node.connected || !node.binding_supported || activeNodeIds.has(node.node_id);
             const result = results?.find((item) => item.node_id === node.node_id);
             return <tr key={node.node_id} class={unavailable ? "is-disabled" : ""}>
-              <td><input aria-label={`Select ${node.node_id}`} type="checkbox" checked={drafts[node.node_id]?.selected || false} disabled={unavailable} onChange={(event) => updateDraft(node.node_id, { selected: event.currentTarget.checked })} /></td>
+              <td><input aria-label={`Select ${node.node_id}`} type="checkbox" checked={!unavailable && (drafts[node.node_id]?.selected || false)} disabled={unavailable || busy} onChange={(event) => updateDraft(node.node_id, { selected: event.currentTarget.checked })} /></td>
               <td><strong>{node.node_id}</strong><small>{node.hostname}</small></td>
               <td>{activeNodeIds.has(node.node_id) ? "already bound" : !node.connected ? "offline" : !node.binding_supported ? "agent upgrade required" : node.status}</td>
-              <td><label class="sr-only" for={`${inputPrefix}-${node.node_id}`}>Linux username on {node.node_id}</label><input id={`${inputPrefix}-${node.node_id}`} value={drafts[node.node_id]?.username || ""} disabled={unavailable || !drafts[node.node_id]?.selected} onInput={(event) => updateDraft(node.node_id, { username: event.currentTarget.value })} autoComplete="off" /></td>
+              <td><label class="sr-only" for={`${inputPrefix}-${node.node_id}`}>Linux username on {node.node_id}</label><input id={`${inputPrefix}-${node.node_id}`} value={drafts[node.node_id]?.username || ""} disabled={unavailable || busy || !drafts[node.node_id]?.selected} onInput={(event) => updateDraft(node.node_id, { username: event.currentTarget.value })} autoComplete="off" /></td>
               <td>{state === "previewing" && drafts[node.node_id]?.selected ? "checking" : result?.bindable ? <span class="lab-result is-ok">{result.canonical_username} / UID {result.uid}</span> : result ? <span class="lab-result is-error">{resultError(result.error)}</span> : "not checked"}</td>
             </tr>;
           })}</tbody>
@@ -162,12 +165,12 @@ export function AccountBindingForm({ user, onUserChange, mode = "profile" }: Acc
         <button class="lab-button is-primary" type="button" disabled={state === "binding"} onClick={() => void bind()}>{state === "binding" ? "Connecting..." : mode === "onboarding" ? "Finish setup" : `Connect ${results.length} account${results.length === 1 ? "" : "s"}`}</button>
       </div>
     ) : null}
-    <div class="lab-panel-actions"><button class="lab-button is-primary" type="button" disabled={state === "previewing" || state === "binding" || !selectedAccounts.length} onClick={() => void preview()}>{state === "previewing" ? "Checking nodes..." : "Check selected accounts"}</button></div>
+    <div class="lab-panel-actions"><button class="lab-button is-primary" type="button" disabled={busy || state === "error" || !selectedAccounts.length} onClick={() => void preview()}>{state === "previewing" ? "Checking nodes..." : "Check selected accounts"}</button></div>
   </>;
 
   return mode === "onboarding"
     ? <div class="lab-onboarding-binding" aria-labelledby={titleId}>{content}</div>
-    : <section class="lab-panel" aria-labelledby={titleId}>{content}</section>;
+    : <section class="lab-panel" id="connect-node-accounts" aria-labelledby={titleId}>{content}</section>;
 }
 
 function resultError(error?: string) {

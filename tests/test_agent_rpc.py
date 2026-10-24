@@ -7,6 +7,7 @@ import pytest
 from constella.agent_rpc import (
     AgentCapabilityError,
     AgentRpcBroker,
+    AgentRpcTimeoutError,
     AgentUnavailableError,
 )
 
@@ -80,5 +81,57 @@ def test_disconnect_fails_pending_lookup() -> None:
         broker.unregister("node-a", connection_id=connection_id)
         with pytest.raises(AgentUnavailableError):
             await pending
+
+    asyncio.run(run())
+
+
+def test_restart_requires_matching_response_type_and_current_connection() -> None:
+    async def run() -> None:
+        broker = AgentRpcBroker()
+        connection = object()
+        queue = asyncio.Queue()
+        broker.register("node-a", connection_id=connection, send_queue=queue,
+                        capabilities={"agent_restart_v1": True})
+        pending = asyncio.create_task(broker.restart("node-a"))
+        request = await queue.get()
+        assert request["type"] == "agent_restart_request"
+        response = {**request, "type": "agent_restart_response", "ok": True}
+        assert not broker.resolve_restart(response, connection_id=object())
+        assert not broker.resolve_account_lookup(
+            {**response, "type": "account_lookup_response"}, connection_id=connection,
+        )
+        assert not broker.resolve_restart({**response, "node_id": "other"}, connection_id=connection)
+        assert not pending.done()
+        assert broker.resolve_restart(response, connection_id=connection)
+        assert (await pending)["ok"] is True
+        assert not broker.resolve_restart(response, connection_id=connection)
+
+    asyncio.run(run())
+
+
+def test_restart_handles_legacy_disconnect_timeout_and_full_queue() -> None:
+    async def run() -> None:
+        broker = AgentRpcBroker()
+        queue = asyncio.Queue(maxsize=1)
+        connection = object()
+        broker.register("node-a", connection_id=connection, send_queue=queue, capabilities={})
+        with pytest.raises(AgentCapabilityError):
+            await broker.restart("node-a")
+        with pytest.raises(AgentUnavailableError):
+            await broker.restart("missing")
+        broker.register("node-a", connection_id=connection, send_queue=queue,
+                        capabilities={"agent_restart_v1": True})
+        with pytest.raises(AgentRpcTimeoutError):
+            await broker.restart("node-a", timeout=0.001)
+        assert not broker._pending
+        with pytest.raises(AgentUnavailableError):
+            await broker.restart("node-a")
+        await queue.get()
+        pending = asyncio.create_task(broker.restart("node-a"))
+        await queue.get()
+        broker.unregister("node-a", connection_id=connection)
+        with pytest.raises(AgentUnavailableError):
+            await pending
+        assert not broker._pending
 
     asyncio.run(run())

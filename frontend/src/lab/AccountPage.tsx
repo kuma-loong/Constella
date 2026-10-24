@@ -13,6 +13,12 @@ export function AccountPage({ user, onUserChange }: { user: LabUser; onUserChang
     setDisplayName(user.display_name || "");
   }, [user.display_name]);
 
+  useEffect(() => {
+    if (window.location.hash === "#connect-node-accounts") {
+      document.getElementById("connect-node-accounts")?.scrollIntoView({ block: "start" });
+    }
+  }, []);
+
   async function saveProfile(event: SubmitEvent) {
     event.preventDefault();
     setProfileState("saving");

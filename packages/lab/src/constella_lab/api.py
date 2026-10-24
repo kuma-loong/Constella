@@ -102,6 +102,7 @@ def build_lab_router(*, config: LabConfig, store: LabStore) -> APIRouter:
     async def binding_nodes(request: Request) -> dict[str, Any]:
         _require_member(request)
         cluster_state = request.app.state.cluster_state
+        cluster_state.snapshot()
         broker = request.app.state.agent_rpc
         nodes = []
         for node_id, runtime in sorted(cluster_state.latest_by_node.items()):

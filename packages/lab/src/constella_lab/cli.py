@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 
 import uvicorn
@@ -18,14 +19,22 @@ def main(argv: list[str] | None = None) -> None:
     serve.add_argument("--port", type=int, default=8765)
     serve.add_argument("--frontend-dir", type=Path)
     serve.add_argument("--log-level", default="info")
+    serve.add_argument("--graceful-timeout", type=float, default=10.0)
     backup = subparsers.add_parser("backup", help="create a consistent Lab database backup")
     backup.add_argument("target", type=Path)
     args = parser.parse_args(argv)
+    if args.command == "serve" and (
+        not math.isfinite(args.graceful_timeout) or args.graceful_timeout < 0
+    ):
+        parser.error("--graceful-timeout must be a finite nonnegative number")
 
     config = LabConfig.from_env()
     if args.command == "serve":
         app = create_lab_app(config=config, frontend_dist=args.frontend_dir)
-        uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
+        uvicorn.run(
+            app, host=args.host, port=args.port, log_level=args.log_level,
+            lifespan="on", timeout_graceful_shutdown=args.graceful_timeout,
+        )
         return
 
     store = LabStore(config.db_path)

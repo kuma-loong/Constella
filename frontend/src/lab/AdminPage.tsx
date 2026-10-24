@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { LabApiError, labRequest } from "./api";
+import { AdminNodes } from "./AdminNodes";
 import type { AuditEvent, LabBinding, LabRole, LabUser, LabUserStatus } from "./types";
 
 type AdminData = { users: LabUser[]; bindings: LabBinding[]; events: AuditEvent[] };
@@ -102,8 +103,10 @@ export function AdminPage({ currentUser, onUserChange }: { currentUser: LabUser;
   const pendingUsers = data.users.filter((user) => user.status === "pending_identity_review");
 
   return <div class="lab-stack">
-    <header class="lab-page-head"><div><p class="lab-eyebrow">Lab management</p><h2>People and access</h2><p>Manage member access, correct bindings, and review security-sensitive changes.</p></div><button class="lab-button is-quiet" type="button" onClick={() => void load()}>Refresh</button></header>
+    <header class="lab-page-head"><div><p class="lab-eyebrow">Lab management</p><h2>People, access and agents</h2><p>Manage member access, node agents, and review security-sensitive changes.</p></div><button class="lab-button is-quiet" type="button" onClick={() => void load()}>Refresh</button></header>
     {message ? <div class="lab-notice" role="status">{message}</div> : null}
+
+    <AdminNodes />
 
     <section class="lab-panel" aria-labelledby="labUsersTitle">
       <div class="lab-panel-head"><div><h3 id="labUsersTitle">Users</h3><p>{activeUsers.length} active / {pendingUsers.length} pending review</p></div></div>
@@ -141,7 +144,7 @@ export function AdminPage({ currentUser, onUserChange }: { currentUser: LabUser;
     <section class="lab-panel" aria-labelledby="auditTitle">
       <div class="lab-panel-head"><div><h3 id="auditTitle">Audit events</h3><p>Newest 100 immutable application events.</p></div></div>
       <div class="lab-table-scroll"><table class="lab-table"><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Details</th><th>Request</th></tr></thead><tbody>
-        {data.events.map((event) => <tr key={event.id}><td>{formatDate(event.occurred_at)}</td><td>{event.actor_email || "system"}</td><td><code>{event.action}</code></td><td>{event.target_type}</td><td class="lab-details-cell">{formatDetails(event.details)}</td><td><code>{event.request_id.slice(0, 8)}</code></td></tr>)}
+        {data.events.map((event) => <tr key={event.id}><td>{formatDate(event.occurred_at)}</td><td>{event.actor_email || "system"}</td><td><code>{event.action}</code></td><td>{event.target_type === "node" ? event.target_id || "node" : event.target_type}</td><td class="lab-details-cell">{formatDetails(event.details)}</td><td><code>{event.request_id.slice(0, 8)}</code></td></tr>)}
       </tbody></table></div>
     </section>
   </div>;

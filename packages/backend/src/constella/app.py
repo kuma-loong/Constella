@@ -160,6 +160,11 @@ def _load_db_sink() -> AsyncDBSink | None:
     )
 
 
+async def _wait_for_disconnect(websocket: WebSocket) -> None:
+    while (await websocket.receive())["type"] != "websocket.disconnect":
+        pass
+
+
 def create_app(
     refresh_interval: float | None = None,
     process_interval: float | None = None,
@@ -469,7 +474,7 @@ def create_app(
         last_sent_at = 0.0
         update_task = None
         disconnect_task = asyncio.create_task(
-            websocket.receive(), name="cluster-ws-disconnect"
+            _wait_for_disconnect(websocket), name="cluster-ws-disconnect"
         )
         try:
             while True:
@@ -584,6 +589,8 @@ def create_app(
                     send_queue.put_nowait({"type": "ack", "seq": message.get("seq")})
                 elif message_type == "account_lookup_response":
                     agent_rpc.resolve_account_lookup(message, connection_id=connection_id)
+                elif message_type == "agent_restart_response":
+                    agent_rpc.resolve_restart(message, connection_id=connection_id)
                 else:
                     send_queue.put_nowait(
                         {"type": "error", "error": f"unsupported agent message: {message_type}"}
@@ -606,15 +613,29 @@ def create_app(
             return
         await websocket.accept()
         queue = app.state.highres_broadcaster.subscribe()
+        disconnect_task = asyncio.create_task(
+            _wait_for_disconnect(websocket), name="highres-stream-disconnect"
+        )
+        message_task = None
         try:
             await websocket.send_json(
                 {"type": "hello", **app.state.highres_broadcaster.status()}
             )
             while True:
-                await websocket.send_text(telemetry_json(await queue.get()))
+                message_task = asyncio.create_task(queue.get(), name="highres-stream-message")
+                done, _ = await asyncio.wait(
+                    {disconnect_task, message_task}, return_when=asyncio.FIRST_COMPLETED
+                )
+                if disconnect_task in done:
+                    return
+                await websocket.send_text(telemetry_json(message_task.result()))
         except WebSocketDisconnect:
             return
         finally:
+            tasks = [disconnect_task, *([message_task] if message_task is not None else [])]
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
             app.state.highres_broadcaster.unsubscribe(queue)
 
     if resolved_frontend_dist is not None:

@@ -325,3 +325,112 @@ def test_choose_readonly_persists_and_blocks_personal_features(tmp_path):
         verifier.identity = identity("admin-sub", "admin@example.com")
         assert client.post("/api/lab/me/readonly", headers=headers(csrf=True)).status_code == 409
         assert client.get("/api/lab/me", headers=headers()).json()["user"]["role"] == "admin"
+
+
+def test_admin_restarts_local_agent_with_csrf_audit_and_cooldown(tmp_path) -> None:
+    import socket
+    from concurrent.futures import ThreadPoolExecutor
+
+    verifier = MutableVerifier(identity("admin-sub", "admin@example.com"))
+    app = create_lab_app(config=config(tmp_path), verifier=verifier, agent_token="preview")
+    node_id = "Manager host / GPU"
+    endpoint = "/api/lab/admin/nodes/Manager%20host%20%2F%20GPU/restart"
+    with TestClient(app) as client:
+        with client.websocket_connect(
+            "/api/agents/ws", headers={"authorization": "Bearer preview"},
+        ) as ws:
+            ws.send_json({"type": "hello", "node_id": node_id, "hostname": socket.gethostname(),
+                          "capabilities": {"agent_restart_v1": True, "agent_instance_id": "before"}})
+            assert ws.receive_json()["type"] == "config"
+            nodes = client.get("/api/lab/admin/nodes", headers=headers()).json()["nodes"]
+            assert nodes[0]["manager_host"] is True
+            assert nodes[0]["restart_supported"] is True
+            assert nodes[0]["agent_instance_id"] == "before"
+            assert client.post(endpoint, headers=headers()).status_code == 403
+            verifier.identity = identity("member-sub", "member@example.com")
+            assert client.get("/api/lab/admin/nodes", headers=headers()).status_code == 403
+            assert client.post(endpoint, headers=headers(csrf=True)).status_code == 403
+            verifier.identity = identity("admin-sub", "admin@example.com")
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                response = executor.submit(client.post, endpoint, headers=headers(csrf=True))
+                request = ws.receive_json()
+                assert request["type"] == "agent_restart_request"
+                ws.send_json({**request, "type": "agent_restart_response", "ok": True})
+                assert response.result(timeout=3).status_code == 202
+            assert client.post(endpoint, headers=headers(csrf=True)).status_code == 429
+            events = client.get("/api/lab/admin/audit-events", headers=headers()).json()["events"]
+            restarts = [event for event in events if event["action"].startswith("agent.restart_")]
+            assert [event["action"] for event in restarts] == [
+                "agent.restart_accepted", "agent.restart_requested",
+            ]
+            assert len({event["request_id"] for event in restarts}) == 1
+            assert all(event["target_id"] == node_id for event in restarts)
+        assert client.post(endpoint, headers=headers(csrf=True)).status_code == 409
+
+
+def test_restart_rejects_legacy_agent_without_dispatch(tmp_path):
+    verifier = MutableVerifier(identity("admin-sub", "admin@example.com"))
+    app = create_lab_app(config=config(tmp_path), verifier=verifier, agent_token="preview")
+    with TestClient(app) as client:
+        assert client.get("/api/lab/admin/nodes").status_code == 401
+        with client.websocket_connect(
+            "/api/agents/ws", headers={"authorization": "Bearer preview"},
+        ) as ws:
+            ws.send_json({"type": "hello", "node_id": "legacy", "hostname": "legacy"})
+            assert ws.receive_json()["type"] == "config"
+            nodes = client.get("/api/lab/admin/nodes", headers=headers()).json()["nodes"]
+            assert nodes[0]["restart_supported"] is False
+            result = client.post("/api/lab/admin/nodes/legacy/restart", headers=headers(csrf=True))
+            assert result.status_code == 409
+            assert result.json()["detail"]["code"] == "agent_restart_unsupported"
+
+
+def test_restart_timeout_is_audited_as_unconfirmed(tmp_path):
+    from constella.agent_rpc import AgentRpcTimeoutError
+
+    class TimeoutBroker(FakeBroker):
+        def capabilities(self, node_id):
+            return {"agent_restart_v1": True}
+
+        async def restart(self, node_id, *, timeout):
+            raise AgentRpcTimeoutError("no acknowledgement")
+
+    verifier = MutableVerifier(identity("admin-sub", "admin@example.com"))
+    app = create_lab_app(config=config(tmp_path), verifier=verifier)
+    with TestClient(app) as client:
+        app.state.agent_rpc = TimeoutBroker({})
+        result = client.post("/api/lab/admin/nodes/local/restart", headers=headers(csrf=True))
+        assert result.status_code == 504
+        assert result.json()["detail"]["code"] == "agent_restart_unconfirmed"
+        events = app.state.lab_store.list_audit_events()
+        assert events[0]["action"] == "agent.restart_unconfirmed"
+        assert events[1]["action"] == "agent.restart_requested"
+
+
+def test_existing_member_can_bind_new_node_without_changing_existing_binding(tmp_path):
+    verifier = MutableVerifier(identity("member-sub", "member@example.com"))
+    cluster = ClusterState(local_node_id="manager")
+    app = create_lab_app(config=config(tmp_path), verifier=verifier, cluster_state=cluster)
+    account = {"ok": True, "exists": True, "canonical_username": "alice", "uid": 1001,
+               "gid": 1001, "shell": "/bin/bash"}
+    with TestClient(app) as client:
+        user = client.get("/api/lab/me", headers=headers()).json()["user"]
+        store = app.state.lab_store
+        existing = store.create_bindings(
+            user_id=user["id"], actor_user_id=user["id"], request_id="initial", accounts=[
+                {"node_id": "old", "canonical_username": "alice", "uid": 1001, "gid": 1001},
+            ],
+        )[0]
+        cluster.register_hello(AgentHello(node_id="new", hostname="new-host"))
+        app.state.agent_rpc = FakeBroker({("new", "alice"): account})
+        nodes = client.get("/api/lab/account-binding-nodes", headers=headers()).json()["nodes"]
+        assert nodes[0]["node_id"] == "new" and nodes[0]["binding_supported"] is True
+        payload = {"accounts": [{"node_id": "new", "username": "alice"}]}
+        assert client.post("/api/lab/account-lookups/batch", json=payload,
+                           headers=headers(csrf=True)).json()["results"][0]["bindable"] is True
+        assert client.post("/api/lab/account-bindings/batch", json=payload,
+                           headers=headers(csrf=True)).status_code == 201
+        updated = client.get("/api/lab/me", headers=headers()).json()["user"]
+        assert updated["onboarding_completed_at"] is not None
+        assert next(b for b in updated["bindings"] if b["node_id"] == "old") == existing
+        assert {b["node_id"] for b in updated["bindings"] if b["valid_to"] is None} == {"old", "new"}

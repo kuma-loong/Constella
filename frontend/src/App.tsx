@@ -281,12 +281,15 @@ export default function App({ extension }: { extension?: AppExtension }) {
   function navigateTo(href: string) {
     const target = new URL(href, window.location.origin);
     const pathname = target.pathname === "/" ? "/overview" : target.pathname;
-    const nextLocation = `${pathname}${target.search}`;
-    const currentLocation = `${window.location.pathname}${window.location.search}`;
+    const nextLocation = `${pathname}${target.search}${target.hash}`;
+    const currentLocation = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     if (nextLocation !== currentLocation) {
       window.history.pushState(null, "", nextLocation);
     }
     setRoute(currentRoute(extension));
+    if (target.hash) {
+      window.requestAnimationFrame(() => document.getElementById(target.hash.slice(1))?.scrollIntoView({ block: "start" }));
+    }
   }
 
   function cycleThemeMode() {
@@ -328,7 +331,7 @@ export default function App({ extension }: { extension?: AppExtension }) {
     const link = targetElement.closest("a[href]") as HTMLAnchorElement | null;
     if (shouldHandleAppLink(event, link, extension)) {
       event.preventDefault();
-      navigateTo(`${link.pathname}${link.search}`);
+      navigateTo(`${link.pathname}${link.search}${link.hash}`);
     }
   }
 

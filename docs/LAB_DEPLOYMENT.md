@@ -102,6 +102,41 @@ Upgrade agents before exposing a node for account binding. Older agents continue
 to report monitoring samples but appear as `agent upgrade required` in the binding
 page.
 
+## Agent controls and account connections
+
+Lab administrators can open **Lab management → Node agents** to restart an online
+agent, including the agent on the manager host. Upgrade the agent first so it
+advertises `agent_restart_v1`; older agents remain compatible and display an
+upgrade notice. Each restart requires confirmation, has a 60-second per-node
+cooldown, and records the request and acknowledgement in the audit log. The UI
+confirms recovery only after a new agent instance reconnects. GPU workloads and
+the manager continue running; this control does not reboot the Linux host.
+
+Existing members can open **Profile → Connect node accounts**, or the same link in
+the user menu, to add Linux users on newly connected nodes. **Refresh nodes** checks
+the latest capabilities and invalidates a previous lookup. Saving rechecks all
+selected users and preserves existing account connections and historical records.
+
+The Lab manager defaults to `--graceful-timeout 10`, matching the core manager.
+Idle high-resolution streams now observe disconnects so SIGTERM can reach the
+database drain and close lifecycle. See the [design and investigation](design/lab-node-control.md)
+for the cause, implementation, validation, and rollout boundary.
+
+### 节点控制与账号绑定
+
+Lab 管理员可在 **Lab management → Node agents** 重启在线 agent，包括 manager
+本机的 agent。需要先升级 agent，使其声明 `agent_restart_v1`；旧版保持采集兼容，
+界面提示升级。重启需确认，每节点冷却 60 秒，请求和应答记录在审计日志中。
+只有新实例重连后界面才确认恢复；GPU 任务和 manager 保持运行，不会重启 Linux 主机。
+
+已有成员可通过 **Profile → Connect node accounts** 或用户菜单中的同名入口，绑定
+新节点上的 Linux 用户。**Refresh nodes** 获取最新能力并作废旧预检；提交时重新查询
+所有选中用户，保留既有连接及历史记录。
+
+Lab manager 默认使用 `--graceful-timeout 10`，与核心版一致。空闲高频流现在会检测断连，
+SIGTERM 可以进入数据库排空和关闭流程。根因、实施、验收及上线边界见
+[设计与调查记录](design/lab-node-control.md)。
+
 ## Cloudflare Access checklist
 
 1. Create a self-hosted application for the exact public hostname.
