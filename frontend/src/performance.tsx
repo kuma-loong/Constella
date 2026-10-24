@@ -574,7 +574,6 @@ function PerformanceChart({
             stroke: css.getPropertyValue(COLORS[index % COLORS.length]).trim(),
             width: 1.6,
             spanGaps: false,
-            paths: uPlot.paths.spline?.(),
             points: { show: false },
             value: (_plot: uPlot, value: number | null | undefined) => formatMetricValue(value, definition),
           })),
