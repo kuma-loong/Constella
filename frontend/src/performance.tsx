@@ -28,8 +28,7 @@ const COLORS = [
 const COLLAPSE_KEY = "constella.performance.collapsed";
 const GUIDE_LOCALE_KEY = "constella.guide.locale";
 const CHART_HEIGHT = 300;
-const MAX_POINTS_PER_SERIES = 1000;
-const POINTS_PER_CHART = 2400;
+const POINTS_PER_SERIES = 1000;
 type MetricSummary = {
   avg: number | null;
   min: number | null;
@@ -231,7 +230,7 @@ export function PerformancePage({ snapshot, visible }: { snapshot: ClusterSnapsh
       metrics: metricQuery,
       since: String(until - rangeSeconds),
       until: String(until),
-      max_points: String(Math.min(MAX_POINTS_PER_SERIES, Math.max(100, Math.floor(POINTS_PER_CHART / gpuUuids.size)))),
+      max_points: String(POINTS_PER_SERIES),
     });
     setLoading(true);
     try {

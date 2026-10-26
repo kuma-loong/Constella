@@ -1,6 +1,6 @@
 """Profile a full two-hour Performance cache using synthetic data only.
 
-Run: uv run python scripts/dev/profile_performance.py --gpus 8 --max-points 300
+Run: uv run python scripts/dev/profile_performance.py --gpus 8 --max-points 1000
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--gpus', type=int, default=8)
     parser.add_argument('--samples', type=int, default=14400)
-    parser.add_argument('--max-points', type=int, default=300)
+    parser.add_argument('--max-points', type=int, default=1000)
     parser.add_argument('--repeat', type=int, default=3)
     parser.add_argument('--profile', type=Path, help='Optional cProfile output file')
     args = parser.parse_args()
