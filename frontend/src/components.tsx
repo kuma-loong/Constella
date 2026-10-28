@@ -493,11 +493,16 @@ export function GpuCard({
   ]
     .filter(Boolean)
     .join(" / ");
-  const smClock = gpu.clock_sm_mhz ? `SM ${gpu.clock_sm_mhz} MHz` : "SM clock n/a";
-  const memClock = gpu.clock_mem_mhz ? `MEM ${gpu.clock_mem_mhz} MHz` : "MEM clock n/a";
+  const basicStats = [
+    { label: "Memory Util", value: metricAvailable(gpu, "utilization_mem") ? fmtPct(gpu.utilization_mem) : "n/a" },
+    { label: "SM Clock", value: gpu.clock_sm_mhz ? `${gpu.clock_sm_mhz} MHz` : "n/a" },
+    { label: "Node / Latency", value: `${node.status} / ${fmtLatency(node)}` },
+    { label: "Memory Clock", value: gpu.clock_mem_mhz ? `${gpu.clock_mem_mhz} MHz` : "n/a" },
+  ];
   const gpm =
     node.performance_profiles?.includes("nvidia.gpm.v1") &&
-    gpu.performance?.profile === "nvidia.gpm.v1"
+    gpu.performance?.profile === "nvidia.gpm.v1" &&
+    gpu.performance.status !== "unsupported"
       ? gpu.performance
       : null;
   return (
@@ -547,23 +552,8 @@ export function GpuCard({
           <PerformanceStat label="DRAM BW" value={gpm.metrics["nvidia.gpm.dram_bw_active"]} status={gpm.status} />
         </a>
       ) : (
-        <div class="mini-stats">
-          <span>
-            <Icon name="gauge" />
-            {metricAvailable(gpu, "utilization_mem") ? fmtPct(gpu.utilization_mem) : "n/a"} mem util
-          </span>
-          <span>
-            <Icon name="clock-3" />
-            {smClock}
-          </span>
-          <span>
-            <Icon name="server" />
-            {node.status} / {fmtLatency(node)}
-          </span>
-          <span>
-            <Icon name="cpu" />
-            {memClock}
-          </span>
+        <div class="performance-stats basic-stats">
+          {basicStats.map(({ label, value }) => <GpuStat key={label} label={label} value={value} />)}
         </div>
       )}
     </article>
@@ -571,10 +561,14 @@ export function GpuCard({
 }
 
 function PerformanceStat({ label, value, status }: { label: string; value?: number; status: string }) {
+  return <GpuStat label={label} value={status === "available" ? (Number.isFinite(value) ? fmtPct(value || 0) : "n/a") : status} />;
+}
+
+function GpuStat({ label, value }: { label: string; value: string }) {
   return (
     <span>
       <small>{label}</small>
-      <strong>{status === "available" ? (Number.isFinite(value) ? fmtPct(value || 0) : "n/a") : status}</strong>
+      <strong>{value}</strong>
     </span>
   );
 }

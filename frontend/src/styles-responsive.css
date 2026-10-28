@@ -151,7 +151,6 @@
     grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
   }
 
-  .mini-stats,
   .offhour-grid,
   .job-detail-strip {
     grid-template-columns: 1fr;

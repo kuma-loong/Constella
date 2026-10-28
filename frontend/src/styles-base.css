@@ -753,7 +753,6 @@ a:focus-visible {
 .fabric-stats span,
 .fabric-node-head em,
 .fabric-chip,
-.mini-stats span,
 .process-table th,
 .top-users span,
 .anomaly-card b,
@@ -1089,26 +1088,6 @@ a:focus-visible {
   background: var(--surface-sunken);
 }
 
-.mini-stats {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.mini-stats span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 34px;
-  overflow: hidden;
-  padding: 8px;
-  color: var(--muted);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .performance-stats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1129,7 +1108,7 @@ a:focus-visible {
   background: var(--surface-raised);
 }
 
-.performance-stats:hover > span {
+a.performance-stats:hover > span {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
 }
 
