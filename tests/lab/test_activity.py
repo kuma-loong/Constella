@@ -139,12 +139,13 @@ def test_model_weights_preserve_raw_hours_and_default_for_unknown_models():
         row(card="pro6000", gpu_name="NVIDIA RTX PRO 6000", end=START + HOUR),
         row(card="pro5000", gpu_name="NVIDIA RTX PRO 5000 Blackwell", end=START + HOUR),
         row(card="pro5000", gpu_name="NVIDIA RTX PRO 5000 Blackwell", end=START + HOUR, pid=2),
+        row(card="4090", gpu_name="NVIDIA GeForce RTX 4090", end=START + HOUR),
         row(card="unknown", gpu_name="Unknown GPU", end=START + HOUR),
     ]
     stats = user_statistics(rows, [binding()], START, START + 2 * HOUR)[0]
-    assert stats["gpu_hours"] == 3
+    assert stats["gpu_hours"] == 4
     assert stats["active_hours"] == 1
-    assert stats["weighted_gpu_hours"] == pytest.approx(0.9 + 0.8 + 1.0)
+    assert stats["weighted_gpu_hours"] == pytest.approx(0.9 + 0.8 + 0.75 + 1.0)
 
 
 def test_pagination_totals_filters_and_expired_cursor():

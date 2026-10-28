@@ -120,9 +120,9 @@ Analytics APIs read only from SQLite rollups and task session tables. They retur
 
 Overview analytics includes weighted user GPU hours, job rankings, low-utilization reservation signals, and Beijing-time after-hours activity. User-facing `GPU hours` values are weighted by GPU model so mixed hardware is easier to compare.
 
-Model weights are H100 `1.0`, RTX PRO 6000 `0.9`, RTX PRO 5000 `0.8`, and `1.0` for unmatched models. Weights are applied when querying analytics; raw GPU hours and recorded runtimes are unchanged.
+Model weights are H100 `1.0`, RTX PRO 6000 `0.9`, RTX PRO 5000 `0.8`, RTX 4090 (including 48G variants) `0.75`, and `1.0` for unmatched models. Weights are applied when querying analytics; raw GPU hours and recorded runtimes are unchanged.
 
-型号权重为 H100 `1.0`、RTX PRO 6000 `0.9`、RTX PRO 5000 `0.8`，未匹配型号默认 `1.0`。权重在查询统计时应用，原始 GPU 时和记录的运行时长保持不变。
+型号权重为 H100 `1.0`、RTX PRO 6000 `0.9`、RTX PRO 5000 `0.8`、RTX 4090（包括 48G 版本）`0.75`，未匹配型号默认 `1.0`。权重在查询统计时应用，原始 GPU 时和记录的运行时长保持不变。
 
 Node analytics includes downsampled per-GPU time series and utilization heatmaps. The frontend supports local multi-select GPU highlighting for the trend chart without refetching or rebuilding the heatmap. Heatmap resolution is range-aware: `1h` uses 5 minute buckets, `24h` uses 1 hour buckets, `7d` uses 6 hour buckets, and `30d` uses 1 day buckets.
 

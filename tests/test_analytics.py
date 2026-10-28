@@ -150,6 +150,8 @@ def test_overlap_gpu_weight_and_job_key_helpers() -> None:
     assert gpu_weight("NVIDIA RTX PRO 6000 Ada") == 0.9
     assert gpu_weight("NVIDIA RTX PRO 5000 Blackwell") == 0.8
     assert gpu_weight("  nvidia rtx pro  5000  ") == 0.8
+    assert gpu_weight("NVIDIA GeForce RTX 4090") == 0.75
+    assert gpu_weight("  geforce rtx  4090 48G  ") == 0.75
     assert gpu_weight("NVIDIA H100") == 1.0
     assert gpu_weight("Unknown GPU") == 1.0
     assert gpu_weight(None) == 1.0
