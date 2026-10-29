@@ -33,6 +33,12 @@ print_pid_status "manager" "$PID_FILE"
 print_pid_status "highres sidecar" "$HIGHRES_PID_FILE"
 print_pid_status "local agent" "$AGENT_PID_FILE"
 
+if [[ -f "$ROOT_DIR/run/agent-watchdog.pid" ]]; then
+  "$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/scripts/service/agent_watchdog.py" status
+else
+  echo "agent watchdog: not running"
+fi
+
 if [[ -f "$AGENT_STATE_FILE" ]]; then
   echo "local agent state:"
   cat "$AGENT_STATE_FILE"

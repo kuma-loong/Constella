@@ -70,6 +70,10 @@ stop_pid() {
   echo "$label: stopped pid=$pid"
 }
 
+if [[ -f "$ROOT_DIR/run/agent-watchdog.pid" ]]; then
+  "$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/scripts/service/agent_watchdog.py" stop
+fi
+
 stop_pid "local agent" "$AGENT_PID_FILE"
 stop_pid "highres sidecar" "$HIGHRES_PID_FILE"
 stop_pid "manager" "$PID_FILE"

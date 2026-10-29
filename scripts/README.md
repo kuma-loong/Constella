@@ -28,3 +28,17 @@ LOCAL_AGENT=0 ./scripts/service/start.sh
 `logs/local-agent.log` 和 `run/local-agent-state.json`。
 
 SQLite 历史库默认关闭。启用后，`scripts/maintenance/db.sh` 运行 `uv run constella db maintain`，负责关闭 stale session、聚合 rollup、清理过期 rollup 和低频 raw snapshot。
+
+## Agent 守护
+
+`scripts/service/agent_watchdog.py` 每 5 分钟检查配置中的远端节点，在 Manager 健康时通过 SSH 启动离线节点的 Agent。
+
+```bash
+.venv/bin/python scripts/service/agent_watchdog.py start \
+  --nodes run/nodes.internal.yaml --interval 300
+.venv/bin/python scripts/service/agent_watchdog.py status
+.venv/bin/python scripts/service/agent_watchdog.py stop
+```
+
+检查结果：`run/agent-watchdog-state.json`；日志：`logs/agent-watchdog.log`。
+`service/stop.sh` 会先停止守护，`service/status.sh` 会显示守护状态。维护远端节点前先停止守护，完成后再启动。
