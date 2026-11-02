@@ -3,6 +3,47 @@
 All notable changes to Constella are documented in this file. Python
 distribution versions follow PEP 440; Git tags use a hyphenated equivalent.
 
+## [0.1.5] - 2026-11-02
+
+### English
+
+#### Lab and agent management
+
+- **Lab node controls:** administrators can inspect agent connectivity, versions,
+  and sampling details, and restart supported agents from the Web interface.
+  Members can connect Linux accounts on additional nodes from their profile.
+- **Agent recovery:** add a standalone watchdog to bring stopped remote agents
+  back online. Collectors automatically retry the preferred sampler after a
+  temporary fallback.
+- **Usage reporting:** show Linux usernames in usage rankings and update GPU-hour
+  weights for RTX PRO 5000 and RTX 4090.
+
+#### Monitoring and usability
+
+- **Faster Performance views:** speed up historical queries and chart rendering,
+  retain 1,000 points per curve, and use straight line segments.
+- **More accurate readings:** remove duplicate GPU process counts, flag invalid
+  telemetry, and use base GPU readings when GPM is unavailable.
+- **Smoother recovery:** improve reconnection after sleep, network interruptions,
+  and expired sign-in sessions, and fix service shutdown with idle streams.
+- **Interface refinements:** improve navigation and theme-aware scrollbars, and
+  refresh the README feature previews.
+
+### 中文
+
+#### Lab 与 Agent 管理
+
+- **Lab 节点控制：** 管理员可查看 Agent 连接状态、版本与采样详情，并在网页中重启支持的 Agent；成员可从个人页绑定更多节点上的 Linux 账号。
+- **Agent 自动恢复：** 新增独立看护脚本，自动拉起已停止的远程 Agent；采集器临时降级后会自动重试首选采样方式。
+- **用量统计：** 用量排行显示 Linux 用户名，更新 RTX PRO 5000 和 RTX 4090 的 GPU 小时权重。
+
+#### 监控体验与稳定性
+
+- **Performance 页面提速：** 加快历史查询与曲线绘制，每条曲线保留 1,000 个采样点，采用直线连接。
+- **采样更准确：** 修复 GPU 进程重复计数，标识异常遥测值，GPM 不可用时使用基础 GPU 读数。
+- **连接恢复更顺畅：** 改善休眠、断网与登录过期后的重连，修复空闲数据流导致服务无法退出的问题。
+- **界面细节：** 改善导航与明暗主题滚动条，更新 README 功能预览图。
+
 ## [0.1.4] - 2026-09-09
 
 ### English
@@ -128,6 +169,7 @@ First release candidate for 0.1.3.
   compatible NVML hardware, driver, and metric profiles.
 - The TUI continues to use the existing manager HTTP and `/ws/cluster` APIs.
 
+[0.1.5]: https://github.com/kuma-loong/Constella/releases/tag/v0.1.5
 [0.1.4]: https://github.com/kuma-loong/Constella/releases/tag/v0.1.4
 [0.1.3]: https://github.com/kuma-loong/Constella/releases/tag/v0.1.3
 [0.1.3rc1]: https://github.com/kuma-loong/Constella/releases/tag/v0.1.3-rc.1
