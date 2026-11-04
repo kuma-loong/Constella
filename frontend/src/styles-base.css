@@ -267,7 +267,7 @@ a:focus-visible {
 .top-nav {
   display: grid;
   grid-template-rows: auto auto;
-  gap: 6px;
+  gap: 1px;
   min-width: 0;
   padding: 5px;
   border: 1px solid var(--border);
@@ -282,7 +282,9 @@ a:focus-visible {
   justify-content: flex-start;
   gap: 4px;
   min-width: 0;
+  padding-block: 2px;
   overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-width: thin;
   scrollbar-color: var(--nav-scrollbar-thumb) transparent;
 }
@@ -319,8 +321,8 @@ a:focus-visible {
 }
 
 .nav-row-nodes {
-  padding-top: 4px;
-  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  /* Divide the rows without changing either row's content height. */
+  box-shadow: 0 -1px 0 color-mix(in srgb, var(--border) 72%, transparent);
 }
 
 .nav-link {
@@ -330,20 +332,19 @@ a:focus-visible {
   gap: 7px;
   flex: 0 0 auto;
   max-width: 180px;
-  min-height: 38px;
+  min-height: 36px;
   padding: 0 12px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   color: var(--muted);
   font-size: 13px;
   font-weight: 650;
   text-decoration: none;
   white-space: nowrap;
-  transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+  transition: background 180ms ease, color 180ms ease, border-color 180ms ease;
 }
 
 .node-link {
-  min-height: 32px;
   padding-inline: 10px;
   font-size: 12px;
 }
@@ -359,7 +360,14 @@ a:focus-visible {
 }
 
 .nav-link:active {
-  transform: translateY(1px);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+}
+
+.nav-link:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: -2px;
+  box-shadow: none;
 }
 
 .nav-link.is-active {
