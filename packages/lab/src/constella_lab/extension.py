@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from constella.result_cache import fingerprint
+
 from .api import build_lab_router
 from .activity import build_activity_router
 from .activity_usage import user_statistics
@@ -28,10 +30,8 @@ class LabExtension:
 
     def configure(self, app: FastAPI) -> None:
         app.state.lab_store = self.store
-        app.state.user_usage_resolver = lambda rows, start, end: user_statistics(
-            rows, self.store.list_bindings(active_only=False), start, end
-        )
-        app.include_router(build_activity_router(self.store))
+        app.state.user_usage_context = self.user_usage_context
+        app.include_router(build_activity_router(self.store, cache=app.state.result_cache))
         app.add_middleware(
             LabAuthMiddleware,
             config=self.config,
@@ -40,6 +40,12 @@ class LabExtension:
         )
         app.include_router(build_lab_router(config=self.config, store=self.store))
         app.include_router(build_node_control_router(self.store))
+
+    def user_usage_context(self):
+        bindings = self.store.list_bindings(active_only=False)
+        return fingerprint(bindings), lambda rows, start, end: user_statistics(
+            rows, bindings, start, end
+        )
 
     async def start(self, app: FastAPI) -> None:
         self.store.open()

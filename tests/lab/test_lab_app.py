@@ -444,3 +444,33 @@ def test_existing_member_can_bind_new_node_without_changing_existing_binding(tmp
         assert updated["onboarding_completed_at"] is not None
         assert next(b for b in updated["bindings"] if b["node_id"] == "old") == existing
         assert {b["node_id"] for b in updated["bindings"] if b["valid_to"] is None} == {"old", "new"}
+
+
+def test_rankings_cache_invalidates_on_binding_and_profile_changes(tmp_path, monkeypatch):
+    from constella.db import AsyncDBSink, SQLiteSinkConfig
+
+    calls = []
+
+    def overview(store, **kwargs):
+        calls.append(kwargs)
+        return {"enabled": True, "generated_at": len(calls)}
+
+    monkeypatch.setattr("constella.app.overview_analytics", overview)
+    sink = AsyncDBSink(SQLiteSinkConfig(path=tmp_path / "cache.sqlite3"))
+    app = create_lab_app(config=config(tmp_path), db_sink=sink,
+                         verifier=MutableVerifier(identity("admin-sub", "admin@example.com")))
+    with TestClient(app) as client:
+        user = client.get("/api/lab/me", headers=headers()).json()["user"]
+        url = "/api/analytics/overview"
+        first = client.get(url, headers=headers()).json()
+        assert client.get(url, headers=headers()).json() == first
+        assert client.get(url).status_code == 401
+        store = app.state.lab_store
+        store.create_bindings(user_id=user["id"], actor_user_id=user["id"], request_id="cache-test",
+                              accounts=[{"node_id": "a", "uid": 1001, "canonical_username": "alice"}])
+        second = client.get(url, headers=headers()).json()
+        assert second != first and len(calls) == 2
+        store.update_profile(user["id"], "New display name")
+        third = client.get(url, headers=headers()).json()
+        assert third != second and len(calls) == 3
+        assert client.get(url, headers=headers()).json() == third

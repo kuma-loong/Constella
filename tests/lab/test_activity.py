@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -9,6 +10,7 @@ from fastapi import HTTPException
 
 from constella.cluster import ClusterState
 from constella.db import SQLiteStore
+from constella.result_cache import ResultCache
 from constella_lab import activity
 from constella_lab.activity import (
     ActivityData,
@@ -180,7 +182,6 @@ def test_pagination_totals_filters_and_expired_cursor():
         [("2026-09-01", START, START + 3 * HOUR)],
         [(START, START + 3 * HOUR)],
         0,
-        100,
     )
     cluster = ClusterState(local_node_id="test")
     options = dict(date=None, model="", status="all", q="", cursor=None, limit=20)
@@ -238,7 +239,6 @@ def test_busiest_window_can_cross_midnight():
         ],
         [(START, START + 48 * HOUR)],
         0,
-        0,
     )
     assert activity.busiest_hours(data, data.records) == {"start_hour": 23, "end_hour": 2}
 
@@ -266,12 +266,12 @@ def test_cache_singleflight_identity_isolation_binding_invalidation(tmp_path, mo
 
     def read(path, bindings, user, period):
         calls.append((user, period, bindings))
-        return ActivityData([], activity.time.time(), 0, [], [], 0, 32)
+        return ActivityData([], activity.time.time(), 0, [], [], 0)
 
     monkeypatch.setattr(activity, "read_activity", read)
 
     async def run():
-        service = ActivityService()
+        service = ActivityService(ResultCache(max_entries=16))
         first, second = await asyncio.gather(
             *(service.get(tmp_path, [binding()], "kuma", 7) for _ in range(2))
         )
@@ -283,7 +283,7 @@ def test_cache_singleflight_identity_isolation_binding_invalidation(tmp_path, mo
         assert len(calls) == 3
         for i in range(20):
             await service.get(tmp_path, [], f"u{i}", 7)
-        assert len(service.cache) == 16
+        assert len(service.cache.entries) == 16
 
     asyncio.run(run())
 
@@ -314,3 +314,40 @@ def test_legacy_username_transfer_keeps_old_owner_and_unbound_gap():
     assert [(r.owner, (r.end - r.start) / HOUR) for r in records] == [
         ("user:kuma", 2), ('account:["a", "usra"]', 1), ("user:new", 1),
     ]
+
+
+def test_cached_aggregates_keep_live_status_and_filters_fresh(tmp_path, monkeypatch):
+    calls = []
+    records = resolve_usage([row(status="running")], [binding()], START, START + 3 * HOUR)
+
+    def read(*args):
+        calls.append(args)
+        return ActivityData(records, START + 3 * HOUR, START,
+                            [("2026-09-01", START, START + 3 * HOUR)],
+                            [(START, START + 3 * HOUR)], 0)
+
+    monkeypatch.setattr(activity, "read_activity", read)
+    now = activity.time.time()
+    snap = SimpleNamespace(status="online", sampled_at=now, process_interval=5, error=None,
+                           gpus=[SimpleNamespace(processes=[], other_users=[], error=None)])
+    cluster = SimpleNamespace(latest_by_node={"a": SimpleNamespace(connected=True, snapshot=snap)})
+
+    async def run():
+        service = ActivityService()
+        body = await service.get(tmp_path, [binding()], "kuma", 7)
+        first = activity.render_payload(json.loads(body), cluster,
+                                        status="ended", cursor=None, limit=20)
+        assert first["jobs"]["total"] == 1
+        snap.gpus[0].processes = [SimpleNamespace(pid=1, process_start_time=START)]
+        again = await service.get(tmp_path, [binding()], "kuma", 7)
+        assert again is body and len(calls) == 1
+        live = activity.render_payload(json.loads(again), cluster,
+                                       status="running", cursor=None, limit=20)
+        assert live["jobs"]["total"] == 1
+        assert live["summary"] == first["summary"] and live["as_of"] == first["as_of"]
+        cluster.latest_by_node["a"].connected = False
+        offline = activity.render_payload(json.loads(again), cluster,
+                                          status="unknown", cursor=None, limit=20)
+        assert offline["jobs"]["total"] == 1
+
+    asyncio.run(run())

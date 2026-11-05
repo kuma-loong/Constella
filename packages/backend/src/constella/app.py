@@ -10,17 +10,18 @@ from pathlib import Path
 from typing import Protocol
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__
 from .agent_rpc import AgentRpcBroker
-from .analytics import node_analytics, overview_analytics
+from .analytics import RANGES, node_analytics, overview_analytics
 from .cluster import ClusterState, parse_agent_hello
 from .collector import ALLOWED_REFRESH_INTERVALS, validate_refresh_interval
 from .db import AsyncDBSink, SQLiteSinkConfig, SQLiteStore
 from .history_reader import HistoryReader
+from .result_cache import CacheBusyError, ResultCache
 from .highres import (
     HIGHRES_JOB_LOOKBACK_SECONDS,
     JOB_MAX_LOOKBACK_SECONDS,
@@ -236,6 +237,7 @@ def create_app(
     app.state.highres_cache = highres_cache
     app.state.highres_broadcaster = highres_broadcaster
     app.state.agent_rpc = agent_rpc
+    app.state.result_cache = ResultCache()
     if extension is not None:
         extension.configure(app)
 
@@ -441,20 +443,36 @@ def create_app(
             raise HTTPException(status_code=404, detail="job not found")
         return {"enabled": True, "item": job}
 
+    async def cached_analytics(key, loader) -> Response:
+        try:
+            body = await app.state.result_cache.get(key, loader)
+        except CacheBusyError as exc:
+            raise HTTPException(503, detail="analytics_busy") from exc
+        return Response(body, media_type="application/json")
+
     @app.get("/api/analytics/overview")
-    async def analytics_overview(range: str = "7d") -> dict[str, object]:
+    async def analytics_overview(range: str = "7d"):
         if db_sink is None:
             return {"enabled": False}
-        return await history_reader.query(
-            overview_analytics, range_name=range,
-            user_resolver=getattr(app.state, "user_usage_resolver", None),
+        range_name = range if range in RANGES else "7d"
+        context = getattr(app.state, "user_usage_context", None)
+        version, resolver = context() if context else ("", None)
+        return await cached_analytics(
+            ("overview", range_name, version),
+            lambda: history_reader.query(
+                overview_analytics, range_name=range_name, user_resolver=resolver,
+            ),
         )
 
     @app.get("/api/analytics/node/{node_id}")
-    async def analytics_node(node_id: str, range: str = "24h") -> dict[str, object]:
+    async def analytics_node(node_id: str, range: str = "24h"):
         if db_sink is None:
             return {"enabled": False}
-        return await history_reader.query(node_analytics, node_id=node_id, range_name=range)
+        range_name = range if range in RANGES else "24h"
+        return await cached_analytics(
+            ("node", node_id, range_name),
+            lambda: history_reader.query(node_analytics, node_id=node_id, range_name=range_name),
+        )
 
     @app.get("/api/settings")
     async def settings_endpoint() -> dict[str, object]:

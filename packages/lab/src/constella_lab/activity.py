@@ -7,9 +7,8 @@ import base64
 import hashlib
 import json
 import sqlite3
-import sys
 import time
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -19,6 +18,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from constella.gpu_usage import union
+from constella.result_cache import CacheBusyError, ResultCache, fingerprint
 
 from .activity_usage import (
     TIMEZONE,
@@ -32,8 +32,7 @@ from .activity_usage import (
 from .store import LabStore
 
 MAX_ROWS = 100_000
-MAX_CACHE_BYTES = 16 * 1024 * 1024
-CACHE_SECONDS = 60
+ObservedNodes = dict[str, tuple[set[tuple[int, float | None]], bool]]
 
 
 @dataclass
@@ -44,7 +43,6 @@ class ActivityData:
     days: list[tuple[str, float, float]]
     eligible: list[tuple[float, float]]
     missing_uid: int
-    size: int
 
 
 def read_activity(
@@ -112,95 +110,65 @@ def read_activity(
         days,
         eligible,
         len({r["session_id"] for r in rows if r["user_uid"] is None}),
-        sum(
-            128
-            + sys.getsizeof(r)
-            + sys.getsizeof(r.row)
-            + sum(sys.getsizeof(v) for v in r.row.values())
-            + sum(sys.getsizeof(v) for v in (r.owner, r.label, r.card, r.model, r.key))
-            for r in records
-        )
-        + sys.getsizeof(records)
-        + 4096,
     )
 
 
 class ActivityService:
-    def __init__(self) -> None:
-        self.cache: OrderedDict[str, ActivityData] = OrderedDict()
-        self.pending: dict[str, asyncio.Task[ActivityData]] = {}
+    def __init__(self, cache: ResultCache | None = None) -> None:
+        self.cache = cache if cache is not None else ResultCache()
         self.workers = asyncio.Semaphore(2)
 
     async def get(
-        self, path: Path, bindings: list[dict[str, Any]], user_id: str, period: int
-    ) -> ActivityData:
-        fingerprint = json.dumps(bindings, sort_keys=True, default=str)
+        self, path: Path, bindings: list[dict[str, Any]], user_id: str, period: int,
+        *, date: str | None = None, model: str = "", q: str = "",
+    ) -> bytes:
         day = datetime.now(TIMEZONE).date().isoformat()
-        key = hashlib.sha256(f"{path}:{user_id}:{period}:{day}:{fingerprint}".encode()).hexdigest()
-        cached = self.cache.get(key)
-        if cached and time.time() - cached.as_of < CACHE_SECONDS:
-            self.cache.move_to_end(key)
-            return cached
-        if key not in self.pending:
-            if len(self.pending) >= 16:
-                raise HTTPException(503, detail="activity_busy")
+        query = q.strip().casefold()
+        key = ("activity", str(path), user_id, period, day, fingerprint(bindings), date, model, query)
 
-            async def load() -> ActivityData:
-                try:
-                    async with self.workers:
-                        data = await asyncio.to_thread(
-                            read_activity, path, bindings, user_id, period
-                        )
-                    if data.size <= MAX_CACHE_BYTES:
-                        self.cache[key] = data
-                        self.cache.move_to_end(key)
-                        while (
-                            len(self.cache) > 16
-                            or sum(d.size for d in self.cache.values()) > MAX_CACHE_BYTES
-                        ):
-                            self.cache.popitem(last=False)
-                    return data
-                finally:
-                    self.pending.pop(key, None)
+        async def load():
+            def prepare():
+                data = read_activity(path, bindings, user_id, period)
+                return prepare_payload(data, date=date, model=model, q=query)
 
-            self.pending[key] = asyncio.create_task(load())
-        return await asyncio.shield(self.pending[key])
+            async with self.workers:
+                return await asyncio.to_thread(prepare)
+
+        return await self.cache.get(key, load)
 
 
-def current_status(job: dict[str, Any], cluster: Any, now: float) -> str:
-    runtime = cluster.latest_by_node.get(job["node_id"])
-    if runtime:
+def observed_nodes(cluster: Any, now: float) -> ObservedNodes:
+    nodes = {}
+    for node_id, runtime in cluster.latest_by_node.items():
         snap = runtime.snapshot
-        fresh = (
-            runtime.connected
-            and snap.status == "online"
-            and now - snap.sampled_at < max(30, 3 * snap.process_interval)
-        )
-        if fresh:
-            identities = {(s["pid"], s["process_start_time"]) for s in job["sessions"]}
-            if any(
-                (p.pid, p.process_start_time) in identities
-                for gpu in snap.gpus
-                for p in gpu.processes
-            ):
-                return "running"
-            # Aggregated or failed process listings cannot establish that a process ended.
-            if (
-                not snap.gpus
-                or snap.error
-                or any(gpu.other_users or gpu.error for gpu in snap.gpus)
-            ):
-                return "unknown"
-            return "ended"
+        if runtime.connected and snap.status == "online" and now - snap.sampled_at < max(30, 3 * snap.process_interval):
+            identities = {(p.pid, p.process_start_time) for gpu in snap.gpus for p in gpu.processes}
+            complete = bool(snap.gpus) and not snap.error and not any(
+                gpu.other_users or gpu.error for gpu in snap.gpus
+            )
+            nodes[node_id] = (identities, complete)
+    return nodes
+
+
+def job_status(job: dict[str, Any], nodes: ObservedNodes) -> str:
+    observed = nodes.get(job["node_id"])
+    if observed is not None:
+        identities, complete = observed
+        if any((s["pid"], s["process_start_time"]) in identities for s in job["sessions"]):
+            return "running"
+        return "ended" if complete else "unknown"
     return "ended" if job["status"] == "ended" else "unknown"
 
 
-def activity_jobs(records: list[Usage], cluster: Any) -> list[dict[str, Any]]:
+def current_status(job: dict[str, Any], cluster: Any, now: float) -> str:
+    return job_status(job, observed_nodes(cluster, now))
+
+
+def activity_jobs(records: list[Usage]) -> list[dict[str, Any]]:
     groups: dict[str, list[Usage]] = defaultdict(list)
     for record in records:
         groups[record.key].append(record)
     jobs = []
-    now = time.time()
     for key, items in groups.items():
         row = items[0].row
         sessions = {
@@ -227,7 +195,6 @@ def activity_jobs(records: list[Usage], cluster: Any) -> list[dict[str, Any]]:
                 {"start": r.start, "end": r.end, "model": r.model, "card": r.card} for r in items
             ],
         }
-        job["status"] = current_status(job, cluster, now)
         jobs.append(job)
     return sorted(jobs, key=lambda j: (j["status"] != "running", -j["last_seen_at"], j["job_key"]))
 
@@ -252,16 +219,8 @@ def busiest_hours(data: ActivityData, records: list[Usage]) -> dict[str, int] | 
     return {"start_hour": peak, "end_hour": (peak + 3) % 24}
 
 
-def payload(
-    data: ActivityData,
-    cluster: Any,
-    *,
-    date: str | None,
-    model: str,
-    status: str,
-    q: str,
-    cursor: str | None,
-    limit: int,
+def prepare_payload(
+    data: ActivityData, *, date: str | None, model: str, q: str,
 ) -> dict[str, Any]:
     if date and date not in {day[0] for day in data.days}:
         raise HTTPException(422, detail="date_outside_period")
@@ -277,49 +236,8 @@ def payload(
         for label, start, end in data.days
     ]
     day = next((d for d in days if d["date"] == date), None)
-    jobs = activity_jobs(data.records, cluster)
+    jobs = activity_jobs(data.records)
     query = q.strip().casefold()
-    matching = [
-        j
-        for j in jobs
-        if (status == "all" or j["status"] == status)
-        and (
-            not query
-            or query
-            in f"{j['task_name']} {j['node_id']} {j['user']} {' '.join(map(str, j['pids']))}".casefold()
-        )
-        and (
-            j["status"] == "running"
-            or any(
-                (not model or r["model"] == model)
-                and (
-                    not day
-                    or r["start"] < day["end"]
-                    and (r["end"] > day["start"] or r["start"] == r["end"] == day["start"])
-                )
-                for r in j["intervals"]
-            )
-        )
-    ]
-    signature = hashlib.sha256(
-        json.dumps([data.as_of, date, model, status, q, [j["job_key"] for j in matching]]).encode()
-    ).hexdigest()[:20]
-    offset = 0
-    if cursor:
-        try:
-            token, offset = json.loads(base64.urlsafe_b64decode(cursor).decode())
-            if token != signature:
-                raise HTTPException(409, detail="activity_page_expired")
-            if not isinstance(offset, int) or offset < 0 or offset > len(matching):
-                raise ValueError("invalid offset")
-        except (ValueError, TypeError, UnicodeError) as exc:
-            raise HTTPException(422, detail="invalid_cursor") from exc
-    following = offset + limit
-    next_cursor = (
-        base64.urlsafe_b64encode(json.dumps([signature, following]).encode()).decode()
-        if following < len(matching)
-        else None
-    )
     # Day tracks are paged independently from the overall totals; do not disguise a limit as complete data.
     tracks = activity_jobs(
         [
@@ -329,9 +247,8 @@ def payload(
             and r.start < day["end"]
             and (r.end > day["start"] or r.start == r.end == day["start"])
         ],
-        cluster,
     )
-    return {
+    response = {
         "enabled": True,
         "as_of": data.as_of,
         "range_start": data.start,
@@ -346,18 +263,85 @@ def payload(
         "days": days,
         "gpu_models": model_statistics(data.records, data.start, data.as_of),
         "busiest_hours": busiest_hours(data, selected),
-        "jobs": {
-            "items": matching[offset:following],
-            "next_cursor": next_cursor,
-            "total": len(matching),
-        },
+    }
+    return {
+        "response": response,
+        "jobs": [j for j in jobs if not query or query in f"{j['task_name']} {j['node_id']} {j['user']} {' '.join(map(str, j['pids']))}".casefold()],
+        "tracks": tracks,
+        "day": day,
+        "date": date,
+        "model": model,
+        "query": query,
+    }
+
+
+def render_payload(
+    prepared: dict[str, Any], cluster: Any, *, status: str, cursor: str | None, limit: int,
+) -> dict[str, Any]:
+    nodes = observed_nodes(cluster, time.time())
+
+    def refresh(jobs):
+        return sorted(
+            ({**j, "status": job_status(j, nodes)} for j in jobs),
+            key=lambda j: (j["status"] != "running", -j["last_seen_at"], j["job_key"]),
+        )
+
+    jobs = refresh(prepared["jobs"])
+    day, model = prepared["day"], prepared["model"]
+    matching = [
+        j for j in jobs
+        if (status == "all" or j["status"] == status)
+        and (
+            j["status"] == "running"
+            or any(
+                (not model or r["model"] == model)
+                and (not day or r["start"] < day["end"] and (
+                    r["end"] > day["start"] or r["start"] == r["end"] == day["start"]
+                ))
+                for r in j["intervals"]
+            )
+        )
+    ]
+    signature = hashlib.sha256(
+        json.dumps([prepared["response"]["as_of"], prepared["date"], model, status,
+                    prepared["query"], [j["job_key"] for j in matching]]).encode()
+    ).hexdigest()[:20]
+    offset = 0
+    if cursor:
+        try:
+            token, offset = json.loads(base64.urlsafe_b64decode(cursor).decode())
+            if token != signature:
+                raise HTTPException(409, detail="activity_page_expired")
+            if not isinstance(offset, int) or offset < 0 or offset > len(matching):
+                raise ValueError("invalid offset")
+        except (ValueError, TypeError, UnicodeError) as exc:
+            raise HTTPException(422, detail="invalid_cursor") from exc
+    following = offset + limit
+    next_cursor = (
+        base64.urlsafe_b64encode(json.dumps([signature, following]).encode()).decode()
+        if following < len(matching) else None
+    )
+    tracks = refresh(prepared["tracks"])
+    return {
+        **prepared["response"],
+        "jobs": {"items": matching[offset:following], "next_cursor": next_cursor, "total": len(matching)},
         "day_jobs": {"items": tracks[:100], "total": len(tracks)},
     }
 
 
-def build_activity_router(store: LabStore) -> APIRouter:
+def payload(
+    data: ActivityData, cluster: Any, *, date: str | None, model: str,
+    status: str, q: str, cursor: str | None, limit: int,
+) -> dict[str, Any]:
+    return render_payload(
+        prepare_payload(data, date=date, model=model, q=q), cluster,
+        status=status, cursor=cursor, limit=limit,
+    )
+
+
+def build_activity_router(store: LabStore, *, cache: ResultCache) -> APIRouter:
     router = APIRouter()
-    service = ActivityService()
+    service = ActivityService(cache)
 
     @router.get("/api/lab/me/activity")
     async def activity(
@@ -378,20 +362,17 @@ def build_activity_router(store: LabStore) -> APIRouter:
         if sink is None:
             return {"enabled": False, "availability": "history_disabled"}
         try:
-            data = await service.get(sink.store.path, bindings, user_id, int(range[:-1]))
+            body = await service.get(
+                sink.store.path, bindings, user_id, int(range[:-1]), date=date, model=gpu_model, q=q,
+            )
             async with service.workers:
                 result = await asyncio.to_thread(
-                    payload,
-                    data,
-                    request.app.state.cluster_state,
-                    date=date,
-                    model=gpu_model,
-                    status=status,
-                    q=q,
-                    cursor=cursor,
-                    limit=limit,
+                    lambda: render_payload(json.loads(body), request.app.state.cluster_state,
+                                           status=status, cursor=cursor, limit=limit)
                 )
             return {**result, "availability": "ready" if any(b["user_id"] == user_id for b in bindings) else "unbound"}
+        except CacheBusyError as exc:
+            raise HTTPException(503, detail="activity_busy") from exc
         except (sqlite3.Error, ValueError) as exc:
             raise HTTPException(503, detail="activity_temporarily_unavailable") from exc
 

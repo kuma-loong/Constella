@@ -330,3 +330,39 @@ def test_analytics_api_reads_optional_db_sink(tmp_path) -> None:
     assert node["enabled"] is True
     assert node["node_id"] == "node-a"
     sink.store.close()
+
+
+def test_analytics_cache_keys_and_expiration(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from constella import result_cache
+
+    clock = [0.0]
+    monkeypatch.setattr(result_cache, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+    calls = []
+
+    def overview(store, **kwargs):
+        calls.append(("overview", kwargs["range_name"]))
+        return {"enabled": True, "generated_at": len(calls)}
+
+    def node(store, **kwargs):
+        calls.append(("node", kwargs["node_id"], kwargs["range_name"]))
+        return {"enabled": True, "generated_at": len(calls)}
+
+    monkeypatch.setattr("constella.app.overview_analytics", overview)
+    monkeypatch.setattr("constella.app.node_analytics", node)
+    sink = AsyncDBSink(SQLiteSinkConfig(path=tmp_path / "cache.sqlite3"))
+    app = create_app(db_sink=sink)
+    with TestClient(app) as client:
+        first = client.get("/api/analytics/overview").json()
+        assert client.get("/api/analytics/overview").json() == first
+        assert client.get("/api/analytics/overview?range=invalid").json() == first
+        client.get("/api/analytics/overview?range=30d")
+        node_first = client.get("/api/analytics/node/a?range=7d").json()
+        assert client.get("/api/analytics/node/a?range=7d").json() == node_first
+        client.get("/api/analytics/node/b?range=7d")
+        client.get("/api/analytics/node/a?range=24h")
+        assert len(calls) == 5
+        clock[0] = 60
+        assert client.get("/api/analytics/overview").json() != first
+        assert len(calls) == 6
