@@ -85,8 +85,7 @@ def test_binding_boundaries_reassignment_missing_uid_and_renamed_account():
     ]
     pieces = resolve_usage(rows, bindings, START, START + 5 * HOUR)
     assert [(r.owner, (r.end - r.start) / HOUR) for r in pieces] == [
-        ('account:["a", 1001]', 1),
-        ("user:kuma", 1),
+        ("user:kuma", 2),
         ('account:["a", 1001]', 1),
         ("user:new", 1),
     ]
@@ -96,6 +95,30 @@ def test_binding_boundaries_reassignment_missing_uid_and_renamed_account():
     )
     renamed = user_statistics([row(), row(user="renamed", pid=2)], [], START, START + 3 * HOUR)
     assert len(renamed) == 1 and renamed[0]["gpu_hours"] == 2
+
+
+@pytest.mark.parametrize("uid", [1001, None])
+def test_first_binding_claims_completed_history_and_clips_query_window(uid):
+    rows = [row(uid=uid), row(uid=uid, pid=2)]
+    first = {**binding(start=START + 3 * HOUR), "unix_username": "usra"}
+    records = resolve_usage(rows, [first], START, START + 4 * HOUR)
+    assert {r.owner for r in records} == {"user:kuma"}
+    assert user_statistics(rows, [first], START, START + 4 * HOUR)[0]["gpu_hours"] == 2
+    assert user_statistics(rows, [first], START + HOUR, START + 4 * HOUR)[0]["gpu_hours"] == 1
+    assert first["valid_from"] == START + 3 * HOUR
+
+
+def test_first_binding_uses_uid_history_across_username_changes():
+    bindings = [
+        {**binding(start=START + HOUR, end=START + 2 * HOUR), "unix_username": "usra"},
+        {**binding(owner="new", start=START + 3 * HOUR), "unix_username": "renamed"},
+    ]
+    records = resolve_usage(
+        [row(user="old-name", end=START + 4 * HOUR)], bindings, START, START + 4 * HOUR
+    )
+    assert [(r.owner, (r.end - r.start) / HOUR) for r in records] == [
+        ("user:kuma", 2), ('account:["a", 1001]', 1), ("user:new", 1),
+    ]
 
 
 def test_midnight_zero_length_gpu_changes_and_ascend_dies():

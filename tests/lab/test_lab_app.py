@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from constella.cluster import AgentHello, ClusterState
@@ -243,7 +244,8 @@ def test_failed_multi_node_recheck_creates_no_bindings(tmp_path) -> None:
     assert me.json()["user"]["bindings"] == []
 
 
-def test_personal_activity_reads_bound_uid_intervals_and_isolates_users(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("manual", [False, True])
+def test_personal_activity_reads_bound_uid_intervals_and_isolates_users(tmp_path, monkeypatch, manual) -> None:
     from constella.db import AsyncDBSink, SQLiteSinkConfig
     from constella.schema import GpuInfo, GpuProcess, NodeSnapshot, node_totals_from_gpus
 
@@ -254,12 +256,19 @@ def test_personal_activity_reads_bound_uid_intervals_and_isolates_users(tmp_path
     with TestClient(app) as client:
         user = client.get("/api/lab/me", headers=headers()).json()["user"]
         store = app.state.lab_store
-        store.create_bindings(user_id=user["id"], actor_user_id=user["id"], request_id="test", accounts=[
+        accounts = [
             {"node_id": "a", "canonical_username": "usra", "uid": 1001, "gid": 1001},
             {"node_id": "b", "canonical_username": "usrb", "uid": 2001, "gid": 2001},
-        ])
+        ]
+        if manual:
+            for account in accounts:
+                store.reassign_binding(user_id=user["id"], account=account,
+                    actor_user_id=user["id"], request_id="test", reason="manual first claim")
+        else:
+            store.create_bindings(user_id=user["id"], actor_user_id=user["id"],
+                request_id="test", accounts=accounts)
         with store.connection:
-            store.connection.execute("UPDATE lab_account_bindings SET valid_from = ?", (start,))
+            store.connection.execute("UPDATE lab_account_bindings SET valid_from = ?", (start + 1800,))
         for at in (start, start + 7200):
             for node, uid, name, count in (("a", 1001, "usra", 2), ("b", 2001, "usrb", 1)):
                 gpus = [GpuInfo(index=i, uuid=f"GPU-{i}", name="NVIDIA H100", utilization_gpu=50,
@@ -276,6 +285,7 @@ def test_personal_activity_reads_bound_uid_intervals_and_isolates_users(tmp_path
         assert response.status_code == 200
         data = response.json()
         assert data["summary"]["gpu_hours"] == 6 and data["summary"]["active_hours"] == 2
+        assert data["jobs"]["items"][0]["intervals"][0]["start"] == start
         assert data["jobs"]["total"] == 2 and len(data["jobs"]["items"]) == 1
         assert {r["model"] for r in data["gpu_models"]} == {"H100"}
         assert data["coverage"] == "unknown"

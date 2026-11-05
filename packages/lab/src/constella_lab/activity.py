@@ -23,7 +23,7 @@ from constella.gpu_usage import union
 from .activity_usage import (
     TIMEZONE,
     Usage,
-    legacy_bindings,
+    binding_history,
     model_statistics,
     resolve_usage,
     segments,
@@ -62,7 +62,7 @@ def read_activity(
         )
         for i in range(period)
     ]
-    history = [b for entries in legacy_bindings(bindings, start).values() for b in entries]
+    history = [b for entries in binding_history(bindings, start).values() for b in entries]
     eligible = union(
         (max(start, b["valid_from"]), min(now, b["valid_to"] or now))
         for b in [*bindings, *history]

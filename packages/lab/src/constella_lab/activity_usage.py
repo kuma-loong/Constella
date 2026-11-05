@@ -27,16 +27,17 @@ class Usage:
     row: dict[str, Any]
 
 
-def legacy_bindings(
-    bindings: list[dict[str, Any]], start: float
-) -> dict[tuple[str, str], list[dict[str, Any]]]:
-    accounts: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+def binding_history(
+    bindings: list[dict[str, Any]], start: float, field: str = "unix_uid"
+) -> dict[tuple[str, int | str], list[dict[str, Any]]]:
+    accounts: dict[tuple[str, int | str], list[dict[str, Any]]] = defaultdict(list)
     for binding in bindings:
-        if binding.get("unix_username"):
-            accounts[(binding["node_id"], binding["unix_username"])].append(binding)
+        value = binding.get(field)
+        if value is not None:
+            accounts[(binding["node_id"], value)].append(binding)
     for key, history in accounts.items():
         ordered = sorted(history, key=lambda b: b["valid_from"])
-        # Only the first owner inherits legacy history before the initial binding.
+        # The first owner claims history before the initial binding; later gaps stay unbound.
         accounts[key] = [
             {**ordered[0], "valid_from": min(start, ordered[0]["valid_from"])},
             *ordered[1:],
@@ -50,10 +51,8 @@ def resolve_usage(
     start: float,
     end: float,
 ) -> list[Usage]:
-    accounts: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
-    for binding in bindings:
-        accounts[(binding["node_id"], binding["unix_uid"])].append(binding)
-    usernames = legacy_bindings(bindings, start)
+    accounts = binding_history(bindings, start)
+    usernames = binding_history(bindings, start, "unix_username")
     result = []
     for source in rows:
         row = dict(source)
