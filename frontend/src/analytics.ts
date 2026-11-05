@@ -1,4 +1,5 @@
 import { createAnalyticsView } from "./analytics-view";
+import { createNodeHistoryCache } from "./node-history-cache";
 import {
   escapeAttr,
   escapeHtml,
@@ -297,12 +298,13 @@ export function createAnalyticsController({
   let nodePayload: NodeAnalytics | null = null;
   let nodeHeatmapPayload: NodeAnalytics | null = null;
   let nodeKey = "";
+  let nodeId = "";
+  const nodeResponses = createNodeHistoryCache<NodeAnalytics>();
   let nodeLoading = false;
   let nodeHeatmapLoading = false;
   let nodeError = "";
   let nodeHeatmapError = "";
   let nodeRequest: AbortController | null = null;
-  let nodeLoadedAt = 0;
   let nodeChart: uPlot | null = null;
   let nodeChartResize: ResizeObserver | null = null;
   let jobQuery = "";
@@ -340,9 +342,6 @@ export function createAnalyticsController({
     }
     if (action === "node-range" && target.dataset.range) {
       nodeRange = target.dataset.range;
-      nodePayload = null;
-      nodeKey = "";
-      renderNode(currentRoute());
       void fetchNode(currentRoute());
       return true;
     }
@@ -523,45 +522,59 @@ export function createAnalyticsController({
 
   async function fetchNode(route: Route, force = false) {
     if (route.kind !== "node") return;
-    const key = `${route.nodeId}:${nodeRange}`;
-    if (!force && nodeKey === key && Date.now() - nodeLoadedAt < 60_000) return;
+    const range = nodeRange;
+    const key = `${route.nodeId}:${range}`;
+    const heatmapKey = `${route.nodeId}:${HEATMAP_RANGE}`;
+    if (force) { nodeResponses.delete(key); nodeResponses.delete(heatmapKey); }
+    const history = nodeResponses.get(key);
+    const heatmap = nodeResponses.get(heatmapKey);
+    if (history && heatmap && history === nodePayload && heatmap === nodeHeatmapPayload && nodeKey === key && !nodeError && !nodeHeatmapError) return;
     nodeRequest?.abort();
     const request = new AbortController();
     nodeRequest = request;
-    nodeKey = "";
-    if (nodePayload?.node_id !== route.nodeId) {
-      nodePayload = null;
-      nodeHeatmapPayload = null;
-      selectedGpuUuids.clear();
-    }
+    const sameNode = nodeId === route.nodeId;
+    if (!sameNode) selectedGpuUuids.clear();
+    nodePayload = history || (sameNode && nodeKey === key ? nodePayload : null);
+    nodeHeatmapPayload = heatmap || (sameNode ? nodeHeatmapPayload : null);
+    nodeId = route.nodeId;
+    nodeKey = key;
     nodeError = nodeHeatmapError = "";
-    nodeLoading = nodeHeatmapLoading = true;
-    renderNode(route);
-    const requests = new Map<string, Promise<NodeAnalytics>>();
-    const read = (range: string) => {
-      if (!requests.has(range)) requests.set(range, fetchJson<NodeAnalytics>(
-        `/api/analytics/node/${encodeURIComponent(route.nodeId)}?range=${encodeURIComponent(range)}`,
-        { signal: request.signal, headers: requestHeaders },
-      ));
-      return requests.get(range)!;
+    nodeLoading = !history;
+    nodeHeatmapLoading = !heatmap;
+    const paint = () => {
+      const active = currentRoute();
+      if (active.kind === "node" && active.nodeId === route.nodeId) { renderNode(active); renderIcons(); }
     };
-    const [history, heatmap] = await Promise.allSettled([read(nodeRange), read(HEATMAP_RANGE)]);
-    if (nodeRequest !== request || request.signal.aborted) return;
-    if ([history, heatmap].some(result => result.status === "rejected" &&
-        result.reason instanceof RequestError && result.reason.status === 401)) onAuthenticationRequired?.();
-    nodeRequest = null;
-    nodeLoading = nodeHeatmapLoading = false;
-    if (history.status === "fulfilled") nodePayload = history.value;
-    else nodeError = "History could not be loaded. Showing any previously loaded data. Retry with Refresh history.";
-    if (heatmap.status === "fulfilled") nodeHeatmapPayload = heatmap.value;
-    else nodeHeatmapError = "Heatmap could not be loaded. Showing any previously loaded data. Retry with Refresh history.";
-    nodeKey = history.status === "fulfilled" && heatmap.status === "fulfilled" ? key : "";
-    nodeLoadedAt = Date.now();
-    const current = currentRoute();
-    if (current.kind === "node" && current.nodeId === route.nodeId) {
-      renderNode(current);
-      renderIcons();
-    }
+    paint();
+    if (history && heatmap) { nodeRequest = null; return; }
+    const update = async (part: "history" | "heatmap" | "both", period: string) => {
+      const requestedAt = Date.now();
+      try {
+        const value = await fetchJson<NodeAnalytics>(
+          `/api/analytics/node/${encodeURIComponent(route.nodeId)}?range=${encodeURIComponent(period)}`,
+          { signal: request.signal, headers: requestHeaders },
+        );
+        if (nodeRequest !== request || request.signal.aborted) return;
+        nodeResponses.set(`${route.nodeId}:${period}`, value, requestedAt);
+        if (part !== "heatmap") nodePayload = value;
+        if (part !== "history") nodeHeatmapPayload = value;
+      } catch (error) {
+        if (nodeRequest !== request || request.signal.aborted) return;
+        if (error instanceof RequestError && error.status === 401) onAuthenticationRequired?.();
+        if (part !== "heatmap") nodeError = "History could not be loaded. Showing any previously loaded data. Retry with Refresh history.";
+        if (part !== "history") nodeHeatmapError = "Heatmap could not be loaded. Showing any previously loaded data. Retry with Refresh history.";
+      } finally {
+        if (nodeRequest === request) {
+          if (part !== "heatmap") nodeLoading = false;
+          if (part !== "history") nodeHeatmapLoading = false;
+          paint();
+        }
+      }
+    };
+    await Promise.all(range === HEATMAP_RANGE
+      ? [update("both", range)]
+      : [!history && update("history", range), !heatmap && update("heatmap", HEATMAP_RANGE)]);
+    if (nodeRequest === request) nodeRequest = null;
   }
 
   async function fetchJobs() {
@@ -700,7 +713,7 @@ export function createAnalyticsController({
       ${
         disabled
           ? disabledAnalytics("Enable DB_PATH to show node rollups and heatmaps.")
-          : nodeLoading && !payload
+          : nodeLoading && !payload && !nodeHeatmapPayload
             ? loadingPanel("loading node history")
             : nodeBody(payload, nodeHeatmapPayload, nodeHeatmapLoading)
       }
@@ -843,6 +856,7 @@ export function createAnalyticsController({
           ${
             series.some((item) => item.points.length)
               ? lineChart(series, nodeMetric)
+            : nodeLoading ? loadingPanel("loading node history")
             : emptyInline(nodeError ? "History unavailable — retry loading" : "no rollup points in this range")
           }
         </article>
@@ -1167,7 +1181,7 @@ export function createAnalyticsController({
   }
 
   return {
-    dispose: () => { nodeRequest?.abort(); overviewRequest?.abort(); },
+    dispose: () => { nodeRequest?.abort(); overviewRequest?.abort(); nodeResponses.clear(); },
     handleClick,
     handleChange,
     handleKeyDown,

@@ -99,6 +99,12 @@ test('old node responses cannot replace the current node after navigation', asyn
   await a;
   assert.match(node.innerHTML, /B trends/);
   assert.doesNotMatch(node.innerHTML, /A trends/);
+  setRoute({ kind: 'node', nodeId: 'A' });
+  const retry = c.fetchNode(route());
+  assert.equal(pending.length, 3, 'aborted A response must not populate the cache');
+  pending[2].resolve(response(payload('A')));
+  await retry;
+  assert.match(node.innerHTML, /A trends/);
 });
 
 test('timeout releases loading and manual refresh cancels a hung request', async () => {
@@ -179,7 +185,7 @@ test('overview errors remain retryable without claiming history is disabled', as
   assert.doesNotMatch(overview.innerHTML, /History could not be loaded/);
 });
 
-test('non-24h history refresh retries the separate heatmap request', async () => {
+test('range switches reuse the heatmap; explicit refresh retries a failed heatmap', async () => {
   const calls = [];
   let failHeatmap = false;
   const env = environment({ fetch: async url => {
@@ -193,12 +199,15 @@ test('non-24h history refresh retries the separate heatmap request', async () =>
   failHeatmap = true;
   c.handleClick({ dataset: { analyticsAction: 'node-range', range: '7d' } });
   await tick();
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 2);
+  assert.doesNotMatch(node.innerHTML, /Heatmap could not be loaded/);
+  await c.fetchNode(route(), true);
+  assert.equal(calls.length, 4);
   assert.match(node.innerHTML, /Heatmap could not be loaded/);
   failHeatmap = false;
   c.handleClick({ dataset: { analyticsAction: 'node-refresh' } });
   await tick();
-  assert.equal(calls.length, 5);
+  assert.equal(calls.length, 6);
   assert.match(node.innerHTML, /heatmap-scroll/);
   assert.doesNotMatch(node.innerHTML, /Heatmap could not be loaded/);
 });
@@ -370,4 +379,54 @@ test('invalid data reports an error without closing a working transport', async 
   assert.equal(states.at(-1), 'live');
   assert.equal(env.sockets.length, 1);
   connection.dispose();
+});
+
+test('24h/7d toggles reuse decoded responses until their fixed expiry', async () => {
+  let now = Date.now(), calls = 0;
+  const env = environment({ Date: class extends Date { static now() { return now; } }, fetch: async () => { calls++; return response(payload('A')); } });
+  const { c, node, route } = controller(env);
+  await c.fetchNode(route());
+  for (const range of ['7d', '24h', '7d', '24h']) {
+    c.handleClick({ dataset: { analyticsAction: 'node-range', range } });
+    await tick();
+    assert.doesNotMatch(node.innerHTML, /loading node history/);
+  }
+  assert.equal(calls, 2);
+  now += 60_000;
+  await c.fetchNode(route());
+  assert.equal(calls, 3);
+});
+
+test('a ready history response renders while the heatmap is pending', async () => {
+  let releaseHeatmap;
+  const env = environment({ fetch: async url => {
+    if (url.endsWith('range=24h')) return await new Promise(resolve => { releaseHeatmap = resolve; });
+    return response({ ...payload('A'), generated_at: Date.now()/1000, bucket_seconds: 1200 });
+  } });
+  const { c, node } = controller(env);
+  c.handleClick({ dataset: { analyticsAction: 'node-range', range: '7d' } });
+  await tick();
+  assert.match(node.innerHTML, /20m resolution/);
+  assert.match(node.innerHTML, /loading GPU heatmap/);
+  releaseHeatmap(response(payload('A')));
+  await tick();
+  assert.match(node.innerHTML, /heatmap-scroll/);
+});
+
+test('node response cache does not extend old data and bounds retained responses', () => {
+  let now = 100_000;
+  const env = environment({ Date: { now: () => now } });
+  const cache = env.load('node-history-cache').createNodeHistoryCache(60_000, 2);
+  const old = {generated_at: 50};
+  cache.set('old', old, now);
+  assert.equal(cache.get('old'), old);
+  now = 110_000;
+  assert.equal(cache.get('old'), null);
+  const value = {generated_at: now / 1000};
+  cache.set('a', value, now); cache.set('b', value, now);
+  cache.get('a'); cache.set('c', value, now);
+  assert.equal(cache.get('b'), null);
+  assert.equal(cache.get('a'), value);
+  now += 60_000;
+  assert.equal(cache.get('a'), null);
 });
