@@ -29,7 +29,14 @@ function environment(overrides = {}) {
     if (modules.has(name)) return modules.get(name);
     const exports = {};
     modules.set(name, exports);
-    const require = dep => dep === 'uplot' ? class {} : dep.endsWith('.css') ? {} : load(dep.replace('./', ''));
+    const require = dep => {
+      if (dep === 'uplot') return class {};
+      // These controller tests use string-only views; real DOM state has browser regressions.
+      if (dep === './analytics-view') return {createAnalyticsView: (root, dispose) => ({
+        render: (markup, mount) => { dispose?.(); root.innerHTML = markup; mount?.(); },
+      })};
+      return dep.endsWith('.css') ? {} : load(dep.replace('./', ''));
+    };
     const source = fs.readFileSync(path.join(__dirname, '../src', name + '.ts'), 'utf8');
     const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
     vm.runInNewContext(code, { ...globals, exports, require });

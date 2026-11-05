@@ -1,3 +1,4 @@
+import { createAnalyticsView } from "./analytics-view";
 import {
   escapeAttr,
   escapeHtml,
@@ -21,6 +22,7 @@ export type Route =
   | { kind: "node"; nodeId: string };
 
 type JobResolution = "auto" | "20s" | "2m" | "1h";
+type JobSearchPayload = { enabled: boolean; items?: JobItem[] };
 
 const JOB_RESOLUTIONS: { key: JobResolution; label: string }[] = [
   { key: "auto", label: "Auto" },
@@ -314,7 +316,7 @@ export function createAnalyticsController({
   let nodeChartResize: ResizeObserver | null = null;
   let jobQuery = "";
   let jobFilters: JobSearchFilters = emptyJobSearchFilters();
-  let jobPayload: { enabled: boolean; items?: JobItem[] } | null = null;
+  let jobPayload: JobSearchPayload | null = null;
   let jobKey = "";
   let jobsLoading = false;
   let selectedJobKey = "";
@@ -330,6 +332,10 @@ export function createAnalyticsController({
   let jobChartResize: ResizeObserver | null = null;
   let jobModalChart: uPlot | null = null;
   let jobModalChartResize: ResizeObserver | null = null;
+
+  const overviewView = createAnalyticsView(overviewElement);
+  const nodeView = createAnalyticsView(nodeElement, destroyNodeChart);
+  const jobView = createAnalyticsView(jobElement, destroyJobChart);
 
   function handleClick(target: HTMLButtonElement) {
     const action = target.dataset.analyticsAction;
@@ -592,7 +598,7 @@ export function createAnalyticsController({
       params.set("since", String(jobFilters.since));
     }
     try {
-      jobPayload = await fetchJson<{ enabled: boolean; items?: JobItem[] }>(`/api/highres/jobs?${params.toString()}`, { headers: requestHeaders });
+      jobPayload = await fetchJson<JobSearchPayload>(`/api/highres/jobs?${params.toString()}`, { headers: requestHeaders });
       jobKey = key;
       if (!selectedJobKey && jobPayload.items?.length) {
         selectedJobKey = jobPayload.items[0].job_key;
@@ -650,8 +656,8 @@ export function createAnalyticsController({
   function renderOverview() {
     const payload = overviewPayload;
     const disabled = payload && payload.enabled === false;
-    overviewElement.innerHTML = `
-      <div class="analytics-head">
+    overviewView.render(`
+      <div class="analytics-head" data-view-key="header">
         <div>
           <span class="section-kicker">History</span>
           <h2>Usage and jobs</h2>
@@ -672,20 +678,19 @@ export function createAnalyticsController({
             ? loadingPanel("loading historical usage")
             : overviewBody(payload)
       }
-    `;
+    `);
   }
 
   function renderNode(route: Route) {
-    destroyNodeChart();
     if (route.kind !== "node") {
-      nodeElement.innerHTML = "";
+      nodeView.render("");
       return;
     }
     syncSelectedGpu();
     const payload = nodePayload;
     const disabled = payload && payload.enabled === false;
-    nodeElement.innerHTML = `
-      <div class="analytics-head">
+    nodeView.render(`
+      <div class="analytics-head" data-view-key="header">
         <div>
           <span class="section-kicker">Node history</span>
           <h2>${escapeHtml(route.nodeId)} trends and heatmap</h2>
@@ -708,20 +713,20 @@ export function createAnalyticsController({
             ? loadingPanel("loading node history")
             : nodeBody(payload, nodeHeatmapPayload, nodeHeatmapLoading)
       }
-    `;
-    if (!disabled && payload?.series?.some((item) => item.points.length)) {
-      mountNodeChart(payload.series, nodeMetric);
-    }
+    `, () => {
+      if (!disabled && payload?.series?.some((item) => item.points.length)) mountNodeChart(payload.series, nodeMetric);
+    });
   }
 
   function renderJobs() {
-    destroyJobChart();
     const disabled = jobPayload && jobPayload.enabled === false;
     const jobs = jobPayload?.items || [];
     const selected = jobs.find((item) => item.job_key === selectedJobKey) || jobCurvePayload?.job || null;
     const visibleSeries = selectedJobSeries(jobCurvePayload?.series || []);
-    jobElement.innerHTML = `
-      <div class="analytics-head">
+    const expanded = jobChartExpanded && visibleSeries.some((item) => item.points.length)
+      ? expandedJobChart(visibleSeries, jobMetric) : "";
+    jobView.render(`
+      <div class="analytics-head" data-view-key="header">
         <div>
           <span class="section-kicker">Job curves</span>
           <h2>Search workload GPU curves</h2>
@@ -754,11 +759,10 @@ export function createAnalyticsController({
             ? loadingPanel("loading recent jobs")
             : jobsBody(jobs, selected)
       }
-      ${jobChartExpanded && visibleSeries.some((item) => item.points.length) ? expandedJobChart(visibleSeries, jobMetric) : ""}
-    `;
-    if (!disabled && !jobCurveLoading && visibleSeries.some((item) => item.points.length)) {
-      mountJobChart(visibleSeries, jobMetric);
-    }
+      ${expanded}
+    `, () => {
+      if (!disabled && !jobCurveLoading && visibleSeries.some((item) => item.points.length)) mountJobChart(visibleSeries, jobMetric);
+    });
   }
 
   function overviewBody(payload: OverviewAnalytics | null) {
@@ -767,7 +771,7 @@ export function createAnalyticsController({
     const anomalies = payload?.anomalies || [];
     const offHours = payload?.off_hours;
     return `
-      <div class="analytics-grid">
+      <div class="analytics-grid" data-view-key="grid">
         <article class="analytics-card span-6">
           <div class="card-title">
             <span><i data-lucide="bar-chart-3"></i>User GPU hours</span>
@@ -845,7 +849,7 @@ export function createAnalyticsController({
     const heatmap = heatmapPayload?.heatmap || [];
     const hasHeatmap = hourlyHeatmapRows(heatmap, heatmapPayload).some((row) => row.cells.some((cell) => cell.hasData));
     return `
-      <div class="analytics-grid">
+      <div class="analytics-grid" data-view-key="grid">
         <article class="analytics-card span-12">
           <div class="card-title">
             <span><i data-lucide="line-chart"></i>${metricLabel(nodeMetric)} history</span>
@@ -878,8 +882,8 @@ export function createAnalyticsController({
 
   function jobsBody(jobs: JobItem[], selected: JobItem | null) {
     return `
-      <div class="analytics-grid">
-        <article class="analytics-card span-4 job-list-card">
+      <div class="analytics-grid" data-view-key="grid">
+        <article class="analytics-card span-4 job-list-card" data-view-key="job-list" data-view-scope="${escapeAttr(JSON.stringify(jobFilters))}">
           <div class="card-title">
             <span><i data-lucide="table-2"></i>Recent jobs</span>
             <em>${jobs.length} shown</em>
@@ -890,7 +894,13 @@ export function createAnalyticsController({
               : emptyInline("no jobs match the current filter")
           }
         </article>
-        <article class="analytics-card span-8">
+        <article class="analytics-card span-8 job-curve-card" data-view-key="job-detail" data-view-scope="${escapeAttr(selectedJobKey)}">${jobCurveBody(selected)}</article>
+      </div>
+    `;
+  }
+
+  function jobCurveBody(selected: JobItem | null) {
+    return `
           <div class="card-title">
             <span><i data-lucide="line-chart"></i>${selected ? escapeHtml(selected.task_name) : "GPU curve"}</span>
             <div class="job-title-controls">
@@ -909,8 +919,6 @@ export function createAnalyticsController({
                   : ""
           }
           ${jobWarnings(jobCurvePayload)}
-        </article>
-      </div>
     `;
   }
 
@@ -923,6 +931,7 @@ export function createAnalyticsController({
         type="button"
         data-analytics-action="job-select"
         data-job-key="${escapeAttr(item.job_key)}"
+        aria-pressed="${active}"
       >
         <strong>${escapeHtml(item.task_name)}</strong>
         <span>${escapeHtml(item.user)} / ${escapeHtml(item.node_id)} / ${escapeHtml(gpuLabel)}</span>
@@ -952,7 +961,7 @@ export function createAnalyticsController({
             <i data-lucide="maximize-2"></i>
           </button>
         </div>
-        <div class="chart-plot chart-scroll uplot-theme">
+        <div class="chart-plot chart-scroll uplot-theme" data-view-key="job-plot" data-chart-scope="${escapeAttr(selectedJobKey)}">
           <div class="line-chart" data-job-chart aria-label="${escapeAttr(metricLabel(metric))} job curve"></div>
         </div>
         ${jobLegend(series)}
@@ -1004,7 +1013,7 @@ export function createAnalyticsController({
 
   function jobLegend(series: JobCurveSeries[]) {
     return `
-      <div class="chart-legend">
+      <div class="chart-legend" data-view-key="gpu-legend" data-chart-scope="${escapeAttr(selectedJobKey)}">
         <button class="${selectedJobGpuUuids.size === 0 ? "is-active" : ""}" type="button" data-analytics-action="job-gpu" data-legend-all="true" aria-pressed="${selectedJobGpuUuids.size === 0 ? "true" : "false"}">
           <b style="background:var(--text)"></b>All
         </button>
@@ -1028,7 +1037,7 @@ export function createAnalyticsController({
 
   function expandedJobChart(series: JobCurveSeries[], metric: ChartMetric) {
     return `
-      <div class="chart-modal-backdrop" role="presentation">
+      <div class="chart-modal-backdrop" data-view-key="job-modal" role="presentation">
         <section class="chart-modal" role="dialog" aria-modal="true" aria-label="${escapeAttr(metricLabel(metric))} job curve expanded">
           <div class="chart-modal-head">
             <div>
@@ -1039,7 +1048,7 @@ export function createAnalyticsController({
               <i data-lucide="x"></i>
             </button>
           </div>
-          <div class="chart-plot chart-scroll uplot-theme">
+          <div class="chart-plot chart-scroll uplot-theme" data-view-key="job-plot" data-chart-scope="${escapeAttr(selectedJobKey)}">
             <div class="line-chart line-chart-expanded" data-job-chart-modal aria-label="${escapeAttr(metricLabel(metric))} expanded job curve"></div>
           </div>
           ${jobLegend(series)}
@@ -1111,7 +1120,7 @@ export function createAnalyticsController({
         <div class="chart-plot uplot-theme">
           <div class="line-chart" data-node-chart aria-label="${escapeAttr(metricLabel(metric))} history"></div>
         </div>
-        <div class="chart-legend">
+        <div class="chart-legend" data-view-key="gpu-legend">
           <button class="${selectedGpuUuids.size === 0 ? "is-active" : ""}" type="button" data-analytics-action="node-gpu" data-legend-all="true" aria-pressed="${selectedGpuUuids.size === 0 ? "true" : "false"}">
             <b style="background:var(--text)"></b>All
           </button>
@@ -1368,7 +1377,11 @@ function mountMetricChart<T extends { points: P[] }, P>({
   return { chart, resize };
 }
 
+const draggableCharts = new WeakSet<HTMLElement>();
+
 function enableHorizontalChartDrag(target: HTMLElement) {
+  if (draggableCharts.has(target)) return;
+  draggableCharts.add(target);
   let dragging = false;
   let startX = 0;
   let startScrollLeft = 0;
