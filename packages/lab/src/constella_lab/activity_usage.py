@@ -10,6 +10,7 @@ from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
 from constella.analytics import _physical_card_key, compact_gpu_name, gpu_weight, job_key
+from constella.gpu_usage import card_segments, model_seconds
 
 TIMEZONE = ZoneInfo("Asia/Shanghai")
 
@@ -114,38 +115,8 @@ def resolve_usage(
     return result
 
 
-def union(spans: Iterable[tuple[float, float]]) -> list[tuple[float, float]]:
-    merged: list[tuple[float, float]] = []
-    for start, end in sorted(spans):
-        if end <= start:
-            continue
-        if merged and start <= merged[-1][1]:
-            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
-        else:
-            merged.append((start, end))
-    return merged
-
-
 def segments(records: list[Usage], start: float, end: float) -> list[dict[str, Any]]:
-    cards: dict[str, list[tuple[float, float]]] = defaultdict(list)
-    for item in records:
-        cards[item.card].append((max(start, item.start), min(end, item.end)))
-    events: dict[float, int] = defaultdict(int)
-    for spans in cards.values():
-        for a, b in union(spans):
-            events[a] += 1
-            events[b] -= 1
-    active, previous = 0, start
-    result: list[dict[str, Any]] = []
-    for at, delta in sorted(events.items()):
-        if active and at > previous:
-            if result and result[-1]["end"] == previous and result[-1]["count"] == active:
-                result[-1]["end"] = at
-            else:
-                result.append({"start": previous, "end": at, "count": active})
-        active += delta
-        previous = at
-    return result
+    return card_segments(((r.card, r.start, r.end) for r in records), start, end)
 
 
 def summary(records: list[Usage], start: float, end: float) -> dict[str, Any]:
@@ -204,13 +175,8 @@ def user_statistics(
 
 
 def model_statistics(records: list[Usage], start: float, end: float) -> list[dict[str, Any]]:
-    models: dict[str, list[Usage]] = defaultdict(list)
-    for record in records:
-        models[record.model].append(record)
-    result = [
-        {"model": model, "gpu_hours": summary(items, start, end)["gpu_hours"]}
-        for model, items in models.items()
-    ]
+    totals = model_seconds(((r.card, r.model, r.start, r.end) for r in records), start, end)
+    result = [{"model": model, "gpu_hours": seconds / 3600} for model, seconds in totals.items()]
     total = sum(item["gpu_hours"] for item in result)
     for item in result:
         item["share"] = item["gpu_hours"] / total if total else 0

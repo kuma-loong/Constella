@@ -507,47 +507,9 @@ svg {
   gap: 6px;
 }
 
-.anomaly-card b,
-.top-users span {
+.anomaly-card b {
   padding: 6px 8px;
   font-size: 12px;
-}
-
-.offhour-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.offhour-note {
-  margin: 0 0 12px;
-  color: var(--text-soft);
-  font-size: 14px;
-  line-height: 1.45;
-}
-
-.offhour-grid span {
-  display: grid;
-  gap: 3px;
-  min-height: 76px;
-  padding: 12px;
-}
-
-.offhour-grid b {
-  color: var(--text);
-  font-size: 26px;
-  line-height: 1;
-  letter-spacing: -0.025em;
-}
-
-.offhour-grid small,
-.top-users {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.top-users {
-  margin-top: 10px;
 }
 
 .chart-wrap,

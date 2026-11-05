@@ -91,11 +91,13 @@ Rollup 选择规则：
 
 不能直接用 `process_sessions.duration_seconds` 作为用卡耗时，因为一个进程可能占多张卡，或者多个进程属于同一个作业。第一版用 `process_gpu_usages` 计算“卡时”。
 
+用户榜和任务榜共用物理卡区间合并算法：各自分组内，同一物理卡的重叠区间只计一次；双芯卡按物理卡合并，独立物理卡的卡时累加。采样缺口仍沿用首次到末次观测的跨度估计。
+
 基础卡时：
 
 ```text
 card_seconds = SUM(
-  overlap_seconds(process_gpu_usage.first_seen_at, process_gpu_usage.last_seen_at, range_start, range_end)
+  duration(union(clipped_usage_intervals_per_physical_card))
 )
 ```
 
@@ -223,27 +225,6 @@ AND recent_avg_gpu_utilization < 5%
 
 不做 `task_name` 匹配规则，避免把模型服务或正常长任务按名字误判。
 
-## 深夜与周末统计
-
-作为轻量趣味模块，不作为主排行榜。
-
-统计口径：
-
-- 使用 `process_sessions.first_seen_at` 或作业合并后的 `started_at`。
-- 北京时间：
-  - 深夜：`00:00-06:00`
-  - 周末：周六、周日
-
-可展示：
-
-- `night_job_count`
-- `weekend_job_count`
-- `night_gpu_hours`
-- `weekend_gpu_hours`
-- Top 用户小榜
-
-文案保持中性，例如“非工作时段活跃”，不要做强评价。
-
 ## Node GPU 历史曲线
 
 Node 页面新增历史曲线模块。
@@ -323,8 +304,7 @@ Tooltip：
   "timezone": "Asia/Shanghai",
   "user_gpu_hours": [],
   "job_rankings": [],
-  "anomalies": [],
-  "off_hours": {}
+  "anomalies": []
 }
 ```
 
@@ -365,7 +345,6 @@ Tooltip：
 - 用户用卡榜。
 - 作业耗时榜。
 - 异常占用卡片。
-- 深夜/周末趣味统计。
 - 所有模块显示 `generated_at`，支持手动刷新。
 
 ### Phase 4：Node 历史 UI
@@ -388,4 +367,3 @@ Tooltip：
 - GPU 权重是否只按型号配置，还是要支持按节点/具体 GPU 覆盖。
 - 加权卡时是否用于主排序，还是只作为辅助列。
 - 异常占用阈值是否固定为 2h、20GB、5%，还是后续做成配置。
-- 深夜时间段是否固定为北京时间 `00:00-06:00`。

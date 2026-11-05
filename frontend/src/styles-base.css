@@ -744,7 +744,6 @@ a:focus-visible {
 
 .fabric-config-chips,
 .fabric-stats,
-.top-users,
 .chart-legend,
 .analytics-actions {
   display: flex;
@@ -762,9 +761,7 @@ a:focus-visible {
 .fabric-node-head em,
 .fabric-chip,
 .process-table th,
-.top-users span,
-.anomaly-card b,
-.offhour-grid span {
+.anomaly-card b {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-raised);

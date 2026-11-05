@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 
+import pytest
 from fastapi.testclient import TestClient
 
 from constella.analytics import gpu_weight, job_key, node_analytics, overlap_seconds, overview_analytics
@@ -140,6 +141,90 @@ def test_dual_die_gpu_hours_count_each_session_on_the_same_card(tmp_path) -> Non
         assert payload["job_rankings"][0]["gpu_hours"] == 2.0
         assert payload["job_rankings"][0]["gpu_count"] == 1
         assert payload["job_rankings"][0]["session_count"] == 2
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize(
+    ("intervals", "hours", "clipped_hours"),
+    [
+        ([(1000, 4600), (1000, 4600)], 1, 1),
+        ([(1000, 4600), (2800, 6400)], 1.5, 1),
+        ([(1000, 2800), (4600, 6400)], 1, 0.5),
+        ([(1000, 2800), (2800, 4600)], 1, 1),
+        ([(1000, 8200), (2800, 4600)], 2, 1),
+    ],
+)
+def test_rankings_union_sessions_on_each_card(tmp_path, intervals, hours, clipped_hours) -> None:
+    store = SQLiteStore(tmp_path / "constella.db")
+    store.open()
+    try:
+        for pid, (start, end) in enumerate(intervals, 111):
+            for at in (start, end):
+                store.write_node_snapshot(make_snapshot(float(at), pid=pid))
+
+        payload = overview_analytics(store, now=9000)
+        user = payload["user_gpu_hours"][0]
+        job = payload["job_rankings"][0]
+        # Two independent cards, with model weights 1.0 and 0.9.
+        assert user["gpu_hours"] == job["gpu_hours"] == hours * 2
+        assert user["weighted_gpu_hours"] == job["weighted_gpu_hours"] == round(hours * 1.9, 2)
+        assert user["task_count"] == job["session_count"] == 2
+        assert job["gpu_count"] == 2
+        assert "off_hours" not in payload
+
+        clipped = overview_analytics(store, range_name="1h", now=4600)
+        assert clipped["user_gpu_hours"][0]["gpu_hours"] == clipped_hours * 2
+        assert clipped["job_rankings"][0]["gpu_hours"] == clipped_hours * 2
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_dual_die_rankings_union_different_intervals(tmp_path, reverse) -> None:
+    store = SQLiteStore(tmp_path / "constella.db")
+    store.open()
+    try:
+        observations = [(0, 1000), (1, 2800), (0, 4600), (1, 8200)]
+        if reverse:
+            observations = [(1, 2800), (1, 8200), (0, 1000), (0, 4600)]
+        for die, at in observations:
+            snapshot = make_snapshot(float(at))
+            gpu = snapshot.gpus[die]
+            gpu.device_type = "ascend"
+            gpu.card_id = "2"
+            gpu.die_id = die
+            gpu.name = "Ascend910"
+            snapshot.gpus = [gpu]
+            store.write_node_snapshot(snapshot)
+
+        payload = overview_analytics(store, now=9000)
+        assert payload["user_gpu_hours"][0]["gpu_hours"] == 2
+        assert payload["job_rankings"][0]["gpu_hours"] == 2
+        assert payload["job_rankings"][0]["gpu_count"] == 1
+    finally:
+        store.close()
+
+
+def test_user_union_keeps_independent_job_and_user_totals(tmp_path) -> None:
+    store = SQLiteStore(tmp_path / "constella.db")
+    store.open()
+    try:
+        for user, pid in (("alice", 111), ("alice", 222), ("bob", 333)):
+            for at in (1000.0, 4600.0):
+                snapshot = make_snapshot(at, user=user, pid=pid)
+                for gpu in snapshot.gpus:
+                    gpu.processes[0].ppid = None
+                    gpu.processes[0].parent_start_time = None
+                store.write_node_snapshot(snapshot)
+
+        payload = overview_analytics(store, now=5000)
+        assert {u["user"]: u["gpu_hours"] for u in payload["user_gpu_hours"]} == {
+            "alice": 2,
+            "bob": 2,
+        }
+        assert len(payload["job_rankings"]) == 3
+        assert all(job["gpu_hours"] == 2 for job in payload["job_rankings"])
     finally:
         store.close()
 

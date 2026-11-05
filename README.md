@@ -76,7 +76,7 @@ without requiring a heavyweight Prometheus/Grafana stack.
 **Multi-User Analytics**
 
 - See user GPU usage rankings, job duration rankings, node trends, and range-aware heatmaps.
-- Detect low-utilization reservations and off-hour activity.
+- Detect low-utilization reservations.
 - Keep realtime monitoring available even when historical analytics are disabled.
 
 **Lightweight Deployment**

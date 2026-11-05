@@ -3,13 +3,12 @@ from __future__ import annotations
 import math
 import sqlite3
 import time
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any, Callable
-from zoneinfo import ZoneInfo
 
 from .db import ROLLUP_1H, ROLLUP_2M, ROLLUP_20S, SQLiteStore
+from .gpu_usage import model_seconds
 
 TIMEZONE = "Asia/Shanghai"
 DEFAULT_GPU_WEIGHTS = {
@@ -96,7 +95,6 @@ def overview_analytics(store: SQLiteStore, *, range_name: str = "7d", now: float
             range_start=anomaly_start,
             range_end=range_end,
         ),
-        "off_hours": _off_hours(rows, range_start=range_start, range_end=range_end),
     }
 
 
@@ -205,23 +203,19 @@ def _roll_up_usage(
 ) -> tuple[dict[str, UserUsage], dict[str, JobUsage]]:
     users: dict[str, UserUsage] = {}
     jobs: dict[str, JobUsage] = {}
-    counted_card_usage: set[tuple[str, str]] = set()
-    counted_job_card_usage: set[tuple[str, str, str]] = set()
+    user_spans: dict[str, list[tuple[str, str, float, float]]] = defaultdict(list)
+    job_spans: dict[str, list[tuple[str, str, float, float]]] = defaultdict(list)
     for row in rows:
         seconds = overlap_seconds(row["first_seen_at"], row["last_seen_at"], range_start, range_end)
         if seconds <= 0:
             continue
-        weight = gpu_weight(row["gpu_name"])
         user = row["user"] or "unknown"
         key = job_key(row)
         user_usage = users.setdefault(user, UserUsage(user=user))
         card_key = _physical_card_key(row)
-        usage_key = (row["session_id"], card_key)
-        if usage_key not in counted_card_usage:
-            counted_card_usage.add(usage_key)
-            user_usage.gpu_hours += seconds / 3600
-            user_usage.weighted_gpu_hours += seconds * weight / 3600
-            user_usage.gpu_model_seconds[compact_gpu_name(row["gpu_name"])] += seconds
+        span = (card_key, compact_gpu_name(row["gpu_name"]), row["first_seen_at"], row["last_seen_at"])
+        user_spans[user].append(span)
+        job_spans[key].append(span)
         user_usage.sessions.add(row["session_id"])
         user_usage.jobs.add(key)
         user_usage.last_seen_at = max(user_usage.last_seen_at, row["last_seen_at"])
@@ -242,11 +236,6 @@ def _roll_up_usage(
         job.last_seen_at = max(job.last_seen_at, row["session_last_seen_at"])
         if row["status"] == "running":
             job.status = "running"
-        job_usage_key = (key, row["session_id"], card_key)
-        if job_usage_key not in counted_job_card_usage:
-            counted_job_card_usage.add(job_usage_key)
-            job.gpu_hours += seconds / 3600
-            job.weighted_gpu_hours += seconds * weight / 3600
         job.card_keys.add(card_key)
         job.sessions.add(row["session_id"])
         job.gpu_uuids.add(row["gpu_uuid"])
@@ -256,6 +245,15 @@ def _roll_up_usage(
             job.pids.add(int(row["pid"]))
         job.memory_seconds += float(row["avg_memory_mb"] or 0.0) * seconds
         job.usage_seconds += seconds
+    for groups, spans in ((users, user_spans), (jobs, job_spans)):
+        for key, item in groups.items():
+            totals = model_seconds(spans[key], range_start, range_end)
+            item.gpu_hours = sum(totals.values()) / 3600
+            item.weighted_gpu_hours = sum(
+                seconds * gpu_weight(model) for model, seconds in totals.items()
+            ) / 3600
+            if isinstance(item, UserUsage):
+                item.gpu_model_seconds = totals
     return users, jobs
 
 
@@ -338,51 +336,6 @@ def _avg_gpu_utilization(
     if row is None or row["value"] is None:
         return None
     return float(row["value"])
-
-
-def _off_hours(rows: list[sqlite3.Row], *, range_start: float, range_end: float) -> dict[str, Any]:
-    tz = ZoneInfo(TIMEZONE)
-    night_sessions: set[str] = set()
-    weekend_sessions: set[str] = set()
-    user_counts: Counter[str] = Counter()
-    night_gpu_seconds = 0.0
-    weekend_gpu_seconds = 0.0
-    night_usage: set[tuple[str, str]] = set()
-    weekend_usage: set[tuple[str, str]] = set()
-    counted_night_users: set[tuple[str, str]] = set()
-    counted_weekend_users: set[tuple[str, str]] = set()
-    for row in rows:
-        started_at = max(row["session_first_seen_at"], range_start)
-        started = datetime.fromtimestamp(started_at, tz=tz)
-        seconds = overlap_seconds(row["first_seen_at"], row["last_seen_at"], range_start, range_end)
-        user = row["user"] or "unknown"
-        usage_key = (row["session_id"], _physical_card_key(row))
-        if 0 <= started.hour < 6:
-            night_sessions.add(row["session_id"])
-            if (user, row["session_id"]) not in counted_night_users:
-                counted_night_users.add((user, row["session_id"]))
-                user_counts[user] += 1
-            if usage_key not in night_usage:
-                night_usage.add(usage_key)
-                night_gpu_seconds += seconds
-        if started.weekday() >= 5:
-            weekend_sessions.add(row["session_id"])
-            if (user, row["session_id"]) not in counted_weekend_users:
-                counted_weekend_users.add((user, row["session_id"]))
-                user_counts[user] += 1
-            if usage_key not in weekend_usage:
-                weekend_usage.add(usage_key)
-                weekend_gpu_seconds += seconds
-    return {
-        "night_job_count": len(night_sessions),
-        "weekend_job_count": len(weekend_sessions),
-        "night_gpu_hours": round(night_gpu_seconds / 3600, 2),
-        "weekend_gpu_hours": round(weekend_gpu_seconds / 3600, 2),
-        "top_users": [
-            {"user": user, "job_count": count}
-            for user, count in user_counts.most_common(8)
-        ],
-    }
 
 
 def _node_gpus(store: SQLiteStore, node_id: str) -> list[dict[str, Any]]:

@@ -69,7 +69,7 @@ export function apiResponse(url) {
   if (p === '/api/cluster/snapshot') return snapshot;
   if (p === '/api/analytics/overview') return {enabled: true, range_start: now - 86400, range_end: now, generated_at: now,
     user_gpu_hours: users.map((user, i) => ({user, gpu_hours: 68 - i * 12, weighted_gpu_hours: 68 - i * 12, job_count: 12 - i * 2, last_seen_at: now - i * 120, top_gpu_models: [{name: nodes[i].gpus[0].name, gpu_hours: 68 - i * 12}]})),
-    job_rankings: jobs.slice(0, 4).map((j, i) => ({...j, weighted_gpu_hours: 28 - i * 4})), anomalies: [], off_hours: {night_job_count: 8, weekend_job_count: 4, night_gpu_hours: 64, weekend_gpu_hours: 32, top_users: []}};
+    job_rankings: jobs.slice(0, 4).map((j, i) => ({...j, weighted_gpu_hours: 28 - i * 4})), anomalies: []};
   if (p.startsWith('/api/analytics/node/')) return {enabled: true, series: [], heatmap: []};
   if (p === '/api/highres/jobs') {
     const query = (url.searchParams.get('q') || '').toLowerCase();

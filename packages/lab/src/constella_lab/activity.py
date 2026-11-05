@@ -18,6 +18,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from constella.gpu_usage import union
+
 from .activity_usage import (
     TIMEZONE,
     Usage,
@@ -26,7 +28,6 @@ from .activity_usage import (
     resolve_usage,
     segments,
     summary,
-    union,
 )
 from .store import LabStore
 

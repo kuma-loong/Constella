@@ -308,11 +308,10 @@ Task | User | Node | GPU hours | Runtime | Status
 - 中等屏幕下堆叠。
 - 如果某个榜单数据很少，不强行拉成巨型表格，可以使用较短卡片高度。
 
-异常占用、off-hour 这类模块内容量波动更大，应允许中等宽度：
+异常占用模块内容量波动较大，应允许中等宽度：
 
 - 有异常时可以占 6/12 或 8/12，突出行动信息。
 - 无异常时只需要一个短状态卡片，不必铺满整行。
-- off-hour 更像洞察卡片，默认可占 4/12 或 5/12。
 
 页面留白是允许的。重点是信息密度和可读性，不是把每一行填满。
 
@@ -365,51 +364,6 @@ recent 利用率使用最近 30-60 分钟 rollup；若 recent 数据不足，再
 - 主卡片展示紧凑摘要。
 - hover/title 或展开区域展示完整 GPU uuid 和 pid 列表。
 
-## Off-hour Activity 模块
-
-### 当前问题
-
-现在像普通 KPI，意义不够明显，也不够有趣。
-
-### 新方向
-
-改成轻量“非工作时段小剧场”，保留中性但可以有一点调侃。
-
-推荐标题：
-
-```text
-After-hours lab life
-```
-
-根据数据动态生成一句主文案：
-
-```text
-夜间为 0：昨晚很安静，GPU 也睡了个整觉
-周末较高：周末算力没有休假
-夜间较高：凌晨 0-6 点仍有训练在跑
-都很低：这段时间大家作息相当健康
-```
-
-指标展示：
-
-- Night jobs
-- Weekend jobs
-- Night GPU hours
-- Weekend GPU hours
-- Most active off-hour user
-
-Top 用户可以用轻量标签：
-
-- `Night owl`
-- `Weekend regular`
-- `Off-hour regulars`
-
-注意：
-
-- 文案不能变成评价用户行为。
-- 不使用“摸鱼”“内卷”等强负面/强评价词。
-- 如果某项为 0，不要让大面积卡片只显示 `0`，改成状态句。
-
 ## 前端模块拆分建议
 
 Stage 2 继续拆分前端，不把所有逻辑堆到 `main.ts`。
@@ -426,7 +380,6 @@ frontend/src/
     api.ts             fetch overview/node analytics
     rankings.ts        user/job rankings render
     anomalies.ts       anomaly panel render
-    offHours.ts        off-hour panel render
     nodeHistory.ts     trend chart and heatmap render
 ```
 
@@ -437,7 +390,7 @@ frontend/src/
 - `main.ts` 不关心 analytics payload 结构。
 - analytics controller 负责 fetch/cache/range state。
 - node history 内部负责多选 GPU 的局部 DOM 更新。
-- rankings / anomalies / off-hours 各自负责自己的展示口径。
+- rankings / anomalies 各自负责自己的展示口径。
 
 ## 图表库评估
 
@@ -528,7 +481,6 @@ frontend/src/
    - `Tasks` 改为 `Jobs`。
    - Models 保留为主要 GPU 型号。
    - 异常占用拆成独立 panel。
-   - Off-hour 改成更有趣的洞察卡片。
    - 内容较少的模块不强行占满整行，按信息量选择宽度。
 
 4. 测试：
@@ -542,4 +494,3 @@ frontend/src/
 - 不引入 ECharts / Plotly / Grafana panel 级重型库。
 - 不做拖拽缩放和 brush。
 - 不做后端按前端像素宽度动态 bucket。
-- 不对 off-hour 做强评价或绩效化解释。

@@ -45,7 +45,6 @@ type OverviewAnalytics = AnalyticsMeta & {
   user_gpu_hours?: UserGpuHours[];
   job_rankings?: JobRanking[];
   anomalies?: AnomalyItem[];
-  off_hours?: OffHours;
 };
 
 type UserGpuHours = {
@@ -86,14 +85,6 @@ type AnomalyItem = {
   pids?: number[];
   last_seen_at: number;
   reason: string;
-};
-
-type OffHours = {
-  night_job_count: number;
-  weekend_job_count: number;
-  night_gpu_hours: number;
-  weekend_gpu_hours: number;
-  top_users: { user: string; job_count: number }[];
 };
 
 type NodeAnalytics = AnalyticsMeta & {
@@ -769,7 +760,6 @@ export function createAnalyticsController({
     const users = payload?.user_gpu_hours || [];
     const jobs = payload?.job_rankings || [];
     const anomalies = payload?.anomalies || [];
-    const offHours = payload?.off_hours;
     return `
       <div class="analytics-grid" data-view-key="grid">
         <article class="analytics-card span-6">
@@ -816,11 +806,11 @@ export function createAnalyticsController({
         <div class="analytics-head analytics-inline-head span-12">
           <div>
             <span class="section-kicker">Operations</span>
-            <h2>Reservations and off-hour use</h2>
+            <h2>GPU reservations</h2>
             <p>${metaText(payload)}</p>
           </div>
         </div>
-        <article class="analytics-card span-6">
+        <article class="analytics-card span-12">
           <div class="card-title">
             <span><i data-lucide="alert-triangle"></i>Low-utilization reservations</span>
             <em>${anomalies.length} signals</em>
@@ -832,13 +822,6 @@ export function createAnalyticsController({
                 : emptyInline("no clear low-utilization reservations")
             }
           </div>
-        </article>
-        <article class="analytics-card span-6">
-          <div class="card-title">
-            <span><i data-lucide="moon"></i>Off-hour activity</span>
-            <em>Beijing time</em>
-          </div>
-          ${offHoursCard(offHours)}
         </article>
       </div>
     `;
@@ -1508,63 +1491,12 @@ function anomalyCard(item: AnomalyItem) {
   `;
 }
 
-function offHoursCard(item: OffHours | undefined) {
-  if (!item) {
-    return emptyInline("no off-hour data");
-  }
-  const topUser = item.top_users?.[0]?.user || "n/a";
-  return `
-    <p class="offhour-note">${escapeHtml(offHoursInsight(item))}</p>
-    <div class="offhour-grid">
-      <span><b>${item.night_job_count}</b><small>night jobs</small></span>
-      <span><b>${item.weekend_job_count}</b><small>weekend jobs</small></span>
-      <span><b>${fmtNumber(item.night_gpu_hours)}</b><small>night GPU h</small></span>
-      <span><b>${fmtNumber(item.weekend_gpu_hours)}</b><small>weekend GPU h</small></span>
-    </div>
-    <div class="top-users">
-      <span>Most active <b>${escapeHtml(topUser)}</b></span>
-      ${
-        (item.top_users || [])
-          .slice(0, 4)
-          .map((user) => `<span>${escapeHtml(offHourUserLabel(item, user.user))} <b>${user.job_count}</b></span>`)
-          .join("") || `<span>no off-hour users</span>`
-      }
-    </div>
-  `;
-}
-
 function compactPids(pids: number[]) {
   if (!pids.length) {
     return "pid n/a";
   }
   const sorted = [...pids].sort((a, b) => a - b);
   return sorted.length === 1 ? `pid ${sorted[0]}` : `pid ${sorted[0]} +${sorted.length - 1}`;
-}
-
-function offHoursInsight(item: OffHours) {
-  const nightBusy = item.night_job_count > 0 || item.night_gpu_hours > 0;
-  const weekendBusy = item.weekend_job_count > 0 || item.weekend_gpu_hours > 0;
-  if (!nightBusy && !weekendBusy) {
-    return "This range stayed quiet outside regular hours.";
-  }
-  if (!nightBusy && weekendBusy) {
-    return "Weekend compute stayed active while nights were quiet.";
-  }
-  if (nightBusy && !weekendBusy) {
-    return "Midnight to 6 a.m. still had training activity.";
-  }
-  return "Both nights and weekends carried meaningful GPU activity.";
-}
-
-function offHourUserLabel(item: OffHours, user: string) {
-  const top = item.top_users?.[0]?.user;
-  if (user === top && item.weekend_gpu_hours > item.night_gpu_hours) {
-    return "Weekend regular";
-  }
-  if (user === top && item.night_gpu_hours >= item.weekend_gpu_hours) {
-    return "Night regular";
-  }
-  return user;
 }
 
 type HourlyHeatCell = {
