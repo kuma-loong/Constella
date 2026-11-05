@@ -837,7 +837,7 @@ export function createAnalyticsController({
           <div class="card-title">
             <span><i data-lucide="line-chart"></i>${metricLabel(nodeMetric)} history</span>
             <em><span data-node-selection-summary>${selectionSummary(series)}</span> / ${
-              payload?.bucket_seconds ? `${formatBucket(payload.bucket_seconds)} buckets` : "rollup"
+              payload?.bucket_seconds ? `${formatBucket(payload.bucket_seconds)} resolution` : "resolution unavailable"
             }</em>
           </div>
           ${

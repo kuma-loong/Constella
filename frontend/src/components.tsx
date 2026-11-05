@@ -377,34 +377,25 @@ export function Fabric({ snapshot }: { snapshot: ClusterSnapshot }) {
   const configItems = fabricConfigItems(snapshot);
   return (
     <>
-      <div class="fabric-copy">
-        <div class="fabric-config">
-          <div class="fabric-title">
-            <span class="fabric-kicker">Cluster fabric</span>
-            <strong>{fabricConfigSummary(snapshot, configItems)}</strong>
-          </div>
-          <div class="fabric-config-chips">
-            {configItems.length ? (
-              configItems.map((item) => (
-                <span class="fabric-config-chip" key={`${item.name}:${item.architecture || ""}`}>
-                  <b>{item.count} ×</b>
-                  <span>
-                    <strong>{item.name}</strong>
-                    {item.architecture ? <small>{item.architecture}</small> : null}
-                  </span>
-                </span>
-              ))
-            ) : (
-              <span class="fabric-config-empty">waiting for GPU inventory</span>
-            )}
-          </div>
+      <div class="fabric-config">
+        <div class="fabric-title">
+          <span class="fabric-kicker">Cluster fabric</span>
+          <strong>{fabricConfigSummary(snapshot, configItems)}</strong>
         </div>
-        <div class="fabric-stats">
-          <span>
-            {snapshot.totals.online_node_count}/{snapshot.totals.node_count} online
-          </span>
-          <span>{clusterAcceleratorMeta(snapshot)}</span>
-          <span>{fmtGiB(snapshot.totals.memory_total_mb)} Memory total</span>
+        <div class="fabric-config-chips">
+          {configItems.length ? (
+            configItems.map((item) => (
+              <span class="fabric-config-chip" key={`${item.name}:${item.architecture || ""}`}>
+                <b>{item.count} ×</b>
+                <span>
+                  <strong>{item.name}</strong>
+                  {item.architecture ? <small>{item.architecture}</small> : null}
+                </span>
+              </span>
+            ))
+          ) : (
+            <span class="fabric-config-empty">waiting for GPU inventory</span>
+          )}
         </div>
       </div>
       <div class="fabric-node-grid">

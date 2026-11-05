@@ -30,15 +30,6 @@
     grid-template-columns: repeat(3, minmax(170px, 1fr));
   }
 
-  .fabric-copy {
-    grid-template-columns: 1fr;
-    align-items: flex-start;
-  }
-
-  .fabric-stats {
-    justify-content: flex-start;
-  }
-
   .fabric-node-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
