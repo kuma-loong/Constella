@@ -16,7 +16,7 @@
 .section-head h2 {
   margin: 0;
   color: var(--text);
-  font-size: 17px;
+  font-size: calc(17px * var(--font-scale));
   letter-spacing: -0.01em;
 }
 
@@ -24,7 +24,7 @@
   display: block;
   margin-top: 3px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .process-section.is-collapsed .section-head {
@@ -64,13 +64,13 @@
   border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: top;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
 }
 
 .analytics-table th,
 .analytics-table td {
   padding: 12px 10px;
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale));
 }
 
 .process-table th,
@@ -169,7 +169,7 @@
 
 .process-drawer-head span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale));
   font-weight: 720;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -178,7 +178,7 @@
 .process-drawer-head h2 {
   margin: 3px 0 0;
   overflow-wrap: anywhere;
-  font-size: 21px;
+  font-size: calc(21px * var(--font-scale));
   line-height: 1.1;
   letter-spacing: -0.025em;
 }
@@ -194,7 +194,7 @@
   border-bottom: 1px solid color-mix(in srgb, var(--warn) 28%, var(--border));
   color: var(--warn);
   background: var(--warn-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 680;
 }
 
@@ -227,7 +227,7 @@
 
 .process-meta dt {
   color: var(--muted);
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale));
   font-weight: 680;
 }
 
@@ -235,7 +235,7 @@
   margin-top: 3px;
   overflow-wrap: anywhere;
   color: var(--text);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
   font-weight: 680;
 }
 
@@ -254,13 +254,13 @@
 
 .process-section-label h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
   letter-spacing: -0.01em;
 }
 
 .process-section-label span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
 }
 
 .process-device-list {
@@ -277,7 +277,7 @@
 }
 
 .process-device-list strong {
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
 }
 
 .process-command {
@@ -290,7 +290,7 @@
   color: var(--text-soft);
   background: var(--surface-sunken);
   font-family: "Geist Mono Variable", ui-monospace, monospace;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   line-height: 1.55;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
@@ -301,7 +301,7 @@
   margin: 9px 0 0;
   overflow-wrap: anywhere;
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   line-height: 1.5;
 }
 
@@ -326,7 +326,7 @@
   background: var(--surface-raised);
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 720;
   text-decoration: none;
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
@@ -366,7 +366,7 @@
   border-radius: var(--radius-sm);
   color: var(--info);
   background: var(--info-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 750;
 }
 
@@ -402,7 +402,7 @@ svg {
 .analytics-head h2 {
   margin: 5px 0;
   color: var(--text);
-  font-size: clamp(22px, 2vw, 32px);
+  font-size: calc(clamp(22px, 2vw, 32px) * var(--font-scale));
   line-height: 1.15;
   letter-spacing: -0.025em;
   text-wrap: balance;
@@ -412,7 +412,7 @@ svg {
   max-width: 70ch;
   margin: 0;
   color: var(--muted);
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale));
   line-height: 1.45;
 }
 
@@ -464,14 +464,14 @@ svg {
   gap: 7px;
   min-width: 0;
   color: var(--text);
-  font-size: 17px;
+  font-size: calc(17px * var(--font-scale));
   font-weight: 780;
 }
 
 .card-title em {
   flex: 0 0 auto;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-style: normal;
   font-weight: 700;
 }
@@ -498,7 +498,7 @@ svg {
 
 .anomaly-card span {
   color: var(--muted);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
 }
 
 .anomaly-card div {
@@ -509,7 +509,7 @@ svg {
 
 .anomaly-card b {
   padding: 6px 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .chart-wrap,
@@ -564,7 +564,7 @@ svg {
   width: 100%;
   padding: 7px 10px 10px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   text-align: left;
   background: color-mix(in srgb, var(--surface) 72%, transparent);
 }
@@ -603,7 +603,7 @@ svg {
   color: var(--muted);
   background: var(--surface);
   cursor: pointer;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 700;
 }
 
@@ -617,7 +617,7 @@ svg {
   border-radius: var(--radius-sm);
   color: var(--muted);
   background: var(--surface);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 700;
 }
 
@@ -650,14 +650,14 @@ svg {
   gap: 6px;
   min-width: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 760;
 }
 
 .job-search > span,
 .job-metric-select > span:first-child {
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   font-weight: 760;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -674,7 +674,7 @@ svg {
   color: var(--text);
   background: var(--surface);
   font: inherit;
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale));
 }
 
 .job-search input:focus-visible {
@@ -695,7 +695,7 @@ svg {
   gap: 6px;
   min-width: 220px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   font-weight: 760;
 }
 
@@ -718,7 +718,7 @@ svg {
   color: var(--text);
   background: var(--surface);
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
   font-weight: 720;
 }
 
@@ -749,14 +749,14 @@ svg {
   border-radius: var(--radius-sm);
   color: var(--text-soft);
   background: var(--info-soft);
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale));
   font-weight: 620;
   line-height: 1.5;
 }
 
 .job-feature-note strong {
   color: var(--text);
-  font-size: 15px;
+  font-size: calc(15px * var(--font-scale));
   line-height: 1.35;
 }
 
@@ -813,12 +813,12 @@ svg {
 
 .job-list-item strong {
   color: var(--text);
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale));
 }
 
 .job-list-item span,
 .job-list-item small {
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .job-detail-strip {
@@ -831,7 +831,7 @@ svg {
 .job-resolution-tabs button {
   min-height: 30px;
   padding-inline: 10px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .job-title-controls {
@@ -843,7 +843,7 @@ svg {
 
 .job-title-controls em {
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-style: normal;
   font-weight: 760;
 }
@@ -857,13 +857,13 @@ svg {
   border-radius: var(--radius-sm);
   color: var(--muted);
   background: var(--surface-sunken);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   overflow-wrap: anywhere;
 }
 
 .job-detail-strip b {
   color: var(--text);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
 }
 
 .job-chart-wrap {
@@ -920,7 +920,7 @@ svg {
 .chart-modal-head h2 {
   margin: 3px 0 0;
   color: var(--text);
-  font-size: clamp(22px, 3vw, 38px);
+  font-size: calc(clamp(22px, 3vw, 38px) * var(--font-scale));
   line-height: 1.05;
   letter-spacing: -0.025em;
 }
@@ -944,7 +944,7 @@ svg {
   border-radius: var(--radius-sm);
   color: var(--text-soft);
   background: var(--warn-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 700;
 }
 
@@ -1059,7 +1059,7 @@ svg {
 .heat-row-label {
   align-self: center;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
@@ -1113,7 +1113,7 @@ svg {
   box-shadow: var(--shadow);
   color: var(--text);
   content: attr(data-tooltip);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 600;
   line-height: 1.45;
   opacity: 0;
@@ -1160,7 +1160,7 @@ svg {
   justify-content: start;
   height: 17px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale));
   font-weight: 700;
   line-height: 1;
 }
@@ -1179,7 +1179,7 @@ svg {
   max-width: 100%;
   margin-top: 14px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 650;
 }
 
@@ -1237,7 +1237,7 @@ svg {
   border: 1px dashed var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-sunken);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
 }
 
 .analytics-disabled {

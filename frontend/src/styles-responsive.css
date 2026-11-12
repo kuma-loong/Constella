@@ -54,6 +54,13 @@
 }
 
 @media (max-width: 760px) {
+  .node-connection-notice {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+    padding: 18px 16px;
+  }
+
   .shell {
     --panel-gap: 20px;
     --grid-gap: 14px;
@@ -205,7 +212,7 @@
   }
 
   .process-drawer-head h2 {
-    font-size: 19px;
+    font-size: calc(19px * var(--font-scale));
   }
 
   .process-meta > div,
@@ -223,7 +230,7 @@
   }
 
   .guide-drawer-head h2 {
-    font-size: 19px;
+    font-size: calc(19px * var(--font-scale));
   }
 
   .guide-head-actions {
@@ -248,7 +255,7 @@
   }
 
   .guide-lede p {
-    font-size: 16px;
+    font-size: calc(16px * var(--font-scale));
   }
 
   .guide-reading-note,

@@ -32,6 +32,7 @@ import type { AppExtension, AppRoute } from "./app-extension";
 import { clusterRefreshInterval, findNode, sameInterval } from "./cluster-utils";
 import { connectLive } from "./live-connection";
 import { TelemetryNotice } from "./telemetry-health";
+import { NodeConnectionNotice } from "./NodeConnectionState";
 import { fetchJson, RequestError } from "./requests";
 import { Fabric, GpuGrid, Header, ProcessSection, Summary } from "./components";
 import { PerformancePage } from "./performance";
@@ -381,6 +382,7 @@ export default function App({ extension }: { extension?: AppExtension }) {
           <div class="telemetry-notice" role="status">Live data could not be read. Showing the last valid snapshot while waiting for a valid update.</div>
         ) : null}
         <TelemetryNotice snapshot={snapshot} />
+        {route.kind === "node" ? <NodeConnectionNotice node={selectedNode} now={snapshot?.timestamp} /> : null}
         <section class="summary-grid" hidden={route.kind === "performance" || route.kind === "extension"}>
           <Summary snapshot={snapshot} route={coreRoute(route)} selectedNode={selectedNode} />
         </section>
@@ -407,7 +409,7 @@ export default function App({ extension }: { extension?: AppExtension }) {
           collapsed={collapsedSections.has("processes")}
         />
 
-        <section class="analytics-section" ref={nodeHistoryRef} hidden={route.kind !== "node"} />
+        <section class="analytics-section" id="nodeHistory" ref={nodeHistoryRef} hidden={route.kind !== "node"} />
 
         {route.kind === "extension" ? (
           <section class="lab-page">{extension?.renderPage(route, snapshot)}</section>

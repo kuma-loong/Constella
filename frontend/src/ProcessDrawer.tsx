@@ -5,10 +5,12 @@ import { jobsHref, type ProcessDetail } from "./process-details";
 export function ProcessDrawer({
   detail,
   active,
+  snapshotOnly = false,
   onClose,
 }: {
   detail: ProcessDetail;
   active: boolean;
+  snapshotOnly?: boolean;
   onClose: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -61,14 +63,15 @@ export function ProcessDrawer({
     >
       <header class="process-drawer-head">
         <div>
-          <span>{active ? "Running process" : "Process ended"}</span>
+          <span>{snapshotOnly ? "Process at last sample" : active ? "Running process" : "Process ended"}</span>
           <h2 id="process-drawer-title">{detail.task}</h2>
         </div>
         <button class="guide-close" type="button" data-process-close onClick={onClose} aria-label="Close process details">×</button>
       </header>
 
       <div class="process-drawer-body">
-        {!active ? <div class="process-ended-note">This process is no longer present in the latest snapshot.</div> : null}
+        {snapshotOnly ? <div class="process-ended-note">Node offline. Current process status is unknown; details show the last sample.</div>
+          : !active ? <div class="process-ended-note">This process is no longer present in the latest snapshot.</div> : null}
 
         <dl class="process-meta">
           <Meta label="User" value={detail.user} />

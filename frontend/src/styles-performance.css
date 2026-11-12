@@ -13,7 +13,7 @@
 .performance-head h2 {
   margin: 5px 0;
   color: var(--text);
-  font-size: clamp(24px, 2.3vw, 36px);
+  font-size: calc(clamp(24px, 2.3vw, 36px) * var(--font-scale));
   line-height: 1.1;
   letter-spacing: -0.03em;
 }
@@ -22,7 +22,7 @@
   max-width: 72ch;
   margin: 0;
   color: var(--muted);
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale));
   line-height: 1.45;
 }
 
@@ -74,7 +74,7 @@
 .performance-toolbar label > span,
 .gpu-switcher > span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale));
   font-weight: 750;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -90,7 +90,7 @@
   color: var(--text-soft);
   background: var(--surface-raised);
   cursor: pointer;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 700;
 }
 
@@ -127,7 +127,7 @@
   border-left: 3px solid var(--info);
   color: var(--muted);
   background: var(--info-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .selection-strip strong {
@@ -174,7 +174,7 @@
   padding: 10px 13px;
   border-bottom: 1px solid var(--border);
   background: var(--surface-raised);
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale));
   font-weight: 760;
 }
 
@@ -186,7 +186,7 @@
 .performance-chart-head small,
 .performance-chart-head em {
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   font-style: normal;
   font-weight: 550;
 }
@@ -226,12 +226,12 @@
 }
 
 .performance-chart-head strong {
-  font-size: 15px;
+  font-size: calc(15px * var(--font-scale));
 }
 
 .performance-chart-head small,
 .performance-chart-head em {
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .metric-guide-entry {
@@ -257,7 +257,7 @@
   border: 1px solid currentColor;
   border-radius: 50%;
   font-family: "Geist Mono Variable", ui-monospace, monospace;
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   font-weight: 760;
   line-height: 1;
 }
@@ -302,7 +302,7 @@
   min-width: 116px;
   color: var(--text-soft);
   font-family: "Geist Mono Variable", ui-monospace, monospace;
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   font-weight: 700;
 }
 
@@ -311,7 +311,7 @@
   grid-template-columns: 7px 1fr auto;
   align-items: center;
   gap: 7px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .performance-inspector i {
@@ -338,7 +338,7 @@
   margin: 0 10px;
   color: var(--muted);
   background: var(--surface-sunken);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .performance-summary {
@@ -354,7 +354,7 @@
   gap: 7px;
   min-width: 0;
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .performance-summary b {
@@ -366,7 +366,7 @@
 .performance-summary small {
   overflow: hidden;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -421,7 +421,7 @@
 
 .guide-drawer-head span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale));
   font-weight: 720;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -429,7 +429,7 @@
 
 .guide-drawer-head h2 {
   margin: 3px 0 0;
-  font-size: 21px;
+  font-size: calc(21px * var(--font-scale));
   line-height: 1.1;
   letter-spacing: -0.025em;
 }
@@ -464,7 +464,7 @@
   min-height: 28px;
   padding: 0 8px;
   border-radius: 5px;
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   font-weight: 700;
 }
 
@@ -481,7 +481,7 @@
   height: 34px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  font-size: 22px;
+  font-size: calc(22px * var(--font-scale));
   font-weight: 350;
   line-height: 1;
 }
@@ -515,7 +515,7 @@
   max-width: 52ch;
   margin: 0;
   color: var(--text-soft);
-  font-size: 17px;
+  font-size: calc(17px * var(--font-scale));
   font-weight: 520;
   line-height: 1.55;
   letter-spacing: -0.012em;
@@ -532,7 +532,7 @@
 .guide-patterns h3,
 .guide-limits h3 {
   margin: 0 0 11px;
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale));
   letter-spacing: -0.01em;
 }
 
@@ -542,7 +542,7 @@
   margin: 0;
   padding-left: 20px;
   color: var(--text-soft);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
   line-height: 1.5;
 }
 
@@ -556,7 +556,7 @@
 .guide-index > span,
 .guide-group-label {
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   font-weight: 720;
   letter-spacing: 0.045em;
 }
@@ -571,7 +571,7 @@
 .guide-index strong {
   min-width: 118px;
   color: var(--text-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 680;
 }
 
@@ -582,7 +582,7 @@
   color: var(--muted);
   background: transparent;
   cursor: pointer;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
   text-underline-offset: 3px;
@@ -642,14 +642,14 @@
 
 .guide-metric h3 {
   margin: 0;
-  font-size: 20px;
+  font-size: calc(20px * var(--font-scale));
   line-height: 1.2;
   letter-spacing: -0.025em;
 }
 
 .guide-metric header span {
   color: var(--muted);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
   font-weight: 560;
 }
 
@@ -658,7 +658,7 @@
 .guide-limits p {
   max-width: 62ch;
   color: var(--text-soft);
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale));
   line-height: 1.68;
   text-wrap: pretty;
 }
@@ -675,7 +675,7 @@
 .guide-reading-note strong,
 .guide-significance strong {
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   font-weight: 720;
   letter-spacing: 0.025em;
 }
@@ -695,7 +695,7 @@
 
 .guide-related > span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   font-weight: 700;
 }
 
@@ -715,7 +715,7 @@
 
 .guide-patterns > div > strong {
   color: var(--text);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   line-height: 1.5;
 }
 
@@ -732,7 +732,7 @@
   display: block;
   margin-top: 22px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   font-weight: 700;
 }
 
@@ -744,7 +744,7 @@
 
 .guide-limits a {
   color: var(--accent-strong);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
   font-weight: 620;
   text-underline-offset: 3px;
 }

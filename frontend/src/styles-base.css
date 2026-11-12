@@ -1,4 +1,7 @@
 :root {
+  /* Increase text size without scaling panels, controls, or chart geometry. */
+  --font-scale: 1.08;
+  font-size: calc(16px * var(--font-scale));
   color-scheme: light;
   --bg: #f7f7f4;
   --bg-soft: #e9ebe7;
@@ -243,7 +246,7 @@ a:focus-visible {
 
 .brand h1 {
   margin: 0;
-  font-size: clamp(20px, 1.9vw, 28px);
+  font-size: calc(clamp(20px, 1.9vw, 28px) * var(--font-scale));
   line-height: 1;
   letter-spacing: -0.02em;
 }
@@ -258,7 +261,7 @@ a:focus-visible {
   margin: 6px 0 0;
   overflow: hidden;
   color: var(--muted);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
   line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -337,7 +340,7 @@ a:focus-visible {
   border: 1px solid transparent;
   border-radius: var(--radius-control);
   color: var(--muted);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
   font-weight: 650;
   text-decoration: none;
   white-space: nowrap;
@@ -346,7 +349,7 @@ a:focus-visible {
 
 .node-link {
   padding-inline: 10px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .nav-link span {
@@ -412,7 +415,7 @@ a:focus-visible {
   color: var(--muted);
   background: transparent;
   cursor: pointer;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
@@ -456,7 +459,7 @@ a:focus-visible {
   border-radius: var(--radius-sm);
   color: var(--muted);
   background: var(--surface);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 750;
   text-transform: uppercase;
 }
@@ -508,7 +511,7 @@ a:focus-visible {
   min-width: 86px;
   padding: 0 12px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .icon-button:hover,
@@ -619,7 +622,7 @@ a:focus-visible {
 .metric-card small {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   line-height: 1.35;
 }
 
@@ -628,7 +631,7 @@ a:focus-visible {
   margin: 5px 0;
   overflow-wrap: anywhere;
   color: var(--text);
-  font-size: clamp(18px, 1.6vw, 24px);
+  font-size: calc(clamp(18px, 1.6vw, 24px) * var(--font-scale));
   line-height: 1.05;
   letter-spacing: -0.02em;
 }
@@ -719,7 +722,7 @@ a:focus-visible {
 .section-kicker {
   display: block;
   color: var(--muted);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
   font-weight: 650;
 }
 
@@ -729,7 +732,7 @@ a:focus-visible {
   margin-top: 4px;
   overflow-wrap: anywhere;
   color: var(--text);
-  font-size: clamp(20px, 2.2vw, 32px);
+  font-size: calc(clamp(20px, 2.2vw, 32px) * var(--font-scale));
   line-height: 1.15;
   letter-spacing: -0.025em;
   text-wrap: balance;
@@ -769,7 +772,7 @@ a:focus-visible {
 
 .fabric-config-chip b {
   color: var(--accent);
-  font-size: 16px;
+  font-size: calc(16px * var(--font-scale));
   line-height: 1;
   white-space: nowrap;
 }
@@ -783,7 +786,7 @@ a:focus-visible {
 
 .fabric-config-chip strong {
   color: var(--text);
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale));
   line-height: 1.2;
 }
 
@@ -792,7 +795,7 @@ a:focus-visible {
 .fabric-node-meta,
 .fabric-empty {
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   line-height: 1.3;
 }
 
@@ -811,6 +814,9 @@ a:focus-visible {
 }
 
 .fabric-node-card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: grid;
   grid-template-rows: auto auto 1fr;
   gap: 12px;
@@ -851,14 +857,14 @@ a:focus-visible {
 .fabric-node-head span {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .fabric-node-head strong {
   display: block;
   margin-top: 3px;
   overflow-wrap: anywhere;
-  font-size: 18px;
+  font-size: calc(18px * var(--font-scale));
   line-height: 1.15;
   letter-spacing: -0.01em;
 }
@@ -868,7 +874,7 @@ a:focus-visible {
   min-width: 62px;
   padding: 5px 8px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-style: normal;
   font-weight: 700;
   text-align: center;
@@ -901,13 +907,13 @@ a:focus-visible {
 .fabric-chip small {
   display: block;
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
 }
 
 .fabric-chip strong {
   display: block;
   margin: 2px 0;
-  font-size: 19px;
+  font-size: calc(19px * var(--font-scale));
   line-height: 1;
   letter-spacing: -0.02em;
 }
@@ -924,6 +930,101 @@ a:focus-visible {
 .fabric-node-card.is-error {
   border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
 }
+
+.fabric-node-card.is-offline {
+  background: color-mix(in srgb, var(--danger) 3%, var(--surface));
+}
+
+.fabric-node-card.is-offline .fabric-node-head em {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.fabric-node-card.is-offline .fabric-node-gpus {
+  filter: saturate(0);
+  opacity: .65;
+}
+
+.node-offline-seal {
+  position: absolute;
+  inset: 88px 0 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.node-offline-tape {
+  position: absolute;
+  top: 49%;
+  left: -18%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 136%;
+  height: 34px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 17%, transparent);
+  border-block: 1px solid color-mix(in srgb, var(--danger) 48%, transparent);
+  font-family: "Geist Mono Variable", monospace;
+  font-size: calc(15px * var(--font-scale));
+  font-weight: 800;
+  letter-spacing: .13em;
+  white-space: nowrap;
+  transform-origin: center;
+}
+
+.node-offline-tape::before,
+.node-offline-tape::after {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 5px;
+  content: "";
+  opacity: .55;
+  background: repeating-linear-gradient(120deg, var(--danger) 0 9px, transparent 9px 18px);
+}
+
+.node-offline-tape::after { inset: auto 0 0; }
+.node-offline-tape-labels { display: flex; flex-shrink: 0; gap: 26px; }
+.node-offline-tape.is-descending { top: 46%; transform: translateY(-50%) rotate(15deg); }
+.node-offline-tape.is-ascending { top: 57%; transform: translateY(-50%) rotate(-11deg); }
+.node-offline-tape.is-descending .node-offline-tape-labels { transform: translateX(-18px); }
+.node-offline-tape.is-ascending .node-offline-tape-labels { transform: translateX(34px); }
+
+.node-connection-notice {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: var(--panel-gap);
+  padding: 20px 24px;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
+  border-left: 4px solid var(--danger);
+  border-radius: var(--radius-panel);
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface));
+}
+
+.node-connection-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--danger);
+  font-family: "Geist Mono Variable", monospace;
+  font-size: calc(17px * var(--font-scale));
+  letter-spacing: .08em;
+}
+
+.node-connection-state svg { width: 22px; height: 22px; flex-shrink: 0; }
+.node-connection-copy { flex: 1; min-width: 0; }
+.node-connection-copy > strong { font-size: calc(15px * var(--font-scale)); }
+.node-connection-copy p { margin: 6px 0 0; color: var(--text-soft); font-size: calc(12px * var(--font-scale)); line-height: 1.6; }
+.node-connection-time { display: grid; gap: 4px; flex-shrink: 0; }
+.node-connection-time span, .node-connection-time small { color: var(--muted); font-size: calc(11px * var(--font-scale)); }
+.node-connection-time strong { font-family: "Geist Mono Variable", monospace; font-size: calc(13px * var(--font-scale)); }
+
+.node-connection-notice.is-stale { --danger: var(--warn); }
+.tone-muted .metric-icon { color: var(--muted); background: var(--surface-sunken); }
+.gpu-card.is-offline { filter: saturate(0); border-top-color: var(--border); }
+.gpu-card.is-offline .gpu-index { color: var(--muted); }
+.last-sample-label { padding: 3px 6px; margin-left: 10px; color: var(--text-soft); background: var(--surface-sunken); border: 1px solid var(--border); font-size: calc(9px * var(--font-scale)); letter-spacing: .06em; }
 
 .fabric-chip.is-idle {
   background: var(--surface-sunken);
@@ -971,14 +1072,14 @@ a:focus-visible {
 .gpu-index {
   display: inline-flex;
   color: var(--accent);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   font-weight: 750;
 }
 
 .gpu-card h3 {
   margin: 5px 0 4px;
   color: var(--text);
-  font-size: 20px;
+  font-size: calc(20px * var(--font-scale));
   line-height: 1.15;
   letter-spacing: -0.015em;
   text-wrap: balance;
@@ -988,7 +1089,7 @@ a:focus-visible {
   min-height: 18px;
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   line-height: 1.4;
 }
 
@@ -1057,7 +1158,7 @@ a:focus-visible {
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 6px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 
 .bar-label span {
@@ -1109,12 +1210,12 @@ a.performance-stats:hover > span {
 
 .performance-stats small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale));
 }
 
 .performance-stats strong {
   color: var(--text);
-  font-size: 13px;
+  font-size: calc(13px * var(--font-scale));
 }
 
 .performance-stats.is-warming strong {
@@ -1144,7 +1245,7 @@ a.performance-stats:hover > span {
   padding: 8px 0;
   color: var(--danger);
   border-top: 1px solid var(--border);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   overflow-wrap: anywhere;
 }
 .telemetry-notice a { color: var(--text); text-decoration-color: var(--warn); }

@@ -20,6 +20,7 @@ import {
 import { fmtDuration, fmtGiB, fmtPct } from "./format";
 import { buildProcessView, type ProcessDetail } from "./process-details";
 import { ProcessDrawer } from "./ProcessDrawer";
+import { lastSampleAge, NodeOfflineSeal } from "./NodeConnectionState";
 import { metricAvailable, reportingCount, telemetryIssues } from "./telemetry-health";
 import type { ClusterSnapshot, GpuInfo, LiveState, NodeSnapshot, ThemeMode } from "./types";
 
@@ -266,6 +267,19 @@ export function NodeSummary({ nodeId, node }: { nodeId: string; node: NodeSnapsh
   const totals = node.totals;
   const reporting = reportingCount(node.gpus, "utilization_gpu");
   const accelerator = node.source === "dcmi" || node.source === "npu-smi" ? "NPU" : "GPU";
+  if (node.status === "offline") {
+    const unavailable = [
+      { icon: "activity", label: `${accelerator} Avg` },
+      { icon: "database", label: "Memory Used" },
+      { icon: "zap", label: "Power" },
+      { icon: "users", label: "Tasks" },
+    ];
+    return <>
+      <MetricCard iconName="server" label="Node" value={node.node_id} meta="OFFLINE · last sample below" percent={0} tone="red" />
+      {unavailable.map(item => <MetricCard key={item.label} iconName={item.icon} label={item.label}
+        value="—" meta="Live reading unavailable" percent={0} tone="muted" />)}
+    </>;
+  }
   return (
     <>
       <MetricCard
@@ -400,7 +414,7 @@ export function Fabric({ snapshot }: { snapshot: ClusterSnapshot }) {
       </div>
       <div class="fabric-node-grid">
         {snapshot.nodes.length ? (
-          snapshot.nodes.map((node) => <FabricNodeCard key={node.node_id} node={node} />)
+          snapshot.nodes.map((node) => <FabricNodeCard key={node.node_id} node={node} now={snapshot.timestamp} />)
         ) : (
           <div class="empty-panel">no nodes</div>
         )}
@@ -409,12 +423,14 @@ export function Fabric({ snapshot }: { snapshot: ClusterSnapshot }) {
   );
 }
 
-export function FabricNodeCard({ node }: { node: NodeSnapshot }) {
+export function FabricNodeCard({ node, now }: { node: NodeSnapshot; now?: number }) {
+  const offline = node.status === "offline";
   return (
     <a
       class={`fabric-node-card is-${node.status} ${fabricNodeSizeClass(node)}`}
       href={`/nodes/${encodeURIComponent(node.node_id)}`}
       title={node.error || node.hostname}
+      aria-label={offline ? `${node.node_id}, offline. Open last sample and history.` : undefined}
     >
       <div class="fabric-node-head">
         <div>
@@ -424,7 +440,7 @@ export function FabricNodeCard({ node }: { node: NodeSnapshot }) {
         <em>{node.status}{node.gpus.some(gpu => telemetryIssues(gpu).length) ? " · degraded" : ""}</em>
       </div>
       <div class="fabric-node-meta">
-        {nodeAcceleratorMeta(node)} / {fmtPct(node.totals.avg_gpu_utilization)} avg / {fmtLatency(node)}
+        {nodeAcceleratorMeta(node)} / {offline ? `last sample ${lastSampleAge(node, now)}` : `${fmtPct(node.totals.avg_gpu_utilization)} avg / ${fmtLatency(node)}`}
       </div>
       <div class="fabric-node-gpus">
         {node.gpus.length ? (
@@ -439,6 +455,7 @@ export function FabricNodeCard({ node }: { node: NodeSnapshot }) {
           <span class="fabric-empty">no accelerators</span>
         )}
       </div>
+      {offline ? <NodeOfflineSeal /> : null}
     </a>
   );
 }
@@ -487,7 +504,7 @@ export function GpuCard({
   const basicStats = [
     { label: "Memory Util", value: metricAvailable(gpu, "utilization_mem") ? fmtPct(gpu.utilization_mem) : "n/a" },
     { label: "SM Clock", value: gpu.clock_sm_mhz ? `${gpu.clock_sm_mhz} MHz` : "n/a" },
-    { label: "Node / Latency", value: `${node.status} / ${fmtLatency(node)}` },
+    { label: "Node / Latency", value: node.status === "offline" ? "offline / last sample" : `${node.status} / ${fmtLatency(node)}` },
     { label: "Memory Clock", value: gpu.clock_mem_mhz ? `${gpu.clock_mem_mhz} MHz` : "n/a" },
   ];
   const gpm =
@@ -497,11 +514,12 @@ export function GpuCard({
       ? gpu.performance
       : null;
   return (
-    <article class="gpu-card">
+    <article class={`gpu-card ${node.status === "offline" ? "is-offline" : ""}`}>
       <div class="gpu-head">
         <div>
           <span class="gpu-index" title={gpu.uuid}>
             {isDualDie ? `Card ${gpu.card_id} · Die ${gpu.die_id ?? gpu.index}` : `${accelerator}${gpu.index}`}
+            {node.status === "offline" ? <span class="last-sample-label">LAST SAMPLE</span> : null}
           </span>
           <h3>{compactGpuName(gpu.name)}</h3>
           <p>{subtitle || gpu.uuid}</p>
@@ -637,9 +655,9 @@ export function ProcessSection({
     >
       <div class="section-head">
         <div>
-          <h2>Active accelerator tasks</h2>
+          <h2>{node?.status === "offline" ? "Tasks at last sample" : "Active accelerator tasks"}</h2>
           <span>
-            {node?.node_id || nodeId} / {view.rows.length} active
+            {node?.node_id || nodeId} / {view.rows.length} {node?.status === "offline" ? "recorded · current status unknown" : "active"}
           </span>
         </div>
         <button
@@ -696,7 +714,7 @@ export function ProcessSection({
             ) : (
               <tr>
                 <td colspan={8} class="empty">
-                  no active accelerator tasks
+                  {node?.status === "offline" ? "No tasks recorded at last sample" : "no active accelerator tasks"}
                 </td>
               </tr>
             )}
@@ -707,6 +725,7 @@ export function ProcessSection({
         <ProcessDrawer
           detail={liveSelection || selectedProcess}
           active={Boolean(liveSelection)}
+          snapshotOnly={node?.status === "offline"}
           onClose={closeProcess}
         />
       ) : null}
@@ -733,7 +752,7 @@ function headerLine(snapshot: ClusterSnapshot | null, route: Route, selectedNode
   const totals = snapshot.totals;
   if (route.kind === "node") {
     return selectedNode
-      ? `${selectedNode.node_id} / ${selectedNode.status} / ${nodeAcceleratorMeta(selectedNode)} / ${fmtLatency(selectedNode)} / seq ${selectedNode.seq}`
+      ? `${selectedNode.node_id} / ${selectedNode.status} / ${nodeAcceleratorMeta(selectedNode)} / ${selectedNode.status === "offline" ? `last sample ${lastSampleAge(selectedNode, snapshot.timestamp)}` : fmtLatency(selectedNode)} / seq ${selectedNode.seq}`
       : `${route.nodeId} / node not found / ${totals.node_count} nodes`;
   }
   const latency = maxClusterLatency(snapshot);
