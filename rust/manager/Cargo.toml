@@ -1,0 +1,13 @@
+[package]
+name = "constella-manager"
+version = "0.1.5"
+edition = "2024"
+[dependencies]
+constella-protocol = { path = "../protocol" }
+axum = { version = "0.8", features = ["ws"] }
+rusqlite = { version = "0.37", features = ["bundled", "hooks", "backup"] }
+subtle = "2"
+tower-http = { version = "0.6", features = ["fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync", "time", "signal"] }
