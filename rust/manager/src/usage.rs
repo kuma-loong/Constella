@@ -55,6 +55,20 @@ pub fn hours(models: &BTreeMap<String, f64>) -> (f64, f64) {
     (total / 3600.0, weighted / 3600.0)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overlapping_processes_on_one_physical_card_are_counted_once() {
+        let mut usage = CardUsage::default();
+        usage.add("node:ascend:0", "Ascend", 0.0, 8.0);
+        usage.add("node:ascend:0", "Ascend", 5.0, 10.0);
+        usage.add("node:ascend:1", "Ascend", 5.0, 10.0);
+        assert_eq!(usage.totals()["Ascend"], 15.0);
+    }
+}
+
 pub fn merge_intervals(mut intervals: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
     intervals.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
     let mut merged: Vec<(f64, f64)> = Vec::new();
@@ -71,16 +85,53 @@ pub fn merge_intervals(mut intervals: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
     merged
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct Segment {
+    pub start: f64,
+    pub end: f64,
+    pub count: u32,
+}
 
-    #[test]
-    fn overlapping_processes_on_one_physical_card_are_counted_once() {
-        let mut usage = CardUsage::default();
-        usage.add("node:ascend:0", "Ascend", 0.0, 8.0);
-        usage.add("node:ascend:0", "Ascend", 5.0, 10.0);
-        usage.add("node:ascend:1", "Ascend", 5.0, 10.0);
-        assert_eq!(usage.totals()["Ascend"], 15.0);
+pub fn segments<'a>(
+    records: impl Iterator<Item = (&'a str, f64, f64)>,
+    start: f64,
+    end: f64,
+) -> Vec<Segment> {
+    let mut cards = BTreeMap::<&str, Vec<_>>::new();
+    for (card, left, right) in records {
+        let (left, right) = (left.max(start), right.min(end));
+        if left < right {
+            cards.entry(card).or_default().push((left, right));
+        }
     }
+    let mut events = Vec::new();
+    for intervals in cards.into_values() {
+        for (a, b) in merge_intervals(intervals) {
+            events.extend([(a, 1), (b, -1)]);
+        }
+    }
+    events.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+    let mut segments: Vec<Segment> = Vec::new();
+    let mut active = 0_i32;
+    let mut previous = start;
+    for (at, delta) in events {
+        if active > 0 && at > previous {
+            let count = active as u32;
+            if let Some(last) = segments
+                .last_mut()
+                .filter(|last| last.end == previous && last.count == count)
+            {
+                last.end = at;
+            } else {
+                segments.push(Segment {
+                    start: previous,
+                    end: at,
+                    count,
+                });
+            }
+        }
+        previous = at;
+        active += delta;
+    }
+    segments
 }

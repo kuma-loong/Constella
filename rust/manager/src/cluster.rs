@@ -329,6 +329,11 @@ struct ClusterTotals {
     offline_node_count: usize,
 }
 
+pub struct ObservedNode {
+    pub complete: bool,
+    pub processes: Vec<(u32, Option<f64>)>,
+}
+
 pub struct Cluster {
     nodes: Mutex<BTreeMap<String, Node>>,
     snapshot_cache: Mutex<Option<CachedSnapshot>>,
@@ -448,6 +453,41 @@ impl Cluster {
 
     fn bump(&self) {
         self.updates.send_modify(|seq| *seq += 1);
+    }
+
+    pub fn observed_processes(
+        &self,
+        settings: Settings,
+        now: f64,
+    ) -> BTreeMap<String, ObservedNode> {
+        let nodes = self.nodes.lock().unwrap();
+        nodes
+            .iter()
+            .filter(|(_, node)| {
+                node.status(settings) == "online"
+                    && now - node.sample.sampled_at < (3.0 * settings.process_interval).max(30.0)
+            })
+            .map(|(id, node)| {
+                let gpus = &node.sample.gpus;
+                let observed = ObservedNode {
+                    complete: !gpus.is_empty()
+                        && gpus.iter().all(|gpu| {
+                            gpu.error.is_none()
+                                && gpu.other_users.is_empty()
+                                && !gpu.telemetry_errors.contains_key("processes")
+                        }),
+                    processes: gpus
+                        .iter()
+                        .flat_map(|gpu| {
+                            gpu.processes
+                                .iter()
+                                .map(|process| (process.pid, process.process_start_time))
+                        })
+                        .collect(),
+                };
+                (id.clone(), observed)
+            })
+            .collect()
     }
 
     pub fn snapshot(&self, settings: Settings) -> ClusterPayload {

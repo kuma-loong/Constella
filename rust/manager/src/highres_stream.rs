@@ -68,7 +68,9 @@ pub async fn upgrade(
     State(app): State<Arc<App>>,
     headers: HeaderMap,
 ) -> Response {
-    if app.highres_token.is_some() && !authorized(&headers, app.highres_token.as_deref()) {
+    if (app.highres_token.is_some() || app.lab.is_some())
+        && !authorized(&headers, app.highres_token.as_deref())
+    {
         return StatusCode::UNAUTHORIZED.into_response();
     }
     ws.max_message_size(1024)

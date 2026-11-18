@@ -1,10 +1,10 @@
-use crate::jobs;
+use crate::lab::ownership;
 use crate::{App, analytics, usage};
 use axum::extract::{Query, State};
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use constella_protocol::unix_time;
 use rusqlite::types::Value as SqlValue;
-use rusqlite::{Connection, Row, params, params_from_iter};
+use rusqlite::{Connection, params, params_from_iter};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -20,8 +20,24 @@ pub struct Filters {
 
 pub async fn endpoint(State(app): State<Arc<App>>, Query(filters): Query<Filters>) -> Response {
     let span = analytics::range_seconds(filters.range.as_deref(), 7 * DAY as i64);
-    analytics::cached(app, format!("overview:{span}"), move |conn| {
-        load(conn, span, unix_time())
+    let bindings = if app.lab.is_some() && app.database.is_some() {
+        match ownership::bindings(&app).await {
+            Ok(bindings) => Some(bindings),
+            Err(error) => {
+                eprintln!("Lab ranking bindings: {error}");
+                return (
+                    axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                    axum::Json(json!({"detail":"analytics_busy"})),
+                )
+                    .into_response();
+            }
+        }
+    } else {
+        None
+    };
+    let signature = bindings.as_ref().map(ownership::digest).unwrap_or_default();
+    analytics::cached(app, format!("overview:{span}:{signature}"), move |conn| {
+        load(conn, span, unix_time(), bindings.as_deref())
     })
     .await
 }
@@ -86,14 +102,19 @@ struct Ranking {
     weighted_hours: f64,
 }
 
-fn load(conn: &Connection, span: i64, now: f64) -> rusqlite::Result<Value> {
+fn load(
+    conn: &Connection,
+    span: i64,
+    now: f64,
+    bindings: Option<&[ownership::Binding]>,
+) -> rusqlite::Result<Value> {
     let start = now - span as f64;
-    let (users, jobs) = summarize(conn, start, now, true)?;
+    let (users, jobs) = summarize(conn, start, now, true, bindings)?;
     let anomaly_start = now - DAY;
     let anomaly_jobs = if span == DAY as i64 {
         None
     } else {
-        Some(summarize(conn, anomaly_start, now, false)?.1)
+        Some(summarize(conn, anomaly_start, now, false, None)?.1)
     };
     let anomalies = anomalies(
         conn,
@@ -142,98 +163,26 @@ fn user_rankings(users: BTreeMap<String, User>) -> Vec<Value> {
     }).collect()
 }
 
-const USAGE_SQL: &str =
-    "SELECT s.session_id, s.node_id, s.pid, s.ppid, s.process_start_time, s.parent_start_time,
-    s.user, s.task_name, s.first_seen_at, s.last_seen_at, s.status,
-    u.gpu_uuid, u.first_seen_at, u.last_seen_at, u.avg_memory_mb,
-    g.name, g.gpu_index, g.device_type, g.card_id, s.user_uid
-    FROM process_gpu_usages u
-    JOIN process_sessions s ON s.session_id = u.session_id
-    LEFT JOIN gpus g ON g.gpu_id = u.node_id || ':' || u.gpu_uuid
-    WHERE u.last_seen_at >= ? AND u.first_seen_at <= ?";
-
-struct UsageRow {
-    session: String,
-    node: String,
-    pid: i64,
-    user: Option<String>,
-    task: String,
-    session_start: f64,
-    session_end: f64,
-    status: String,
-    uuid: String,
-    index: Option<i64>,
-    first: f64,
-    last: f64,
-    memory: f64,
-    model: String,
-    card: String,
-    key: String,
-}
-
-impl UsageRow {
-    fn read(row: &Row<'_>) -> rusqlite::Result<Self> {
-        let node: String = row.get(1)?;
-        let uuid: String = row.get(11)?;
-        let user = row
-            .get::<_, Option<String>>(6)?
-            .filter(|user| !user.is_empty());
-        let pid = row.get(2)?;
-        let process_start = row.get(4)?;
-        let session_start = row.get(8)?;
-        let key = jobs::key(
-            &node,
-            user.as_deref().unwrap_or("unknown"),
-            pid,
-            row.get(3)?,
-            session_start,
-            process_start,
-            row.get(5)?,
-        );
-        let device_type: Option<String> = row.get(17)?;
-        let card_id = row
-            .get::<_, Option<String>>(18)?
-            .filter(|_| device_type.as_deref() == Some("ascend"));
-        let card = card_id.map_or_else(
-            || format!("{node}:{uuid}"),
-            |id| format!("{node}:ascend:{id}"),
-        );
-        Ok(Self {
-            session: row.get(0)?,
-            node,
-            pid,
-            user,
-            task: row.get(7)?,
-            session_start,
-            session_end: row.get(9)?,
-            status: row.get(10)?,
-            uuid,
-            index: row.get(16)?,
-            first: row.get(12)?,
-            last: row.get(13)?,
-            memory: row.get(14)?,
-            model: row
-                .get::<_, Option<String>>(15)?
-                .unwrap_or_else(|| "unknown".into())
-                .replace("NVIDIA ", ""),
-            card,
-            key,
-        })
-    }
-}
-
 fn summarize(
     conn: &Connection,
     start: f64,
     end: f64,
     include_users: bool,
+    bindings: Option<&[ownership::Binding]>,
 ) -> rusqlite::Result<(Vec<Value>, Vec<Ranking>)> {
-    let mut stmt = conn.prepare_cached(USAGE_SQL)?;
+    let mut stmt = conn.prepare_cached(ownership::USAGE_SQL)?;
     let mut rows = stmt.query(params![start, end])?;
     let mut users: BTreeMap<String, User> = BTreeMap::new();
     let mut jobs: BTreeMap<String, Job> = BTreeMap::new();
+    let mut owners = ownership::Rankings::default();
+    let identity = bindings.map(|bindings| ownership::History::new(bindings, start));
     while let Some(row) = rows.next()? {
-        let row = UsageRow::read(row)?;
+        let row = ownership::UsageRow::read(row)?;
+        if let Some(history) = &identity {
+            history.split(&row, end, |binding, first, last| {
+                owners.add(&row, binding, first, last)
+            });
+        }
         let first = row.first.max(start);
         let clipped_last = row.last.min(end);
         let seconds = clipped_last - first;
@@ -241,7 +190,7 @@ fn summarize(
             continue;
         }
         let user = row.user.unwrap_or_else(|| "unknown".into());
-        if include_users {
+        if include_users && identity.is_none() {
             let entry = users.entry(user.clone()).or_default();
             entry.cards.add(&row.card, &row.model, first, clipped_last);
             entry.jobs.insert(row.key.clone());
@@ -292,7 +241,12 @@ fn summarize(
             .total_cmp(&a.weighted_hours)
             .then_with(|| a.key.cmp(&b.key))
     });
-    Ok((user_rankings(users), ranked))
+    let users = if identity.is_some() {
+        owners.finish(start, end)
+    } else {
+        user_rankings(users)
+    };
+    Ok((users, ranked))
 }
 
 fn avg_utilization(
