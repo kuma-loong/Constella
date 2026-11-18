@@ -1,0 +1,13 @@
+[Unit]
+Description=Constella accelerator telemetry Agent
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/constella/agent.env
+ExecStart=%h/.local/lib/constella/constella-agent
+Restart=on-failure
+RestartSec=3s
+UMask=0077
+
+[Install]
+WantedBy=default.target

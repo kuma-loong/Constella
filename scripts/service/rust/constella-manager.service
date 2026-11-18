@@ -1,0 +1,13 @@
+[Unit]
+Description=Constella community Manager
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/constella/manager.env
+ExecStart=%h/.local/lib/constella/constella-manager
+Restart=on-failure
+RestartSec=3s
+UMask=0077
+
+[Install]
+WantedBy=default.target
