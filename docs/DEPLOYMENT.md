@@ -47,6 +47,8 @@ bin/stack.sh backup-lab /path/to/new-identity-backup.sqlite3
 
 `check` verifies local files and SSH access. `start` waits for Manager health before starting the local Agent, distributing the Agent to same-architecture remote nodes, and running the watchdog. Supervisors restart exited processes. The watchdog restarts missing remote Agent supervisors after hosts reconnect, while the Manager is healthy. Use `logs/` and `state/` for diagnosis. To also start a Tunnel during cutover, put `cloudflared` in `bin/`, set `TUNNEL_TOKEN` in `config/cloudflared.env`, and use `start --with-tunnel`. The Manager performs history maintenance in-process.
 
+For a full recovery of a deployment with Tunnel configured, run `bin/restart-production.sh`. It checks the configuration, stops the stack, restarts it, and verifies live nodes, continuing database writes, and Tunnel connections. Use `--status` for the same verification without restarting services.
+
 ### Agent environment
 
 ```dotenv
@@ -129,6 +131,8 @@ Each command opens the source read-only and requires a new destination. The iden
 把所选 Manager 和 Agent 二进制，以及 Manager 发布包里的 `ops/stack.sh` 和 `ops/process.sh` 放到运行目录的 `bin/`。在 `config/` 配置 `lab.env` 或 `community.env`、本机 `agent.env` 以及上方示例的 `stack.env` 和 `nodes.tsv`。节点表只列远端节点，每行填写节点 ID、SSH 别名及采样后端。
 
 `bin/stack.sh check` 只检查本机配置和远端 SSH。确认切换时执行 `bin/stack.sh start`，依次启动并检查 Manager、启动本机 Agent、将 Agent 分发给同架构的远端节点并启动看门狗。守护进程会重启退出的程序。Manager 健康时，看门狗会在远端恢复连接后补启缺失的 Agent 守护进程。用 `status` 查看状态、`stop` 停止这套服务，SQLite 在线备份用 `backup` 或 `backup-lab`。日志和 PID 分别存放在 `logs/` 和 `state/`。需要同时启动 Tunnel 时，把二进制和令牌分别放在 `bin/cloudflared` 和 `config/cloudflared.env`，再用 `start --with-tunnel`。Manager 进程内维护历史库。
+
+配置好 Tunnel 后，可用 `bin/restart-production.sh` 一次完成检查、停机、重启，并核验节点在线、数据库持续入库和 Tunnel 连接。加 `--status` 只核验状态。
 
 使用上方环境模板。保留原节点 ID，避免历史记录和 Lab 绑定失去关联。昇腾节点设置 `CONSTELLA_DEVICE_TYPE=ascend`，驱动库不在常规目录时用 `CONSTELLA_DCMI_LIBRARY` 指向绝对路径。Agent 的 `--sample-once` 用于独立检查驱动和权限。
 

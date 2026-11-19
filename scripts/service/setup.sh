@@ -17,7 +17,7 @@ case "$manager_name" in
   *) echo "Select Agent and Manager packages for the same version and architecture" >&2; exit 1 ;;
 esac
 [[ "$agent_name" == "constella-agent-$platform" && "$platform" == *-linux-"$(uname -m)" ]]
-for file in bin/constella-agent bin/constella-manager bin/stack.sh bin/process.sh "packages/$agent_name" "packages/$manager_name"; do
+for file in bin/constella-agent bin/constella-manager bin/stack.sh bin/process.sh bin/restart-production.sh "packages/$agent_name" "packages/$manager_name"; do
   if [[ -e "$runtime/$file" || -L "$runtime/$file" ]]; then
     echo "Runtime entry already exists: $runtime/$file" >&2
     exit 1
@@ -30,9 +30,14 @@ tar -xf "$manager" -C "$stage"
 test -x "$stage/$agent_name/constella-agent"
 test -x "$stage/$manager_name/constella-manager"
 test -r "$stage/$manager_name/web/index.html"
+for script in stack.sh process.sh restart-production.sh; do
+  test -x "$stage/$manager_name/ops/$script" || {
+    echo "Manager package is missing ops/$script" >&2; exit 1;
+  }
+done
 mkdir -p "$runtime"/{bin,config,packages,data,logs}
 cp -r "$stage/$agent_name" "$stage/$manager_name" "$runtime/packages/"
 ln -s "../packages/$agent_name/constella-agent" "$runtime/bin/constella-agent"
 ln -s "../packages/$manager_name/constella-manager" "$runtime/bin/constella-manager"
-install -m 700 "$stage/$manager_name/ops/"{stack,process}.sh "$runtime/bin/"
+install -m 700 "$stage/$manager_name/ops/"{stack,process,restart-production}.sh "$runtime/bin/"
 printf '%s\n' "Installed binaries and frontend in $runtime" "Configure files under $runtime/config and run bin/stack.sh check"

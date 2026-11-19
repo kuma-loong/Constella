@@ -57,7 +57,7 @@ install -m 0644 scripts/service/constella-manager.service "$stage/$manager_name/
 install -m 0644 scripts/service/constella-lab.service "$stage/$lab_name/"
 for package in "$manager_name" "$lab_name"; do
     install -d "$stage/$package/ops"
-    install -m 0755 scripts/service/{stack,process}.sh "$stage/$package/ops/"
+    install -m 0755 scripts/service/{stack,process,restart-production}.sh "$stage/$package/ops/"
 done
 
 (
