@@ -2,9 +2,9 @@ use axum::{body::Bytes, extract::ws::Utf8Bytes};
 use constella_protocol::{Gpu, Sample, Settings, unix_time};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tokio::sync::watch;
 
 const HISTORY_SIZE: usize = 120;
 static EMPTY_HISTORY: BTreeMap<String, Series> = BTreeMap::new();
@@ -334,14 +334,16 @@ pub struct ObservedNode {
     pub processes: Vec<(u32, Option<f64>)>,
 }
 
+#[derive(Default)]
 pub struct Cluster {
     nodes: Mutex<BTreeMap<String, Node>>,
     snapshot_cache: Mutex<Option<CachedSnapshot>>,
-    pub updates: watch::Sender<u64>,
+    seq: AtomicU64,
 }
 
 #[derive(Clone)]
 pub struct ClusterPayload {
+    pub seq: u64,
     pub json: Bytes,
     pub text: Utf8Bytes,
 }
@@ -351,16 +353,6 @@ struct CachedSnapshot {
     settings: Settings,
     expires_at: Instant,
     payload: ClusterPayload,
-}
-
-impl Default for Cluster {
-    fn default() -> Self {
-        Self {
-            nodes: Mutex::default(),
-            snapshot_cache: Mutex::default(),
-            updates: watch::channel(0).0,
-        }
-    }
 }
 
 impl Cluster {
@@ -452,7 +444,11 @@ impl Cluster {
     }
 
     fn bump(&self) {
-        self.updates.send_modify(|seq| *seq += 1);
+        self.seq.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn sequence(&self) -> u64 {
+        self.seq.load(Ordering::Relaxed)
     }
 
     pub fn observed_processes(
@@ -496,7 +492,7 @@ impl Cluster {
 
     fn snapshot_at(&self, settings: Settings, now: Instant) -> ClusterPayload {
         let nodes = self.nodes.lock().unwrap();
-        let seq = *self.updates.borrow();
+        let seq = self.sequence();
         let mut cache = self.snapshot_cache.lock().unwrap();
         if let Some(snapshot) = &*cache
             && snapshot.seq == seq
@@ -557,7 +553,7 @@ impl Cluster {
         .expect("cluster response is serializable");
         let json = Bytes::from(json);
         let text = Utf8Bytes::try_from(json.clone()).expect("serialized JSON is UTF-8");
-        let payload = ClusterPayload { json, text };
+        let payload = ClusterPayload { seq, json, text };
         *cache = Some(CachedSnapshot {
             seq,
             settings,
@@ -590,7 +586,7 @@ impl Cluster {
             }
         }
         serde_json::json!({
-            "ok": true, "seq": *self.updates.borrow(), "source": "manager",
+            "ok": true, "seq": self.sequence(), "source": "manager",
             "agent_ingest_enabled": agent_ingest_enabled, "node_count": nodes.len(),
             "online_node_count": online, "gpu_count": gpu_count,
             "telemetry": {"degraded_gpu_count": degraded, "invalid_metric_count": invalid},

@@ -36,6 +36,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use subtle::ConstantTimeEq;
 use tokio::sync::watch;
+use tokio::time::{Instant, Interval, MissedTickBehavior, interval_at};
 use tower_http::services::{ServeDir, ServeFile};
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -275,40 +276,60 @@ async fn session_close(session: Option<lab::Session>, app: Arc<App>) -> u16 {
 }
 
 async fn publish_cluster(mut socket: WebSocket, app: Arc<App>, session: Option<lab::Session>) {
+    const HEARTBEAT: Duration = Duration::from_secs(5);
     let session_end = session_close(session, app.clone());
     tokio::pin!(session_end);
-    let mut updates = app.cluster.updates.subscribe();
+    let mut settings_rx = app.settings.subscribe();
+    let mut settings = settings_rx.borrow_and_update().effective();
+    let period = Duration::from_secs_f64(settings.refresh_interval);
+    let initial = app.cluster.snapshot(settings);
+    if !send_text(&mut socket, initial.text).await {
+        return;
+    }
+    let mut last_sent = (initial.seq, settings, Instant::now());
+    let mut ticks = cluster_ticks(last_sent.2 + period, period);
     loop {
-        updates.borrow_and_update();
-        let settings = app.settings.borrow().effective();
-        let payload = app.cluster.snapshot(settings);
-        if !send_text(&mut socket, payload.text).await {
-            return;
-        }
-        let heartbeat = tokio::time::sleep(Duration::from_secs(5));
-        tokio::pin!(heartbeat);
-        loop {
-            tokio::select! {
-                code = &mut session_end => {
-                    let _ = socket.send(Message::Close(Some(CloseFrame { code, reason: "".into() }))).await;
+        tokio::select! {
+            code = &mut session_end => {
+                let _ = socket.send(Message::Close(Some(CloseFrame { code, reason: "".into() }))).await;
+                return;
+            }
+            _ = ticks.tick() => {
+                let seq = app.cluster.sequence();
+                let (previous, sent_settings, sent) = last_sent;
+                if previous == seq && sent_settings == settings && sent.elapsed() < HEARTBEAT {
+                    continue;
+                }
+                let payload = app.cluster.snapshot(settings);
+                last_sent = (payload.seq, settings, Instant::now());
+                if !send_text(&mut socket, payload.text).await {
                     return;
                 }
-                _ = &mut heartbeat => break,
-                result = updates.changed() => {
-                    if result.is_err() {
-                        return;
-                    }
-                    // Let near-simultaneous samples from several nodes share a frame.
-                    tokio::time::sleep(Duration::from_millis(25)).await;
-                    break;
+            }
+            result = settings_rx.changed() => {
+                if result.is_err() {
+                    return;
                 }
-                message = socket.recv() => match message {
-                    None | Some(Err(_)) | Some(Ok(Message::Close(_))) => return,
-                    _ => {}
+                let next = settings_rx.borrow_and_update().effective();
+                if next.refresh_interval != settings.refresh_interval {
+                    let period = Duration::from_secs_f64(next.refresh_interval);
+                    ticks = cluster_ticks(Instant::now() + period, period);
                 }
+                settings = next;
+            }
+            message = socket.recv() => match message {
+                None | Some(Err(_)) | Some(Ok(Message::Close(_))) => return,
+                _ => {}
             }
         }
     }
+}
+
+fn cluster_ticks(start: Instant, period: Duration) -> Interval {
+    let mut ticks = interval_at(start, period);
+    // Resume at the configured pace after delays instead of sending a catch-up burst.
+    ticks.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    ticks
 }
 
 async fn agent_ws(

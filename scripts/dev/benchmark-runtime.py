@@ -137,7 +137,9 @@ async def observe(ws, processes, duration):
         for name, process in processes.items()
     }
     span = samples[-1]["sampled_at"] - initial["sampled_at"]
-    expected = max(len(samples), round(span / initial["refresh_interval"]))
+    # A browser frame can represent multiple samples from the same Agent.
+    sent_samples = last - initial["seq"]
+    expected = max(sent_samples, round(span / initial["refresh_interval"]))
     return {
         "gpu_count": len(initial["gpus"]),
         "gpu_name": initial["gpus"][0]["name"],
@@ -147,9 +149,10 @@ async def observe(ws, processes, duration):
         "process_count_at_start": initial["totals"]["active_processes"],
         "observed_seconds": round(runtime, 3),
         "observed_samples": len(samples),
+        "agent_samples": sent_samples,
         "expected_samples": expected,
-        "missing_sample_rate": round((expected - len(samples)) / expected, 6),
-        "skipped_sequence_numbers": last - initial["seq"] - len(samples),
+        "missing_sample_rate": round((expected - sent_samples) / expected, 6),
+        "skipped_sequence_numbers": sent_samples - len(samples),
         "sample_elapsed_ms": dist([node["elapsed_ms"] for node in samples]),
         "performance": {
             str(gpu["index"]): {
