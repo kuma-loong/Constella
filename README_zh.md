@@ -14,7 +14,7 @@
 
 <div align="center" id="constella-badges">
 
-[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Rust](https://img.shields.io/badge/Rust-2024-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![NVIDIA NVML](https://img.shields.io/badge/NVIDIA-NVML-76B900?logo=nvidia&logoColor=white)](https://docs.nvidia.com/deploy/nvml-api/)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/kuma-loong/Constella)
 
@@ -81,7 +81,7 @@ Constella 是一个面向实验室、AI 团队和个人计算服务器的轻量�
 
 - 不需要 root 权限、system service、Prometheus 或 Grafana。
 - 一个 manager 进程接收本机和远端加速器 agent 的数据。
-- 远端节点只需要 Python、对应厂商驱动/运行时和 SSH 访问权限。
+- 远端节点运行 Agent 二进制和对应厂商驱动或运行时，Manager 通过 SSH 分发 Agent。
 
 ## 为什么是 Constella？
 

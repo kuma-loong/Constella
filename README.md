@@ -14,7 +14,7 @@
 
 <div align="center" id="constella-badges">
 
-[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Rust](https://img.shields.io/badge/Rust-2024-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![NVIDIA NVML](https://img.shields.io/badge/NVIDIA-NVML-76B900?logo=nvidia&logoColor=white)](https://docs.nvidia.com/deploy/nvml-api/)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/kuma-loong/Constella)
 
@@ -83,7 +83,7 @@ without requiring a heavyweight Prometheus/Grafana stack.
 
 - No root privileges, system service, Prometheus, or Grafana required.
 - One manager process receives data from local and remote accelerator agents.
-- Remote nodes only need Python, their vendor driver/runtime, and SSH access.
+- Remote nodes run the Agent binary with their vendor driver/runtime. The Manager uses SSH to deploy the Agent.
 
 ## Why Constella?
 
