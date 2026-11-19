@@ -39,7 +39,7 @@ pub fn open(path: &Path) -> Result<Connection, crate::Error> {
 
 fn initialize(conn: &mut Connection) -> rusqlite::Result<()> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    tx.execute_batch(include_str!("../sql/lab_schema.sql"))?;
+    tx.execute_batch(include_str!("lab_schema.sql"))?;
     let lacks_onboarding = !tx.query_row(
         "SELECT EXISTS(
             SELECT 1 FROM pragma_table_info('lab_users') WHERE name = 'onboarding_completed_at'

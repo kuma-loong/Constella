@@ -3,7 +3,7 @@ name = "constella-manager"
 version = "0.1.5"
 edition = "2024"
 [dependencies]
-constella-protocol = { path = "../protocol" }
+constella-protocol = { path = "protocol" }
 axum = { version = "0.8", features = ["ws"] }
 rusqlite = { version = "0.37", features = ["bundled", "hooks", "backup"] }
 subtle = "2"

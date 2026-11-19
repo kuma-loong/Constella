@@ -10,6 +10,7 @@ mod highres_stream;
 mod history;
 mod job_curves;
 mod jobs;
+#[path = "../../lab/src/mod.rs"]
 mod lab;
 mod overview;
 mod result_cache;

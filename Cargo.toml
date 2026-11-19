@@ -1,3 +1,3 @@
 [workspace]
 resolver = "3"
-members = ["rust/agent", "rust/manager", "rust/protocol"]
+members = ["packages/backend/agent", "packages/backend", "packages/backend/protocol"]
