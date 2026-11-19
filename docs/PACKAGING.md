@@ -31,7 +31,7 @@ TUI distribution is installed.
 ## Build all distributions
 
 ```bash
-./scripts/package/build.sh
+./scripts/package/build-legacy.sh
 ```
 
 The script copies Git-tracked working-tree files to a temporary directory under
@@ -44,7 +44,7 @@ removed when the build exits; `dist/` remains ignored by Git.
 An existing output directory must be empty. To use another location:
 
 ```bash
-./scripts/package/build.sh --out-dir dist/review-0.1.5
+./scripts/package/build-legacy.sh --out-dir dist/review-0.1.5
 ```
 
 Before upload, verify the artifact set and metadata:

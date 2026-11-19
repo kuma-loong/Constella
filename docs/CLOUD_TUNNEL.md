@@ -7,7 +7,7 @@ Cloudflare Tunnel is optional. Use it when you want to expose Constella through 
 Keep the GPU service bound to localhost:
 
 ```bash
-HOST=127.0.0.1 PORT=8765 ./scripts/service/start.sh
+HOST=127.0.0.1 PORT=8765 ./scripts/service/start-legacy.sh
 ```
 
 ## Configure Cloudflare
@@ -52,9 +52,9 @@ chmod 600 run/cloudflared.env
 ## Start, Inspect, and Stop
 
 ```bash
-./scripts/tunnel/start.sh
-./scripts/tunnel/status.sh
-./scripts/tunnel/stop.sh
+./scripts/tunnel/start-legacy.sh
+./scripts/tunnel/status-legacy.sh
+./scripts/tunnel/stop-legacy.sh
 ```
 
 The tunnel script passes the token through the `TUNNEL_TOKEN` environment variable, so it does not appear in command-line arguments. Logs are written to `logs/cloudflared.log`; the PID is written to `run/cloudflared.pid`.

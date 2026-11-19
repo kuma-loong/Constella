@@ -100,109 +100,31 @@ Constella sits between terminal monitoring and a full observability stack: more 
 
 ## Quick Start
 
-Install the PyPI distribution and start the managed local stack:
+Build the release archives with `./scripts/package/build.sh`, or use a matching set of release archives. Follow the [deployment guide](docs/DEPLOYMENT.md) to install the binaries and configure the Manager and Agent.
+
+From the runtime directory, check the configuration and start the stack.
 
 ```bash
-pip install constella-gpu
-constella service start
+bin/stack.sh check
+bin/stack.sh start
+bin/stack.sh status
 ```
 
-`constella-gpu` is the full installation with backend, Web UI, and TUI. Smaller
-deployments can install `constella-gpu-web`, `constella-gpu-tui`, or
-`constella-gpu-backend`; see [Packaging](docs/PACKAGING.md) for the feature
-matrix.
+Open `/overview` on the Manager address. Use `bin/stack.sh stop` to stop the stack. For Ascend, set `CONSTELLA_DEVICE_TYPE=ascend` in the Agent environment.
 
-On an Ascend host, use `constella service start --device ascend`.
-
-From a source checkout, start the manager and local accelerator agent with:
-
-```bash
-cd Constella
-./scripts/service/setup.sh
-./scripts/service/start.sh
-```
-
-For an Ascend host, select the hardware backend explicitly:
-
-```bash
-./scripts/service/start.sh --device ascend
-```
-
-Open:
-
-```text
-http://127.0.0.1:8765/overview
-```
-
-Or stay in the terminal with the keyboard-first TUI:
-
-```bash
-constella tui
-```
-
-The TUI connects to the same realtime cluster stream as the Web UI. Use
-`constella tui --url https://gpu.example.com` for a remote manager, or run the
-equivalent `constella-tui` entry point.
-
-The fifth TUI view presents compact high-resolution NVIDIA GPM performance
-curves and uses the same node, GPU, and time-range controls as the other views.
-
-If the service runs on a remote server, forward the port from your local machine:
-
-```bash
-ssh -N -L 8765:127.0.0.1:8765 <user>@<server>
-```
-
-Enable SQLite history when workload history and analytics are needed:
-
-```bash
-DB_PATH=run/constella.db ./scripts/service/start.sh
-```
-
-Start the high-resolution sidecar when short-job curve cache should run outside the manager process:
-
-```bash
-DB_PATH=run/constella.db HIGHRES_SIDECAR=1 ./scripts/service/start.sh
-```
-
-The sidecar listens on `127.0.0.1:8766` by default and subscribes to the manager stream at `ws://127.0.0.1:8765/api/highres/stream`. Simple deployments can skip the sidecar; the manager still exposes the built-in `/api/highres/*` endpoints.
-
-NVML GPM is automatically probed on NVIDIA agents and remains isolated from the
-base NVML path. Set `CONSTELLA_NVML_GPM=off` to disable collection, or
-`CONSTELLA_NVIDIA_GPM_ROLLUP=off` to keep realtime performance data without
-persisting its rollups. `CONSTELLA_NVIDIA_GPM_HIGHRES=off` disables only the
-in-memory performance curves. Ascend agents never initialize the NVIDIA provider.
+The TUI uses the same cluster stream as the Web interface. Run `constella-tui --url https://gpu.example.com` with the [PyPI client](docs/PYPI_CLI.md).
 
 ## Cluster Mode
 
-Prepare the remote node manifest:
+List remote nodes in `config/nodes.tsv` with their node IDs, SSH aliases, and accelerator backends. The Manager host uses key-based SSH to distribute Agents using the address in `CONSTELLA_CLUSTER_URL`. The local Agent uses `config/agent.env`.
 
 ```bash
-cp docs/nodes.example.yaml nodes.yaml
+bin/stack.sh cluster-start
+bin/stack.sh cluster-status
+bin/stack.sh cluster-stop
 ```
 
-Edit `manager_url`, `manager_hostname`, and each node's `device` (`nvidia` or
-`ascend`), then configure passwordless SSH from the manager host to each node.
-
-```mermaid
-flowchart LR
-  M["Manager<br/>FastAPI + Web UI"] -->|"SSH setup/control"| A["gpu-node-a<br/>agent"]
-  M -->|"SSH setup/control"| B["gpu-node-b<br/>agent"]
-  M -->|"SSH setup/control"| C["gpu-node-c<br/>agent"]
-  A -->|"WebSocket samples"| M
-  B -->|"WebSocket samples"| M
-  C -->|"WebSocket samples"| M
-```
-
-Start remote GPU agents:
-
-```bash
-./scripts/cluster/start.sh
-```
-
-- `scripts/service/start.sh` creates `run/agent-token` on first local-agent startup, and `scripts/cluster/start.sh` uses that token for remote agents.
-- If the manager host should not monitor local GPUs, start with `LOCAL_AGENT=0`.
-- Remote nodes do not need `uv`; the manager syncs a minimal agent runtime.
+The watchdog starts missing remote Agent supervisors while Manager is healthy. See the [deployment guide](docs/DEPLOYMENT.md) for ports, backups, and Tunnel setup.
 
 ## Ascend NPU support
 
@@ -222,14 +144,14 @@ counted as one active process.
 
 ```mermaid
 flowchart LR
-  LA["Local agent<br/>selected device chain"] -->|"WS /api/agents/ws"| M["Manager<br/>FastAPI ingest"]
+  LA["Local agent<br/>selected device chain"] -->|"WS /api/agents/ws"| M["Manager<br/>Telemetry ingest"]
   RA["Remote agents<br/>NVML→nvidia-smi or DCMI→npu-smi"] -->|"WS /api/agents/ws"| M
   M --> S["ClusterState<br/>latest snapshots + 120-point history"]
   S --> API["HTTP /api/cluster/snapshot"]
   S --> WS["WebSocket /ws/cluster"]
   S -.optional.-> DB["SQLite<br/>rollups + sessions"]
   DB -.optional.-> AN["Analytics + job curves"]
-  S -.optional.-> HR["Highres cache / sidecar"]
+  S -.optional.-> HR["HighRes cache"]
   API --> UI["Vite TypeScript UI"]
   WS --> UI
   AN --> UI
@@ -241,7 +163,7 @@ The manager does not sample GPUs directly. Local and remote nodes both report cu
 ## Docs
 
 - [Design](docs/DESIGN.md): architecture, data path, low-overhead strategy, and data contracts.
-- [Operations](docs/OPERATIONS.md): startup, access, cluster agent management, status, and verification commands.
+- [Operations](docs/DEPLOYMENT.md): startup, access, cluster agent management, status, and verification commands.
 - [SQLite History](docs/HISTORY.md): persistence, rollups, maintenance, and job curves.
 - [NVIDIA GPM Performance](docs/NVIDIA_GPM.md): requirements, metric interpretation, retention, and troubleshooting.
 - [Cloudflare Tunnel](docs/CLOUD_TUNNEL.md): domain access without opening an inbound server port.
@@ -255,7 +177,7 @@ The manager does not sample GPUs directly. Local and remote nodes both report cu
 ## Project Layout
 
 ```text
-packages/backend/       Python backend, agents, cluster manager, samplers, API/WebSocket
+packages/backend/       Manager, Agent, shared protocol, API and WebSocket
 packages/lab/           Optional Access-protected lab identity and account-binding edition
 packages/web/           Installable production Web assets
 packages/tui/           Textual terminal client, theme, and usage notes

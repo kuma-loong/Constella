@@ -21,7 +21,7 @@ this path with `CONSTELLA_NVIDIA_GPM_ROLLUP=off`.
 Start the manager with `DB_PATH`:
 
 ```bash
-DB_PATH=run/constella.db RAW_SNAPSHOT_SECONDS=30 ./scripts/service/start.sh
+DB_PATH=run/constella.db RAW_SNAPSHOT_SECONDS=30 ./scripts/service/start-legacy.sh
 ```
 
 `RAW_SNAPSHOT_SECONDS` controls optional low-frequency raw debug snapshots. It defaults to `0`, which disables raw snapshot writes. Raw snapshot retention is controlled by `RAW_RETENTION_SECONDS` during maintenance.
@@ -56,7 +56,7 @@ filesystem and workload measurements rather than treating this value as a guaran
 Run the bundled maintenance script:
 
 ```bash
-./scripts/maintenance/db.sh
+./scripts/maintenance/db-legacy.sh
 ```
 
 Or run the same command directly:
@@ -71,7 +71,7 @@ The maintenance script accepts retention settings:
 DB_PATH=run/constella.db \
 RAW_RETENTION_SECONDS=43200 \
 SESSION_STALE_SECONDS=300 \
-./scripts/maintenance/db.sh
+./scripts/maintenance/db-legacy.sh
 ```
 
 Individual commands are also available:

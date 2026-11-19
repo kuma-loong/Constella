@@ -4,19 +4,19 @@
 
 ```bash
 cd Constella
-./scripts/service/setup.sh
+./scripts/service/setup-legacy.sh
 ```
 
 ## 后台启动
 
 ```bash
-./scripts/service/start.sh
+./scripts/service/start-legacy.sh
 ```
 
 可配置项：
 
 ```bash
-HOST=127.0.0.1 PORT=8765 REFRESH=1.0 PROCESS_REFRESH=5.0 ./scripts/service/start.sh
+HOST=127.0.0.1 PORT=8765 REFRESH=1.0 PROCESS_REFRESH=5.0 ./scripts/service/start-legacy.sh
 ```
 
 默认会启动两个后台进程：
@@ -29,13 +29,13 @@ local agent: constella agent --manager-url ws://127.0.0.1:8765/api/agents/ws
 如果本机只作为 manager，不采集本机 GPU：
 
 ```bash
-LOCAL_AGENT=0 ./scripts/service/start.sh
+LOCAL_AGENT=0 ./scripts/service/start-legacy.sh
 ```
 
 本机 agent 开启时，脚本会在缺省情况下自动创建 `run/agent-token`，权限为 `600`。也可以显式配置 agent token：
 
 ```bash
-AGENT_TOKEN_FILE=run/agent-token ./scripts/service/start.sh
+AGENT_TOKEN_FILE=run/agent-token ./scripts/service/start-legacy.sh
 ```
 
 manager 日志写入 `logs/constella.log`，PID 写入 `run/constella.pid`。本机 agent 日志写入 `logs/local-agent.log`，PID 写入 `run/local-agent.pid`，状态文件写入 `run/local-agent-state.json`。
@@ -56,14 +56,14 @@ http://127.0.0.1:8765/overview
 
 ## 集群 agent 管理
 
-准备 manager agent token。若本机 agent 已通过 `scripts/service/start.sh` 启动，通常已经存在 `run/agent-token`：
+准备 manager agent token。若本机 agent 已通过 `scripts/service/start-legacy.sh` 启动，通常已经存在 `run/agent-token`：
 
 ```bash
 mkdir -p run
 umask 077
 printf '%s\n' 'replace-with-a-random-token' > run/agent-token
 chmod 600 run/agent-token
-AGENT_TOKEN_FILE=run/agent-token ./scripts/service/start.sh
+AGENT_TOKEN_FILE=run/agent-token ./scripts/service/start-legacy.sh
 ```
 
 准备节点清单：
@@ -78,22 +78,22 @@ cp docs/nodes.example.yaml nodes.yaml
 ws://manager-host:8765/api/agents/ws
 ```
 
-`manager_hostname` 是 manager 主机本机 agent 在前端中的显示名，`scripts/service/start.sh` 会把它作为默认 `LOCAL_AGENT_NODE_ID`。也可以用环境变量临时覆盖：
+`manager_hostname` 是 manager 主机本机 agent 在前端中的显示名，`scripts/service/start-legacy.sh` 会把它作为默认 `LOCAL_AGENT_NODE_ID`。也可以用环境变量临时覆盖：
 
 ```bash
-MANAGER_HOSTNAME=H100 ./scripts/service/start.sh
+MANAGER_HOSTNAME=H100 ./scripts/service/start-legacy.sh
 ```
 
 或者直接设置本机 agent 节点名：
 
 ```bash
-LOCAL_AGENT_NODE_ID=H100 ./scripts/service/start.sh
+LOCAL_AGENT_NODE_ID=H100 ./scripts/service/start-legacy.sh
 ```
 
 本机 Ascend agent 使用 DCMI，并在 DCMI 不可用时回退 `npu-smi`：
 
 ```bash
-./scripts/service/start.sh --device ascend
+./scripts/service/start-legacy.sh --device ascend
 ```
 
 集群中的硬件类型按节点配置：
@@ -111,19 +111,19 @@ nodes:
 启动、状态、停止：
 
 ```bash
-./scripts/cluster/start.sh
-./scripts/cluster/status.sh
-./scripts/cluster/stop.sh
+./scripts/cluster/start-legacy.sh
+./scripts/cluster/status-legacy.sh
+./scripts/cluster/stop-legacy.sh
 ```
 
-重复执行 `./scripts/cluster/start.sh` 是幂等的：远端 pid 存活时返回 running；pid 过期时清理后重启。
+重复执行 `./scripts/cluster/start-legacy.sh` 是幂等的：远端 pid 存活时返回 running；pid 过期时清理后重启。
 
 普通用户部署限制：
 
 - 不使用 sudo，不写 `/etc`，不安装 system service。
 - GPU 节点不需要安装 `uv`；只要求 `python3 >= 3.10`。manager 会同步最小 agent runtime。
 - agent 默认写入 `~/.constella/run/agent.pid`、`~/.constella/logs/agent.log`、`~/.constella/run/agent-state.json`。
-- 节点重启后 agent 不保证自动恢复；重新执行 `./scripts/cluster/start.sh` 即可。
+- 节点重启后 agent 不保证自动恢复；重新执行 `./scripts/cluster/start-legacy.sh` 即可。
 - token 通过 stdin 写入远端 env 文件，不放在 SSH 命令行参数中。
 
 ## 可选组件
@@ -134,7 +134,7 @@ nodes:
 启用 SQLite 时显式传入 `DB_PATH`：
 
 ```bash
-DB_PATH=run/constella.db ./scripts/service/start.sh
+DB_PATH=run/constella.db ./scripts/service/start-legacy.sh
 ```
 
 数据库路径由部署环境决定，项目脚本不假设系统盘或专用数据盘。
@@ -161,9 +161,9 @@ http://127.0.0.1:8765/performance
 默认自动探测 GPM。需要排障或控制存储时可分别关闭采集和持久化：
 
 ```bash
-CONSTELLA_NVML_GPM=off ./scripts/service/start.sh
-CONSTELLA_NVIDIA_GPM_HIGHRES=off ./scripts/service/start.sh
-CONSTELLA_NVIDIA_GPM_ROLLUP=off DB_PATH=run/constella.db ./scripts/service/start.sh
+CONSTELLA_NVML_GPM=off ./scripts/service/start-legacy.sh
+CONSTELLA_NVIDIA_GPM_HIGHRES=off ./scripts/service/start-legacy.sh
+CONSTELLA_NVIDIA_GPM_ROLLUP=off DB_PATH=run/constella.db ./scripts/service/start-legacy.sh
 ```
 
 三个开关均只影响 NVIDIA GPM 能力，不影响基础 NVML、`nvidia-smi` 回退或
@@ -174,7 +174,7 @@ Ascend DCMI/`npu-smi` 路径。
 如需使用独立高精度 sidecar，在启动服务时启用：
 
 ```bash
-DB_PATH=run/constella.db HIGHRES_SIDECAR=1 ./scripts/service/start.sh
+DB_PATH=run/constella.db HIGHRES_SIDECAR=1 ./scripts/service/start-legacy.sh
 ```
 
 默认 sidecar 监听 `127.0.0.1:8766`，订阅 manager 的
@@ -194,9 +194,9 @@ curl -s http://127.0.0.1:8766/api/highres/status
 ## 状态、停止、重启
 
 ```bash
-./scripts/service/status.sh
-./scripts/service/stop.sh
-./scripts/service/start.sh
+./scripts/service/status-legacy.sh
+./scripts/service/stop-legacy.sh
+./scripts/service/start-legacy.sh
 ```
 
 ## 验证采样

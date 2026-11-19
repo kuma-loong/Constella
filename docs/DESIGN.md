@@ -75,7 +75,7 @@ manager 在 ingest 当前采样点后维护每张 GPU 的 120 点实时短历史
 
 ## 普通用户权限
 
-manager 侧使用当前用户目录、`uv`、`npm` 和 `nohup`。本机 agent 由 `scripts/service/start.sh` 默认启动，也使用普通用户后台进程。远端 GPU 节点 agent 不要求安装 `uv`；manager 本地构建最小 agent runtime 后通过 SSH 同步，远端只需要 `python3 >= 3.10`、NVML/`nvidia-smi` 和普通用户权限。不写 `/etc`，不调用 sudo。默认监听 `127.0.0.1`，通过 SSH `-L` 端口转发访问。
+manager 侧使用当前用户目录、`uv`、`npm` 和 `nohup`。本机 agent 由 `scripts/service/start-legacy.sh` 默认启动，也使用普通用户后台进程。远端 GPU 节点 agent 不要求安装 `uv`；manager 本地构建最小 agent runtime 后通过 SSH 同步，远端只需要 `python3 >= 3.10`、NVML/`nvidia-smi` 和普通用户权限。不写 `/etc`，不调用 sudo。默认监听 `127.0.0.1`，通过 SSH `-L` 端口转发访问。
 
 ## 硬件自适应
 

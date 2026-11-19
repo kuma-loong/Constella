@@ -98,108 +98,31 @@ Constella 介于终端监控和完整可观测性系统之间：比 `nvitop` 更
 
 ## 快速开始
 
-安装 PyPI 发行包并启动本机托管服务：
+用 `./scripts/package/build.sh` 构建发布包，或直接使用同版本的发布包。按[部署指南](docs/DEPLOYMENT.md)安装二进制并配置 Manager 和 Agent。
+
+在运行目录检查配置并启动服务。
 
 ```bash
-pip install constella-gpu
-constella service start
+bin/stack.sh check
+bin/stack.sh start
+bin/stack.sh status
 ```
 
-`constella-gpu` 是包含后端、Web UI 与 TUI 的完整安装包。只需要部分功能时，
-可安装 `constella-gpu-web`、`constella-gpu-tui` 或
-`constella-gpu-backend`；功能矩阵见[打包说明](docs/PACKAGING.md)。
+打开 Manager 地址的 `/overview`。停止整套服务使用 `bin/stack.sh stop`。昇腾节点在 Agent 环境中设置 `CONSTELLA_DEVICE_TYPE=ascend`。
 
-Ascend 主机使用 `constella service start --device ascend`。
-
-从源码检出启动 manager 和本机加速器 agent：
-
-```bash
-cd Constella
-./scripts/service/setup.sh
-./scripts/service/start.sh
-```
-
-Ascend 主机需要显式选择硬件后端：
-
-```bash
-./scripts/service/start.sh --device ascend
-```
-
-打开：
-
-```text
-http://127.0.0.1:8765/overview
-```
-
-也可以直接使用键盘优先的终端界面：
-
-```bash
-constella tui
-```
-
-TUI 与 Web UI 复用同一条实时集群数据流。远程管理端可通过
-`constella tui --url https://gpu.example.com` 连接，也可以使用等价入口
-`constella-tui`。
-
-TUI 的第五个视图以紧凑点图展示 NVIDIA GPM 高分辨率性能指标，并与其他视图
-复用节点、GPU 和时间范围交互。
-
-如果服务运行在远端服务器，在本地电脑转发端口：
-
-```bash
-ssh -N -L 8765:127.0.0.1:8765 <user>@<server>
-```
-
-需要任务历史和分析看板时启用 SQLite：
-
-```bash
-DB_PATH=run/constella.db ./scripts/service/start.sh
-```
-
-如果希望把短作业高分辨率曲线缓存拆到独立进程，启动 highres sidecar：
-
-```bash
-DB_PATH=run/constella.db HIGHRES_SIDECAR=1 ./scripts/service/start.sh
-```
-
-sidecar 默认监听 `127.0.0.1:8766`，订阅 manager 的 `ws://127.0.0.1:8765/api/highres/stream`。普通部署可以先不启用 sidecar，manager 进程内置的 `/api/highres/*` 接口仍可工作。
-
-NVIDIA agent 默认自动探测 NVML GPM，且性能 provider 与基础 NVML 路径隔离。
-`CONSTELLA_NVML_GPM=off` 可关闭采集；
-`CONSTELLA_NVIDIA_GPM_ROLLUP=off` 可保留实时性能数据但停止持久化。Ascend agent
-不会初始化 NVIDIA provider。`CONSTELLA_NVIDIA_GPM_HIGHRES=off` 可单独关闭内存中的
-高精度性能曲线。
+终端客户端和 Web 界面读取同一套集群数据。安装 [PyPI 客户端](docs/PYPI_CLI.md)后可运行 `constella-tui --url https://gpu.example.com`。
 
 ## 集群模式
 
-准备远端节点清单：
+在 `config/nodes.tsv` 中配置远端节点 ID、SSH 别名和采样后端。Manager 主机通过免密 SSH 分发 Agent，远端 Agent 连接 `CONSTELLA_CLUSTER_URL`。本机 Agent 使用 `config/agent.env`。
 
 ```bash
-cp docs/nodes.example.yaml nodes.yaml
+bin/stack.sh cluster-start
+bin/stack.sh cluster-status
+bin/stack.sh cluster-stop
 ```
 
-编辑 `manager_url`、`manager_hostname` 以及每个节点的 `device`（`nvidia` 或
-`ascend`），并配置 manager 到各节点的 SSH 免密访问。
-
-```mermaid
-flowchart LR
-  M["Manager<br/>FastAPI + Web UI"] -->|"SSH 安装/控制"| A["gpu-node-a<br/>agent"]
-  M -->|"SSH 安装/控制"| B["gpu-node-b<br/>agent"]
-  M -->|"SSH 安装/控制"| C["gpu-node-c<br/>agent"]
-  A -->|"WebSocket 采样数据"| M
-  B -->|"WebSocket 采样数据"| M
-  C -->|"WebSocket 采样数据"| M
-```
-
-启动远端 GPU agents：
-
-```bash
-./scripts/cluster/start.sh
-```
-
-- `scripts/service/start.sh` 首次启动本机 agent 时会自动创建 `run/agent-token`，`scripts/cluster/start.sh` 使用同一个 token 配置远端 agent。
-- 如果 manager 主机不采集本机 GPU，启动时加 `LOCAL_AGENT=0`。
-- 远端节点不需要安装 `uv`，manager 会同步最小 agent runtime。
+Manager 健康时，看门狗负责补启远端缺失的 Agent 守护。端口、备份和 Tunnel 配置见[部署指南](docs/DEPLOYMENT.md)。
 
 ## Ascend NPU 支持
 
@@ -218,14 +141,14 @@ DCMI 后端采集 AICore/HBM 利用率、内存、温度、功耗、PCI 标识�
 
 ```mermaid
 flowchart LR
-  LA["本机 agent<br/>显式选择设备链路"] -->|"WS /api/agents/ws"| M["Manager<br/>FastAPI ingest"]
+  LA["本机 agent<br/>显式选择设备链路"] -->|"WS /api/agents/ws"| M["Manager<br/>Telemetry ingest"]
   RA["远端 agents<br/>NVML→nvidia-smi 或 DCMI→npu-smi"] -->|"WS /api/agents/ws"| M
   M --> S["ClusterState<br/>latest snapshots + 120 点短历史"]
   S --> API["HTTP /api/cluster/snapshot"]
   S --> WS["WebSocket /ws/cluster"]
   S -.可选.-> DB["SQLite<br/>rollups + sessions"]
   DB -.可选.-> AN["Analytics + job curves"]
-  S -.可选.-> HR["Highres cache / sidecar"]
+  S -.可选.-> HR["HighRes cache"]
   API --> UI["Vite TypeScript UI"]
   WS --> UI
   AN --> UI
@@ -237,7 +160,7 @@ manager 不直接采样 GPU；本机节点和远端节点都通过同一条 agen
 ## 文档
 
 - [设计说明](docs/DESIGN.md)：架构、数据路径、低开销策略和数据契约。
-- [运维手册](docs/OPERATIONS.md)：启动、访问、集群 agent 管理、状态和验证命令。
+- [运维手册](docs/DEPLOYMENT.md)：启动、访问、集群 agent 管理、状态和验证命令。
 - [SQLite 历史库](docs/HISTORY.md)：持久化、rollup、维护和作业曲线。
 - [NVIDIA GPM 性能监控](docs/NVML_GPM_METRICS_zh.md)：支持条件、指标解读、数据保留和故障排查。
 - [Cloudflare Tunnel](docs/CLOUD_TUNNEL.md)：无入站端口的域名访问方案。
@@ -249,7 +172,8 @@ manager 不直接采样 GPU；本机节点和远端节点都通过同一条 agen
 ## 项目结构
 
 ```text
-packages/backend/       Python 后端、agent、cluster manager、采样器、API/WebSocket
+packages/backend/       Manager、Agent、共享协议、API 和 WebSocket
+packages/lab/           Lab 鉴权、账户、绑定与审计
 packages/web/           可安装的生产 Web 静态资源
 packages/tui/           Textual 终端客户端、主题与使用说明
 src/constella_gpu/      完整发行包的元数据包

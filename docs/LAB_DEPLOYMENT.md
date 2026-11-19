@@ -19,7 +19,7 @@ npm run build:lab
 cd ..
 ```
 
-For a release artifact, run `./scripts/package/build.sh` and install the resulting
+For a release artifact, run `./scripts/package/build-legacy.sh` and install the resulting
 `constella-gpu-lab` wheel. Generated frontend assets are release artifacts and are
 not committed.
 
@@ -80,10 +80,10 @@ AGENT_TOKEN_FILE=/absolute/private/path/agent-token \
 DB_PATH=/absolute/private/path/constella.db \
 HIGHRES_SIDECAR=1 \
 HIGHRES_TOKEN_FILE=/absolute/private/path/highres-token \
-./scripts/service/start.sh
+./scripts/service/start-legacy.sh
 
 EDITION=lab NODES=/absolute/private/path/nodes.yaml \
-./scripts/cluster/start.sh
+./scripts/cluster/start-legacy.sh
 ```
 
 A future Internet-facing agent path must use a separate hostname with Cloudflare

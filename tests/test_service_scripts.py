@@ -6,8 +6,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_service_stop_has_bounded_force_escalation() -> None:
-    script = (PROJECT_ROOT / "scripts" / "service" / "stop.sh").read_text(
+def test_legacy_service_stop_has_bounded_force_escalation() -> None:
+    script = (PROJECT_ROOT / "scripts" / "service" / "stop-legacy.sh").read_text(
         encoding="utf-8"
     )
 

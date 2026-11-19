@@ -334,7 +334,7 @@ uv run constella db prune-rollups --path run/constella.db
 uv run constella db close-sessions --path run/constella.db
 ```
 
-`scripts/maintenance/db.sh` 应变成调用 `maintain` 或上述组合命令。
+`scripts/maintenance/db-legacy.sh` 应变成调用 `maintain` 或上述组合命令。
 
 ## 故障和重启语义
 

@@ -68,7 +68,7 @@ nvidia-smi fallback
 
 **3. 本机 Local Agent**
 
-`./scripts/service/start.sh` 默认启动两个进程：
+`./scripts/service/start-legacy.sh` 默认启动两个进程：
 
 ```text
 manager:     constella serve
@@ -150,9 +150,9 @@ raw_snapshots 可选
 需要同步更新：
 
 ```text
-scripts/service/start.sh
-scripts/service/stop.sh
-scripts/service/status.sh
+scripts/service/start-legacy.sh
+scripts/service/stop-legacy.sh
+scripts/service/status-legacy.sh
 scripts/README.md
 README.md
 README_zh.md

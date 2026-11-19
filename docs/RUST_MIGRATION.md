@@ -120,7 +120,7 @@ Lab 个人活动按节点和 UID 归属历史会话。旧会话没有 UID 时使
 
 ## 发布包复测与切换
 
-[构建、部署、备份及回滚](RUST_DEPLOYMENT.md)覆盖两个 Manager 版本及 Agent。已生成 Linux x86_64 和 ARM64 两套包并验证 SHA-256。两套包均需要 glibc 2.34 或更新版本。发布包里的 `backup`、`backup-lab`、`migrate` 和 `migrate-lab` 已在预览副本上验证。重复迁移后，遥测源表行数和身份库各表内容保持一致，两库通过 SQLite 完整性和外键检查。Agent 在空 PATH 的环境中使用驱动库直接采样。现有 Web 前端及 TUI 源码保持原样。
+[构建、部署、备份及回滚](DEPLOYMENT.md)覆盖两个 Manager 版本及 Agent。已生成 Linux x86_64 和 ARM64 两套包并验证 SHA-256。两套包均需要 glibc 2.34 或更新版本。发布包里的 `backup`、`backup-lab`、`migrate` 和 `migrate-lab` 已在预览副本上验证。重复迁移后，遥测源表行数和身份库各表内容保持一致，两库通过 SQLite 完整性和外键检查。Agent 在空 PATH 的环境中使用驱动库直接采样。现有 Web 前端及 TUI 源码保持原样。
 
 在同一台 8 卡 H100 主机串行跑相同设置的 90 秒采样对照。Python 使用旧版 Agent 和 Manager，Rust 使用发布包。进程刷新每 5 秒；采样到入库的探针分辨率为 20 毫秒。
 
