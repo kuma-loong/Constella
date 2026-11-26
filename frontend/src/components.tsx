@@ -20,7 +20,7 @@ import {
 import { fmtDuration, fmtGiB, fmtPct } from "./format";
 import { buildProcessView, type ProcessDetail } from "./process-details";
 import { ProcessDrawer } from "./ProcessDrawer";
-import { lastSampleAge, NodeOfflineSeal } from "./NodeConnectionState";
+import { lastSampleAge, NodeStatusSeal } from "./NodeConnectionState";
 import { metricAvailable, reportingCount, telemetryIssues } from "./telemetry-health";
 import type { ClusterSnapshot, GpuInfo, LiveState, NodeSnapshot, ThemeMode } from "./types";
 
@@ -424,7 +424,8 @@ export function Fabric({ snapshot }: { snapshot: ClusterSnapshot }) {
 }
 
 export function FabricNodeCard({ node, now }: { node: NodeSnapshot; now?: number }) {
-  const offline = node.status === "offline";
+  const { status } = node;
+  const offline = status === "offline";
   return (
     <a
       class={`fabric-node-card is-${node.status} ${fabricNodeSizeClass(node)}`}
@@ -455,7 +456,7 @@ export function FabricNodeCard({ node, now }: { node: NodeSnapshot; now?: number
           <span class="fabric-empty">no accelerators</span>
         )}
       </div>
-      {offline ? <NodeOfflineSeal /> : null}
+      {status === "offline" || status === "error" ? <NodeStatusSeal status={status} /> : null}
     </a>
   );
 }

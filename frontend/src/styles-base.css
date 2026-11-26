@@ -929,13 +929,11 @@ a:focus-visible {
 .fabric-node-card.is-offline,
 .fabric-node-card.is-error {
   border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
-}
-
-.fabric-node-card.is-offline {
   background: color-mix(in srgb, var(--danger) 3%, var(--surface));
 }
 
-.fabric-node-card.is-offline .fabric-node-head em {
+.fabric-node-card.is-offline .fabric-node-head em,
+.fabric-node-card.is-error .fabric-node-head em {
   color: var(--danger);
   background: var(--danger-soft);
 }
@@ -945,7 +943,7 @@ a:focus-visible {
   opacity: .65;
 }
 
-.node-offline-seal {
+.node-status-seal {
   position: absolute;
   inset: 88px 0 0;
   overflow: hidden;
@@ -953,7 +951,7 @@ a:focus-visible {
   z-index: 1;
 }
 
-.node-offline-tape {
+.node-status-tape {
   position: absolute;
   top: 49%;
   left: -18%;
@@ -973,8 +971,8 @@ a:focus-visible {
   transform-origin: center;
 }
 
-.node-offline-tape::before,
-.node-offline-tape::after {
+.node-status-tape::before,
+.node-status-tape::after {
   position: absolute;
   inset: 0 0 auto;
   height: 5px;
@@ -983,12 +981,12 @@ a:focus-visible {
   background: repeating-linear-gradient(120deg, var(--danger) 0 9px, transparent 9px 18px);
 }
 
-.node-offline-tape::after { inset: auto 0 0; }
-.node-offline-tape-labels { display: flex; flex-shrink: 0; gap: 26px; }
-.node-offline-tape.is-descending { top: 46%; transform: translateY(-50%) rotate(15deg); }
-.node-offline-tape.is-ascending { top: 57%; transform: translateY(-50%) rotate(-11deg); }
-.node-offline-tape.is-descending .node-offline-tape-labels { transform: translateX(-18px); }
-.node-offline-tape.is-ascending .node-offline-tape-labels { transform: translateX(34px); }
+.node-status-tape::after { inset: auto 0 0; }
+.node-status-tape-labels { display: flex; flex-shrink: 0; gap: 26px; }
+.node-status-tape.is-descending { top: 46%; transform: translateY(-50%) rotate(15deg); }
+.node-status-tape.is-ascending { top: 57%; transform: translateY(-50%) rotate(-11deg); }
+.node-status-tape.is-descending .node-status-tape-labels { transform: translateX(-18px); }
+.node-status-tape.is-ascending .node-status-tape-labels { transform: translateX(34px); }
 
 .node-connection-notice {
   display: flex;

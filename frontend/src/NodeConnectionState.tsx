@@ -7,13 +7,14 @@ export function lastSampleAge(node: NodeSnapshot, now = Date.now() / 1000) {
     : "unavailable";
 }
 
-export function NodeOfflineSeal() {
+export function NodeStatusSeal({ status }: { status: "offline" | "error" }) {
+  const label = status.toUpperCase();
   return (
-    <span class="node-offline-seal" aria-hidden="true">
+    <span class="node-status-seal" aria-hidden="true">
       {["descending", "ascending"].map(direction => (
-        <span class={`node-offline-tape is-${direction}`} key={direction}>
-          <span class="node-offline-tape-labels">
-            {Array.from({ length: 10 }, (_, index) => <span key={index}>OFFLINE</span>)}
+        <span class={`node-status-tape is-${direction}`} key={direction}>
+          <span class="node-status-tape-labels">
+            {Array.from({ length: 10 }, (_, index) => <span key={index}>{label}</span>)}
           </span>
         </span>
       ))}
