@@ -108,7 +108,6 @@ export default function App({ extension }: { extension?: AppExtension }) {
   useEffect(() => {
     if (window.location.pathname === "/") {
       window.history.replaceState(null, "", "/overview");
-      setRoute({ kind: "overview" });
     }
     const onPopState = () => setRoute(currentRoute(extension));
     window.addEventListener("popstate", onPopState);
